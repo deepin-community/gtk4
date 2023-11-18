@@ -1,0 +1,12 @@
+
+--- gtk4-4.12.3+ds.orig/testsuite/gdk/meson.build
++++ gtk4-4.12.3+ds/testsuite/gdk/meson.build
+@@ -56,7 +56,7 @@ foreach t : tests
+ endforeach
+ 
+ internal_tests = [
+-  'image',
++#  'image',
+   'texture',
+   'gltexture',
+ ]

@@ -1,3 +1,9 @@
+gtk4 (4.12.3+ds-1deepin1) unstable; urgency=medium
+
+  * skip gdk image test.
+
+ -- LiChengGang <lichenggang@uniontech.com>  Fri, 17 Nov 2023 15:30:27 +0800
+
 gtk4 (4.12.3+ds-1) unstable; urgency=medium
 
   * New upstream release
