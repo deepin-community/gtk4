@@ -23,6 +23,7 @@
 
 #include "gdkenumtypes.h"
 #include "gdkglcontext.h"
+#include "gdkcolorstate.h"
 #include "gdkgltextureprivate.h"
 
 #include <cairo-gobject.h>
@@ -38,6 +39,7 @@ struct _GdkGLTextureBuilder
   GdkMemoryFormat format;
   gboolean has_mipmap;
   gpointer sync;
+  GdkColorState *color_state;
 
   GdkTexture *update_texture;
   cairo_region_t *update_region;
@@ -51,7 +53,7 @@ struct _GdkGLTextureBuilderClass
 /**
  * GdkGLTextureBuilder:
  *
- * `GdkGLTextureBuilder` is a buider used to construct [class@Gdk.Texture] objects from
+ * `GdkGLTextureBuilder` is a builder used to construct [class@Gdk.Texture] objects from
  * GL textures.
  *
  * The operation is quite simple: Create a texture builder, set all the necessary
@@ -75,6 +77,7 @@ enum
   PROP_HEIGHT,
   PROP_ID,
   PROP_SYNC,
+  PROP_COLOR_STATE,
   PROP_UPDATE_REGION,
   PROP_UPDATE_TEXTURE,
   PROP_WIDTH,
@@ -95,6 +98,7 @@ gdk_gl_texture_builder_dispose (GObject *object)
 
   g_clear_object (&self->update_texture);
   g_clear_pointer (&self->update_region, cairo_region_destroy);
+  g_clear_pointer (&self->color_state, gdk_color_state_unref);
 
   G_OBJECT_CLASS (gdk_gl_texture_builder_parent_class)->dispose (object);
 }
@@ -131,6 +135,10 @@ gdk_gl_texture_builder_get_property (GObject    *object,
 
     case PROP_SYNC:
       g_value_set_pointer (value, self->sync);
+      break;
+
+    case PROP_COLOR_STATE:
+      g_value_set_boxed (value, self->color_state);
       break;
 
     case PROP_UPDATE_REGION:
@@ -185,6 +193,10 @@ gdk_gl_texture_builder_set_property (GObject      *object,
       gdk_gl_texture_builder_set_sync (self, g_value_get_pointer (value));
       break;
 
+    case PROP_COLOR_STATE:
+      gdk_gl_texture_builder_set_color_state (self, g_value_get_boxed (value));
+      break;
+
     case PROP_UPDATE_REGION:
       gdk_gl_texture_builder_set_update_region (self, g_value_get_boxed (value));
       break;
@@ -213,7 +225,7 @@ gdk_gl_texture_builder_class_init (GdkGLTextureBuilderClass *klass)
   gobject_class->set_property = gdk_gl_texture_builder_set_property;
 
   /**
-   * GdkGLTextureBuilder:context: (attributes org.gdk.Property.get=gdk_gl_texture_builder_get_context org.gdk.Property.set=gdk_gl_texture_builder_set_context)
+   * GdkGLTextureBuilder:context:
    *
    * The context owning the texture.
    *
@@ -225,7 +237,7 @@ gdk_gl_texture_builder_class_init (GdkGLTextureBuilderClass *klass)
                          G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkGLTextureBuilder:format: (attributes org.gdk.Property.get=gdk_gl_texture_builder_get_format org.gdk.Property.set=gdk_gl_texture_builder_set_format)
+   * GdkGLTextureBuilder:format:
    *
    * The format when downloading the texture.
    *
@@ -238,7 +250,7 @@ gdk_gl_texture_builder_class_init (GdkGLTextureBuilderClass *klass)
                        G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkGLTextureBuilder:has-mipmap: (attributes org.gdk.Property.get=gdk_gl_texture_builder_get_has_mipmap org.gdk.Property.set=gdk_gl_texture_builder_set_has_mipmap)
+   * GdkGLTextureBuilder:has-mipmap:
    *
    * If the texture has a mipmap.
    *
@@ -250,7 +262,7 @@ gdk_gl_texture_builder_class_init (GdkGLTextureBuilderClass *klass)
                           G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkGLTextureBuilder:height: (attributes org.gdk.Property.get=gdk_gl_texture_builder_get_height org.gdk.Property.set=gdk_gl_texture_builder_set_height)
+   * GdkGLTextureBuilder:height:
    *
    * The height of the texture.
    *
@@ -262,7 +274,7 @@ gdk_gl_texture_builder_class_init (GdkGLTextureBuilderClass *klass)
                       G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkGLTextureBuilder:id: (attributes org.gdk.Property.get=gdk_gl_texture_builder_get_id org.gdk.Property.set=gdk_gl_texture_builder_set_id)
+   * GdkGLTextureBuilder:id:
    *
    * The texture ID to use.
    *
@@ -274,7 +286,7 @@ gdk_gl_texture_builder_class_init (GdkGLTextureBuilderClass *klass)
                        G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkGLTextureBuilder:sync: (attributes org.gdk.Property.get=gdk_gl_texture_builder_get_sync org.gdk.Property.set=gdk_gl_texture_builder_set_sync)
+   * GdkGLTextureBuilder:sync:
    *
    * An optional `GLSync` object.
    *
@@ -287,7 +299,19 @@ gdk_gl_texture_builder_class_init (GdkGLTextureBuilderClass *klass)
                           G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkGLTextureBuilder:update-region: (attributes org.gdk.Property.get=gdk_gl_texture_builder_get_update_region org.gdk.Property.set=gdk_gl_texture_builder_set_update_region)
+   * GdkGLTextureBuilder:color-state:
+   *
+   * The color state of the texture.
+   *
+   * Since: 4.16
+   */
+  properties[PROP_COLOR_STATE] =
+    g_param_spec_boxed ("color-state", NULL, NULL,
+                        GDK_TYPE_COLOR_STATE,
+                        G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
+
+  /**
+   * GdkGLTextureBuilder:update-region:
    *
    * The update region for [property@Gdk.GLTextureBuilder:update-texture].
    *
@@ -299,7 +323,7 @@ gdk_gl_texture_builder_class_init (GdkGLTextureBuilderClass *klass)
                         G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkGLTextureBuilder:update-texture: (attributes org.gdk.Property.get=gdk_gl_texture_builder_get_update_texture org.gdk.Property.set=gdk_gl_texture_builder_set_update_texture)
+   * GdkGLTextureBuilder:update-texture:
    *
    * The texture [property@Gdk.GLTextureBuilder:update-region] is an update for.
    *
@@ -311,7 +335,7 @@ gdk_gl_texture_builder_class_init (GdkGLTextureBuilderClass *klass)
                          G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkGLTextureBuilder:width: (attributes org.gdk.Property.get=gdk_gl_texture_builder_get_width org.gdk.Property.set=gdk_gl_texture_builder_set_width)
+   * GdkGLTextureBuilder:width:
    *
    * The width of the texture.
    *
@@ -329,6 +353,7 @@ static void
 gdk_gl_texture_builder_init (GdkGLTextureBuilder *self)
 {
   self->format = GDK_MEMORY_R8G8B8A8_PREMULTIPLIED;
+  self->color_state = gdk_color_state_ref (gdk_color_state_get_srgb ());
 }
 
 /**
@@ -347,7 +372,7 @@ gdk_gl_texture_builder_new (void)
 }
 
 /**
- * gdk_gl_texture_builder_get_context: (attributes org.gdk.Method.get_property=context)
+ * gdk_gl_texture_builder_get_context:
  * @self: a `GdkGLTextureBuilder`
  *
  * Gets the context previously set via gdk_gl_texture_builder_set_context() or
@@ -366,9 +391,9 @@ gdk_gl_texture_builder_get_context (GdkGLTextureBuilder *self)
 }
 
 /**
- * gdk_gl_texture_builder_set_context: (attributes org.gdk.Method.set_property=context)
+ * gdk_gl_texture_builder_set_context:
  * @self: a `GdkGLTextureBuilder`
- * @context: (nullable): The context the texture beongs to or %NULL to unset
+ * @context: (nullable): The context the texture belongs to or %NULL to unset
  *
  * Sets the context to be used for the texture. This is the context that owns
  * the texture.
@@ -391,7 +416,7 @@ gdk_gl_texture_builder_set_context (GdkGLTextureBuilder *self,
 }
 
 /**
- * gdk_gl_texture_builder_get_height: (attributes org.gdk.Method.get_property=height)
+ * gdk_gl_texture_builder_get_height:
  * @self: a `GdkGLTextureBuilder`
  *
  * Gets the height previously set via gdk_gl_texture_builder_set_height() or
@@ -410,7 +435,7 @@ gdk_gl_texture_builder_get_height (GdkGLTextureBuilder *self)
 }
 
 /**
- * gdk_gl_texture_builder_set_height: (attributes org.gdk.Method.set_property=height)
+ * gdk_gl_texture_builder_set_height:
  * @self: a `GdkGLTextureBuilder`
  * @height: The texture's height or 0 to unset
  *
@@ -435,7 +460,7 @@ gdk_gl_texture_builder_set_height (GdkGLTextureBuilder *self,
 }
 
 /**
- * gdk_gl_texture_builder_get_id: (attributes org.gdk.Method.get_property=id)
+ * gdk_gl_texture_builder_get_id:
  * @self: a `GdkGLTextureBuilder`
  *
  * Gets the texture id previously set via gdk_gl_texture_builder_set_id() or
@@ -454,7 +479,7 @@ gdk_gl_texture_builder_get_id (GdkGLTextureBuilder *self)
 }
 
 /**
- * gdk_gl_texture_builder_set_id: (attributes org.gdk.Method.set_property=id)
+ * gdk_gl_texture_builder_set_id:
  * @self: a `GdkGLTextureBuilder`
  * @id: The texture id to be used for creating the texture
  *
@@ -481,7 +506,7 @@ gdk_gl_texture_builder_set_id (GdkGLTextureBuilder *self,
 }
 
 /**
- * gdk_gl_texture_builder_get_width: (attributes org.gdk.Method.get_property=width)
+ * gdk_gl_texture_builder_get_width:
  * @self: a `GdkGLTextureBuilder`
  *
  * Gets the width previously set via gdk_gl_texture_builder_set_width() or
@@ -500,7 +525,7 @@ gdk_gl_texture_builder_get_width (GdkGLTextureBuilder *self)
 }
 
 /**
- * gdk_gl_texture_builder_set_width: (attributes org.gdk.Method.set_property=width)
+ * gdk_gl_texture_builder_set_width:
  * @self: a `GdkGLTextureBuilder`
  * @width: The texture's width or 0 to unset
  *
@@ -525,7 +550,7 @@ gdk_gl_texture_builder_set_width (GdkGLTextureBuilder *self,
 }
 
 /**
- * gdk_gl_texture_builder_get_has_mipmap: (attributes org.gdk.Method.get_property=has-mipmap)
+ * gdk_gl_texture_builder_get_has_mipmap:
  * @self: a `GdkGLTextureBuilder`
  *
  * Gets whether the texture has a mipmap.
@@ -543,7 +568,7 @@ gdk_gl_texture_builder_get_has_mipmap (GdkGLTextureBuilder *self)
 }
 
 /**
- * gdk_gl_texture_builder_set_has_mipmap: (attributes org.gdk.Method.set_property=has-mipmap)
+ * gdk_gl_texture_builder_set_has_mipmap:
  * @self: a `GdkGLTextureBuilder`
  * @has_mipmap: Whether the texture has a mipmap
  *
@@ -569,7 +594,7 @@ gdk_gl_texture_builder_set_has_mipmap (GdkGLTextureBuilder *self,
 }
 
 /**
- * gdk_gl_texture_builder_get_sync: (attributes org.gdk.Method.get_property=sync)
+ * gdk_gl_texture_builder_get_sync:
  * @self: a `GdkGLTextureBuilder`
  *
  * Gets the `GLsync` previously set via gdk_gl_texture_builder_set_sync().
@@ -587,7 +612,7 @@ gdk_gl_texture_builder_get_sync (GdkGLTextureBuilder *self)
 }
 
 /**
- * gdk_gl_texture_builder_set_sync: (attributes org.gdk.Method.set_property=sync)
+ * gdk_gl_texture_builder_set_sync:
  * @self: a `GdkGLTextureBuilder`
  * @sync: (nullable): the GLSync object
  *
@@ -617,7 +642,52 @@ gdk_gl_texture_builder_set_sync (GdkGLTextureBuilder *self,
 }
 
 /**
- * gdk_gl_texture_builder_get_format: (attributes org.gdk.Method.get_property=format)
+ * gdk_gl_texture_builder_get_color_state:
+ * @self: a `GdkGLTextureBuilder`
+ *
+ * Gets the color state previously set via gdk_gl_texture_builder_set_color_state().
+ *
+ * Returns: the color state
+ *
+ * Since: 4.16
+ */
+GdkColorState *
+gdk_gl_texture_builder_get_color_state (GdkGLTextureBuilder *self)
+{
+  g_return_val_if_fail (GDK_IS_GL_TEXTURE_BUILDER (self), NULL);
+
+  return self->color_state;
+}
+
+/**
+ * gdk_gl_texture_builder_set_color_state:
+ * @self: a `GdkGLTextureBuilder`
+ * @color_state: a `GdkColorState`
+ *
+ * Sets the color state for the texture.
+ *
+ * By default, the sRGB colorstate is used. If you don't know what
+ * colorstates are, this is probably the right thing.
+ *
+ * Since: 4.16
+ */
+void
+gdk_gl_texture_builder_set_color_state (GdkGLTextureBuilder *self,
+                                        GdkColorState       *color_state)
+{
+  g_return_if_fail (GDK_IS_GL_TEXTURE_BUILDER (self));
+  g_return_if_fail (color_state != NULL);
+
+  if (gdk_color_state_equal (self->color_state, color_state))
+    return;
+
+  g_clear_pointer (&self->color_state, gdk_color_state_unref);
+  self->color_state = gdk_color_state_ref (color_state);
+  g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_COLOR_STATE]);
+}
+
+/**
+ * gdk_gl_texture_builder_get_format:
  * @self: a `GdkGLTextureBuilder`
  *
  * Gets the format previously set via gdk_gl_texture_builder_set_format().
@@ -635,7 +705,7 @@ gdk_gl_texture_builder_get_format (GdkGLTextureBuilder *self)
 }
 
 /**
- * gdk_gl_texture_builder_set_format: (attributes org.gdk.Method.set_property=format)
+ * gdk_gl_texture_builder_set_format:
  * @self: a `GdkGLTextureBuilder`
  * @format: The texture's format
  *
@@ -673,7 +743,7 @@ gdk_gl_texture_builder_set_format (GdkGLTextureBuilder *self,
 }
 
 /**
- * gdk_gl_texture_builder_get_update_texture: (attributes org.gdk.Method.get_property=update_texture)
+ * gdk_gl_texture_builder_get_update_texture:
  * @self: a `GdkGLTextureBuilder`
  *
  * Gets the texture previously set via gdk_gl_texture_builder_set_update_texture() or
@@ -692,7 +762,7 @@ gdk_gl_texture_builder_get_update_texture (GdkGLTextureBuilder *self)
 }
 
 /**
- * gdk_gl_texture_builder_set_update_texture: (attributes org.gdk.Method.set_property=update_texture)
+ * gdk_gl_texture_builder_set_update_texture:
  * @self: a `GdkGLTextureBuilder`
  * @texture: (nullable): the texture to update
  *
@@ -715,7 +785,7 @@ gdk_gl_texture_builder_set_update_texture (GdkGLTextureBuilder *self,
 }
 
 /**
- * gdk_gl_texture_builder_get_update_region: (attributes org.gdk.Method.get_property=update_region)
+ * gdk_gl_texture_builder_get_update_region:
  * @self: a `GdkGLTextureBuilder`
  *
  * Gets the region previously set via gdk_gl_texture_builder_set_update_region() or
@@ -734,7 +804,7 @@ gdk_gl_texture_builder_get_update_region (GdkGLTextureBuilder *self)
 }
 
 /**
- * gdk_gl_texture_builder_set_update_region: (attributes org.gdk.Method.set_property=update_region)
+ * gdk_gl_texture_builder_set_update_region:
  * @self: a `GdkGLTextureBuilder`
  * @region: (nullable): the region to update
  *

@@ -292,7 +292,7 @@ gtk_toggle_button_class_init (GtkToggleButtonClass *class)
   class->toggled = NULL;
 
   /**
-   * GtkToggleButton:active: (attributes org.gtk.Property.get=gtk_toggle_button_get_active org.gtk.Property.set=gtk_toggle_button_set_active)
+   * GtkToggleButton:active:
    *
    * If the toggle button should be pressed in.
    */
@@ -302,7 +302,7 @@ gtk_toggle_button_class_init (GtkToggleButtonClass *class)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkToggleButton:group: (attributes org.gtk.Property.set=gtk_toggle_button_set_group)
+   * GtkToggleButton:group:
    *
    * The toggle button whose group this widget belongs to.
    */
@@ -395,7 +395,7 @@ gtk_toggle_button_new_with_mnemonic (const char *label)
 }
 
 /**
- * gtk_toggle_button_set_active: (attributes org.gtk.Method.set_property=active)
+ * gtk_toggle_button_set_active:
  * @toggle_button: a `GtkToggleButton`.
  * @is_active: %TRUE or %FALSE.
  *
@@ -452,7 +452,7 @@ gtk_toggle_button_set_active (GtkToggleButton *toggle_button,
 }
 
 /**
- * gtk_toggle_button_get_active: (attributes org.gtk.Method.get_property=active)
+ * gtk_toggle_button_get_active:
  * @toggle_button: a `GtkToggleButton`.
  *
  * Queries a `GtkToggleButton` and returns its current state.
@@ -489,7 +489,7 @@ gtk_toggle_button_toggled (GtkToggleButton *toggle_button)
 }
 
 /**
- * gtk_toggle_button_set_group: (attributes org.gtk.Method.set_property=group)
+ * gtk_toggle_button_set_group:
  * @toggle_button: a `GtkToggleButton`
  * @group: (nullable) (transfer none): another `GtkToggleButton` to
  *   form a group with
@@ -511,7 +511,7 @@ gtk_toggle_button_set_group (GtkToggleButton *toggle_button,
                              GtkToggleButton *group)
 {
   GtkToggleButtonPrivate *priv = gtk_toggle_button_get_instance_private (toggle_button);
-  GtkToggleButtonPrivate *group_priv = gtk_toggle_button_get_instance_private (group);
+  GtkToggleButtonPrivate *group_priv;
 
   g_return_if_fail (GTK_IS_TOGGLE_BUTTON (toggle_button));
   g_return_if_fail (toggle_button != group);
@@ -537,6 +537,8 @@ gtk_toggle_button_set_group (GtkToggleButton *toggle_button,
 
   if (priv->group_next == group)
     return;
+
+  group_priv = gtk_toggle_button_get_instance_private (group);
 
   priv->group_prev = NULL;
   if (group_priv->group_prev)

@@ -104,6 +104,31 @@
  * </object>
  * ```
  *
+ * # Shortcuts and Gestures
+ *
+ * `GtkNotebook` supports the following keyboard shortcuts:
+ *
+ * - <kbd>Shift</kbd>+<kbd>F10</kbd> or <kbd>Menu</kbd> opens the context menu.
+ * - <kbd>Home</kbd> moves the focus to the first tab.
+ * - <kbd>End</kbd> moves the focus to the last tab.
+ *
+ * Additionally, the following signals have default keybindings:
+ *
+ * - [signal@Gtk.Notebook::change-current-page]
+ * - [signal@Gtk.Notebook::focus-tab]
+ * - [signal@Gtk.Notebook::move-focus-out]
+ * - [signal@Gtk.Notebook::reorder-tab]
+ * - [signal@Gtk.Notebook::select-page]
+ *
+ * Tabs support drag-and-drop between notebooks sharing the same `group-name`,
+ * or to new windows by handling the `::create-window` signal.
+ *
+ * # Actions
+ *
+ * `GtkNotebook` defines a set of built-in actions:
+ *
+ * - `menu.popup` opens the tabs context menu.
+ *
  * # CSS nodes
  *
  * ```
@@ -576,7 +601,7 @@ gtk_notebook_page_class_init (GtkNotebookPageClass *class)
   object_class->set_property = gtk_notebook_page_set_property;
 
   /**
-   * GtkNotebookPage:child: (attributes org.gtk.Property.get=gtk_notebook_page_get_child)
+   * GtkNotebookPage:child:
    *
    * The child for this page.
    */
@@ -1097,7 +1122,7 @@ gtk_notebook_class_init (GtkNotebookClass *class)
   class->create_window = gtk_notebook_create_window;
 
   /**
-   * GtkNotebook:page: (attributes org.gtk.Property.get=gtk_notebook_get_current_page org.gtk.Property.set=gtk_notebook_set_current_page)
+   * GtkNotebook:page: (getter get_current_page) (setter set_current_page)
    *
    * The index of the current page.
    */
@@ -1108,7 +1133,7 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkNotebook:tab-pos: (attributes org.gtk.Property.get=gtk_notebook_get_tab_pos org.gtk.Property.set=gtk_notebook_set_tab_pos)
+   * GtkNotebook:tab-pos:
    *
    * Which side of the notebook holds the tabs.
    */
@@ -1119,7 +1144,7 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                          GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkNotebook:show-tabs: (attributes org.gtk.Property.get=gtk_notebook_get_show_tabs org.gtk.Property.set=gtk_notebook_set_show_tabs)
+   * GtkNotebook:show-tabs:
    *
    * Whether tabs should be shown.
    */
@@ -1129,7 +1154,7 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkNotebook:show-border: (attributes org.gtk.Property.get=gtk_notebook_get_show_border org.gtk.Property.set=gtk_notebook_set_show_border)
+   * GtkNotebook:show-border:
    *
    * Whether the border should be shown.
    */
@@ -1139,7 +1164,7 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkNotebook:scrollable: (attributes org.gtk.Property.get=gtk_notebook_get_scrollable org.gtk.Property.set=gtk_notebook_set_scrollable)
+   * GtkNotebook:scrollable:
    *
    * If %TRUE, scroll arrows are added if there are too many pages to fit.
    */
@@ -1159,7 +1184,7 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkNotebook:group-name: (attributes org.gtk.Property.get=gtk_notebook_get_group_name org.gtk.Property.set=gtk_notebook_set_group_name)
+   * GtkNotebook:group-name:
    *
    * Group name for tab drag and drop.
    */
@@ -1169,7 +1194,7 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkNotebook:pages: (attributes org.gtk.Property.get=gtk_notebook_get_pages)
+   * GtkNotebook:pages:
    *
    * A selection model with the pages.
    */
@@ -1201,6 +1226,16 @@ gtk_notebook_class_init (GtkNotebookClass *class)
   g_signal_set_va_marshaller (notebook_signals[SWITCH_PAGE],
                               G_TYPE_FROM_CLASS (gobject_class),
                               _gtk_marshal_VOID__OBJECT_UINTv);
+
+  /**
+   * GtkNotebook::focus-tab:
+   * @notebook: the notebook
+   * @tab: the notebook tab
+   *
+   * Emitted when a tab should be focused.
+   *
+   * Returns: whether the tab has been focused
+   */
   notebook_signals[FOCUS_TAB] =
     g_signal_new (I_("focus-tab"),
                   G_TYPE_FROM_CLASS (gobject_class),
@@ -1213,6 +1248,18 @@ gtk_notebook_class_init (GtkNotebookClass *class)
   g_signal_set_va_marshaller (notebook_signals[FOCUS_TAB],
                               G_TYPE_FROM_CLASS (gobject_class),
                               _gtk_marshal_BOOLEAN__ENUMv);
+
+  /**
+   * GtkNotebook::select-page:
+   * @notebook: the notebook
+   * @move_focus: whether to move focus
+   *
+   * Emitted when a page should be selected.
+   *
+   * The default binding for this signal is <kbd>␣</kbd>.
+   *
+   * Returns: whether the page was selected
+   */
   notebook_signals[SELECT_PAGE] =
     g_signal_new (I_("select-page"),
                   G_TYPE_FROM_CLASS (gobject_class),
@@ -1225,6 +1272,21 @@ gtk_notebook_class_init (GtkNotebookClass *class)
   g_signal_set_va_marshaller (notebook_signals[SELECT_PAGE],
                               G_TYPE_FROM_CLASS (gobject_class),
                               _gtk_marshal_BOOLEAN__BOOLEANv);
+
+  /**
+   * GtkNotebook::change-current-page:
+   * @notebook: the notebook
+   * @page: the page index
+   *
+   * Emitted when the current page should be changed.
+   *
+   * The default bindings for this signal are
+   * <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>PgUp</kbd>,
+   * <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>PgDn</kbd>,
+   * <kbd>Ctrl</kbd>+<kbd>PgUp</kbd> and <kbd>Ctrl</kbd>+<kbd>PgDn</kbd>.
+   *
+   * Returns: whether the page was changed
+   */
   notebook_signals[CHANGE_CURRENT_PAGE] =
     g_signal_new (I_("change-current-page"),
                   G_TYPE_FROM_CLASS (gobject_class),
@@ -1237,6 +1299,20 @@ gtk_notebook_class_init (GtkNotebookClass *class)
   g_signal_set_va_marshaller (notebook_signals[CHANGE_CURRENT_PAGE],
                               G_TYPE_FROM_CLASS (gobject_class),
                               _gtk_marshal_BOOLEAN__INTv);
+
+  /**
+   * GtkNotebook::move-focus-out:
+   * @notebook: the notebook
+   * @direction: the direction to move the focus
+   *
+   * Emitted when focus was moved out.
+   *
+   * The default bindings for this signal are
+   * <kbd>Ctrl</kbd>+<kbd>Tab</kbd>,
+   * <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd>,
+   * <kbd>Ctrl</kbd>+<kbd>←</kbd>, <kbd>Ctrl</kbd>+<kbd>→</kbd>,
+   * <kbd>Ctrl</kbd>+<kbd>↑</kbd> and <kbd>Ctrl</kbd>+<kbd>↓</kbd>.
+   */
   notebook_signals[MOVE_FOCUS_OUT] =
     g_signal_new (I_("move-focus-out"),
                   G_TYPE_FROM_CLASS (gobject_class),
@@ -1246,6 +1322,23 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                   NULL,
                   G_TYPE_NONE, 1,
                   GTK_TYPE_DIRECTION_TYPE);
+
+  /**
+   * GtkNotebook::reorder-tab:
+   * @notebook: the notebook
+   * @direction: the direction to move the tab
+   * @move_to_last: whether to move to the last position
+   *
+   * Emitted when the tab should be reordered.
+   *
+   * The default bindings for this signal are
+   * <kbd>Alt</kbd>+<kbd>Home</kbd>, <kbd>Alt</kbd>+<kbd>End</kbd>,
+   * <kbd>Alt</kbd>+<kbd>PgUp</kbd>, <kbd>Alt</kbd>+<kbd>PgDn</kbd>,
+   * <kbd>Alt</kbd>+<kbd>←</kbd>, <kbd>Alt</kbd>+<kbd>→</kbd>,
+   * <kbd>Alt</kbd>+<kbd>↑</kbd> and <kbd>Alt</kbd>+<kbd>↓</kbd>.
+   *
+   * Returns: whether the tab was moved.
+   */
   notebook_signals[REORDER_TAB] =
     g_signal_new (I_("reorder-tab"),
                   G_TYPE_FROM_CLASS (gobject_class),
@@ -5883,7 +5976,7 @@ gtk_notebook_remove_page (GtkNotebook *notebook,
  */
 
 /**
- * gtk_notebook_get_current_page: (attributes org.gtk.Method.get_property=page)
+ * gtk_notebook_get_current_page: (get-property page)
  * @notebook: a `GtkNotebook`
  *
  * Returns the page number of the current page.
@@ -5990,7 +6083,7 @@ gtk_notebook_page_num (GtkNotebook      *notebook,
 }
 
 /**
- * gtk_notebook_set_current_page: (attributes org.gtk.Method.set_property=page)
+ * gtk_notebook_set_current_page: (set-property page)
  * @notebook: a `GtkNotebook`
  * @page_num: index of the page to switch to, starting from 0.
  *   If negative, the last page will be used. If greater
@@ -6084,7 +6177,7 @@ gtk_notebook_prev_page (GtkNotebook *notebook)
  * gtk_notebook_get_scrollable
  */
 /**
- * gtk_notebook_set_show_border: (attributes org.gtk.Method.set_property=show-border)
+ * gtk_notebook_set_show_border:
  * @notebook: a `GtkNotebook`
  * @show_border: %TRUE if a bevel should be drawn around the notebook
  *
@@ -6112,7 +6205,7 @@ gtk_notebook_set_show_border (GtkNotebook *notebook,
 }
 
 /**
- * gtk_notebook_get_show_border: (attributes org.gtk.Method.get_property=show-border)
+ * gtk_notebook_get_show_border:
  * @notebook: a `GtkNotebook`
  *
  * Returns whether a bevel will be drawn around the notebook pages.
@@ -6128,7 +6221,7 @@ gtk_notebook_get_show_border (GtkNotebook *notebook)
 }
 
 /**
- * gtk_notebook_set_show_tabs: (attributes org.gtk.Method.set_property=show-tabs)
+ * gtk_notebook_set_show_tabs:
  * @notebook: a `GtkNotebook`
  * @show_tabs: %TRUE if the tabs should be shown
  *
@@ -6186,7 +6279,7 @@ gtk_notebook_set_show_tabs (GtkNotebook *notebook,
 }
 
 /**
- * gtk_notebook_get_show_tabs: (attributes org.gtk.Method.get_property=show-tabs)
+ * gtk_notebook_get_show_tabs:
  * @notebook: a `GtkNotebook`
  *
  * Returns whether the tabs of the notebook are shown.
@@ -6287,7 +6380,7 @@ gtk_notebook_update_tab_pos (GtkNotebook *notebook)
 }
 
 /**
- * gtk_notebook_set_tab_pos: (attributes org.gtk.Method.set_property=tab-pos)
+ * gtk_notebook_set_tab_pos:
  * @notebook: a `GtkNotebook`.
  * @pos: the edge to draw the tabs at
  *
@@ -6311,7 +6404,7 @@ gtk_notebook_set_tab_pos (GtkNotebook     *notebook,
 }
 
 /**
- * gtk_notebook_get_tab_pos: (attributes org.gtk.Method.get_property=tab-pos)
+ * gtk_notebook_get_tab_pos:
  * @notebook: a `GtkNotebook`
  *
  * Gets the edge at which the tabs are drawn.
@@ -6327,7 +6420,7 @@ gtk_notebook_get_tab_pos (GtkNotebook *notebook)
 }
 
 /**
- * gtk_notebook_set_scrollable: (attributes org.gtk.Method.set_property=scrollable)
+ * gtk_notebook_set_scrollable:
  * @notebook: a `GtkNotebook`
  * @scrollable: %TRUE if scroll arrows should be added
  *
@@ -6356,7 +6449,7 @@ gtk_notebook_set_scrollable (GtkNotebook *notebook,
 }
 
 /**
- * gtk_notebook_get_scrollable: (attributes or.gtk.Method.get_property=scrollable)
+ * gtk_notebook_get_scrollable:
  * @notebook: a `GtkNotebook`
  *
  * Returns whether the tab label area has arrows for scrolling.
@@ -6844,7 +6937,7 @@ gtk_notebook_reorder_child (GtkNotebook *notebook,
 }
 
 /**
- * gtk_notebook_set_group_name: (attributes org.gtk.Method.set_property=group-name)
+ * gtk_notebook_set_group_name:
  * @notebook: a `GtkNotebook`
  * @group_name: (nullable): the name of the notebook group,
  *   or %NULL to unset it
@@ -6874,7 +6967,7 @@ gtk_notebook_set_group_name (GtkNotebook *notebook,
 }
 
 /**
- * gtk_notebook_get_group_name: (attributes org.gtk.Method.get_property=group-name)
+ * gtk_notebook_get_group_name:
  * @notebook: a `GtkNotebook`
  *
  * Gets the current group name for @notebook.
@@ -6991,9 +7084,10 @@ gtk_notebook_get_tab_detachable (GtkNotebook *notebook,
  *
  * If you want a widget to interact with a notebook through DnD
  * (i.e.: accept dragged tabs from it) it must be set as a drop
- * destination and accept the target “GTK_NOTEBOOK_TAB”. The notebook
- * will fill the selection with a GtkWidget** pointing to the child
- * widget that corresponds to the dropped tab.
+ * destination by adding to it a [class@Gtk.DropTarget] controller that accepts
+ * the GType `GTK_TYPE_NOTEBOOK_PAGE`. The `:value` of said drop target will be
+ * preloaded with a [class@Gtk.NotebookPage] object that corresponds to the
+ * dropped tab, so you can process the value via `::accept` or `::drop` signals.
  *
  * Note that you should use [method@Gtk.Notebook.detach_tab] instead
  * of [method@Gtk.Notebook.remove_page] if you want to remove the tab
@@ -7139,7 +7233,7 @@ gtk_notebook_get_page (GtkNotebook *notebook,
 }
 
 /**
- * gtk_notebook_page_get_child: (attributes org.gtk.Method.get_property=child)
+ * gtk_notebook_page_get_child:
  * @page: a `GtkNotebookPage`
  *
  * Returns the notebook child to which @page belongs.
@@ -7268,7 +7362,7 @@ gtk_notebook_pages_new (GtkNotebook *notebook)
 }
 
 /**
- * gtk_notebook_get_pages: (attributes org.gtk.Method.get_property=pages)
+ * gtk_notebook_get_pages:
  * @notebook: a `GtkNotebook`
  *
  * Returns a `GListModel` that contains the pages of the notebook.

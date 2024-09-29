@@ -23,7 +23,9 @@
 
 #include "gtktextprivate.h"
 
+#include "gtkaccessibletextprivate.h"
 #include "gtkactionable.h"
+#include "gtkactionmuxerprivate.h"
 #include "gtkadjustment.h"
 #include "gtkbox.h"
 #include "gtkbutton.h"
@@ -42,22 +44,22 @@
 #include "gtkgestureclick.h"
 #include "gtkgesturesingle.h"
 #include "gtkimageprivate.h"
-#include "gtkimcontextprivate.h"
 #include "gtkimcontextsimple.h"
 #include "gtkimmulticontext.h"
-#include <glib/gi18n-lib.h>
+#include "gtkjoinedmenuprivate.h"
 #include "gtklabel.h"
 #include "gtkmagnifierprivate.h"
 #include "gtkmain.h"
 #include "gtkmarshalers.h"
+#include "gtknative.h"
 #include "gtkpangoprivate.h"
 #include "gtkpopovermenu.h"
 #include "gtkprivate.h"
-#include "gtksettings.h"
-#include "gtksnapshot.h"
 #include "gtkrenderbackgroundprivate.h"
 #include "gtkrenderborderprivate.h"
 #include "gtkrenderlayoutprivate.h"
+#include "gtksettings.h"
+#include "gtksnapshot.h"
 #include "gtktexthandleprivate.h"
 #include "gtktexthistoryprivate.h"
 #include "gtktextutilprivate.h"
@@ -65,13 +67,13 @@
 #include "gtktypebuiltins.h"
 #include "gtkwidgetprivate.h"
 #include "gtkwindow.h"
-#include "gtknative.h"
-#include "gtkactionmuxerprivate.h"
-#include "gtkjoinedmenuprivate.h"
-#include "deprecated/gtkrender.h"
 
-#include <cairo-gobject.h>
+#include "deprecated/gtkrender.h"
+#include "a11y/gtkatspipangoprivate.h"
+
 #include <string.h>
+#include <cairo-gobject.h>
+#include <glib/gi18n-lib.h>
 
 /**
  * GtkText:
@@ -99,6 +101,47 @@
  * cases, such as [class@Gtk.SearchEntry].
  *
  * If you need multi-line editable text, look at [class@Gtk.TextView].
+ *
+ * # Shortcuts and Gestures
+ *
+ * `GtkText` supports the following keyboard shortcuts:
+ *
+ * - <kbd>Shift</kbd>+<kbd>F10</kbd> or <kbd>Menu</kbd> opens the context menu.
+ * - <kbd>Ctrl</kbd>+<kbd>A</kbd> or <kbd>Ctrl</kbd>+<kbd>&sol;</kbd>
+ *   selects all the text.
+ * - <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> or
+ *   <kbd>Ctrl</kbd>+<kbd>&bsol;</kbd> unselects all.
+ * - <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes the last modification.
+ * - <kbd>Ctrl</kbd>+<kbd>Y</kbd> or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>
+ *   redoes the last undone modification.
+ *
+ * Additionally, the following signals have default keybindings:
+ *
+ * - [signal@Gtk.Text::activate]
+ * - [signal@Gtk.Text::backspace]
+ * - [signal@Gtk.Text::copy-clipboard]
+ * - [signal@Gtk.Text::cut-clipboard]
+ * - [signal@Gtk.Text::delete-from-cursor]
+ * - [signal@Gtk.Text::insert-emoji]
+ * - [signal@Gtk.Text::move-cursor]
+ * - [signal@Gtk.Text::paste-clipboard]
+ * - [signal@Gtk.Text::toggle-overwrite]
+ *
+ * # Actions
+ *
+ * `GtkText` defines a set of built-in actions:
+ *
+ * - `clipboard.copy` copies the contents to the clipboard.
+ * - `clipboard.cut` copies the contents to the clipboard and deletes it from
+ *   the widget.
+ * - `clipboard.paste` inserts the contents of the clipboard into the widget.
+ * - `menu.popup` opens the context menu.
+ * - `misc.insert-emoji` opens the Emoji chooser.
+ * - `misc.toggle-visibility` toggles the `GtkText`:visibility property.
+ * - `selection.delete` deletes the current selection.
+ * - `selection.select-all` selects all of the widgets content.
+ * - `text.redo` redoes the last change to the contents.
+ * - `text.undo` undoes the last change to the contents.
  *
  * # CSS nodes
  *
@@ -706,9 +749,14 @@ static const GtkTextHistoryFuncs history_funcs = {
   gtk_text_history_select_cb,
 };
 
+static void     gtk_text_accessible_text_init (GtkAccessibleTextInterface *iface);
+
 G_DEFINE_TYPE_WITH_CODE (GtkText, gtk_text, GTK_TYPE_WIDGET,
                          G_ADD_PRIVATE (GtkText)
-                         G_IMPLEMENT_INTERFACE (GTK_TYPE_EDITABLE, gtk_text_editable_init))
+                         G_IMPLEMENT_INTERFACE (GTK_TYPE_EDITABLE, gtk_text_editable_init)
+                         G_IMPLEMENT_INTERFACE (GTK_TYPE_ACCESSIBLE_TEXT,
+                                                gtk_text_accessible_text_init))
+
 
 static void
 add_move_binding (GtkWidgetClass *widget_class,
@@ -769,7 +817,7 @@ gtk_text_class_init (GtkTextClass *class)
   quark_password_hint = g_quark_from_static_string ("gtk-entry-password-hint");
 
   /**
-   * GtkText:buffer: (attributes org.gtk.Property.get=gtk_text_get_buffer org.gtk.Property.set=gtk_text_set_buffer)
+   * GtkText:buffer:
    *
    * The `GtkEntryBuffer` object which stores the text.
    */
@@ -779,7 +827,7 @@ gtk_text_class_init (GtkTextClass *class)
                            GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkText:max-length: (attributes org.gtk.Property.get=gtk_text_get_max_length org.gtk.Property.set=gtk_text_set_max_length)
+   * GtkText:max-length:
    *
    * Maximum number of characters that are allowed.
    *
@@ -792,7 +840,7 @@ gtk_text_class_init (GtkTextClass *class)
                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkText:invisible-char: (attributes org.gtk.Property.get=gtk_text_set_invisible_char org.gtk.Property.set=gtk_text_set_invisible_char)
+   * GtkText:invisible-char:
    *
    * The character to used when masking contents (in “password mode”).
    */
@@ -802,7 +850,7 @@ gtk_text_class_init (GtkTextClass *class)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkText:activates-default: (attributes org.gtk.Property.get=gtk_text_get_activates_default org.gtk.Property.set=gtk_text_set_activates_default)
+   * GtkText:activates-default:
    *
    * Whether to activate the default widget when Enter is pressed.
    */
@@ -823,7 +871,7 @@ gtk_text_class_init (GtkTextClass *class)
                         GTK_PARAM_READABLE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkText:truncate-multiline: (attributes org.gtk.Property.get=gtk_text_get_truncate_multiline org.gtk.Property.set=gtk_text_set_truncate_multiline)
+   * GtkText:truncate-multiline:
    *
    * When %TRUE, pasted multi-line text is truncated to the first line.
    */
@@ -833,7 +881,7 @@ gtk_text_class_init (GtkTextClass *class)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkText:overwrite-mode: (attributes org.gtk.Property.get=gtk_text_get_overwrite_mode org.gtk.Property.set=gtk_text_set_overwrite_mode)
+   * GtkText:overwrite-mode:
    *
    * If text is overwritten when typing in the `GtkText`.
    */
@@ -853,7 +901,7 @@ gtk_text_class_init (GtkTextClass *class)
                             GTK_PARAM_READWRITE);
 
   /**
-  * GtkText:placeholder-text: (attributes org.gtk.Property.get=gtk_text_get_placeholder_text org.gtk.Property.set=gtk_text_set_placeholder_text)
+  * GtkText:placeholder-text:
   *
   * The text that will be displayed in the `GtkText` when it is empty
   * and unfocused.
@@ -880,7 +928,7 @@ gtk_text_class_init (GtkTextClass *class)
                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkText:input-purpose: (attributes org.gtk.Property.get=gtk_text_get_input_purpose org.gtk.Property.set=gtk_text_set_input_purpose)
+   * GtkText:input-purpose:
    *
    * The purpose of this text field.
    *
@@ -898,7 +946,7 @@ gtk_text_class_init (GtkTextClass *class)
                          GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkText:input-hints: (attributes org.gtk.Property.get=gtk_text_get_input_hints org.gtk.Property.set=gtk_text_set_input_hints)
+   * GtkText:input-hints:
    *
    * Additional hints that allow input methods to fine-tune
    * their behaviour.
@@ -910,7 +958,7 @@ gtk_text_class_init (GtkTextClass *class)
                           GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkText:attributes: (attributes org.gtk.Property.get=gtk_text_get_attributes org.gtk.Property.set=gtk_text_set_attributes)
+   * GtkText:attributes:
    *
    * A list of Pango attributes to apply to the text of the `GtkText`.
    *
@@ -925,7 +973,7 @@ gtk_text_class_init (GtkTextClass *class)
                           GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkText:tabs: (attributes org.gtk.Property.get=gtk_text_get_tabs org.gtk.Property.set=gtk_text_set_tabs)
+   * GtkText:tabs:
    *
    * A list of tabstops to apply to the text of the `GtkText`.
    */
@@ -935,7 +983,7 @@ gtk_text_class_init (GtkTextClass *class)
                           GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkText:enable-emoji-completion: (attributes org.gtk.Property.get=gtk_text_get_enable_emoji_completion org.gtk.Property.set=gtk_text_set_enable_emoji_completion)
+   * GtkText:enable-emoji-completion:
    *
    * Whether to suggest Emoji replacements.
    */
@@ -945,7 +993,7 @@ gtk_text_class_init (GtkTextClass *class)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkText:visibility: (attributes org.gtk.Property.get=gtk_text_get_visibility org.gtk.Property.set=gtk_text_set_visibility)
+   * GtkText:visibility:
    *
    * If %FALSE, the text is masked with the “invisible char”.
    */
@@ -955,7 +1003,7 @@ gtk_text_class_init (GtkTextClass *class)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkText:propagate-text-width: (attributes org.gtk.Property.get=gtk_text_get_propagate_text_width org.gtk.Property.set=gtk_text_set_propagate_text_width)
+   * GtkText:propagate-text-width:
    *
    * Whether the widget should grow and shrink with the content.
    */
@@ -965,7 +1013,7 @@ gtk_text_class_init (GtkTextClass *class)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkText:extra-menu: (attributes org.gtk.Property.get=gtk_text_get_extra_menu org.gtk.Property.set=gtk_text_set_extra_menu)
+   * GtkText:extra-menu:
    *
    * A menu model whose contents will be appended to
    * the context menu.
@@ -1383,8 +1431,51 @@ gtk_text_class_init (GtkTextClass *class)
   add_move_binding (widget_class, GDK_KEY_KP_End, GDK_CONTROL_MASK,
                     GTK_MOVEMENT_BUFFER_ENDS, 1);
 
-  /* Select all
-   */
+#ifdef __APPLE__
+  add_move_binding (widget_class, GDK_KEY_Right, GDK_ALT_MASK,
+                    GTK_MOVEMENT_WORDS, 1);
+
+  add_move_binding (widget_class, GDK_KEY_Left, GDK_ALT_MASK,
+                    GTK_MOVEMENT_WORDS, -1);
+
+  add_move_binding (widget_class, GDK_KEY_KP_Right, GDK_ALT_MASK,
+                    GTK_MOVEMENT_WORDS, 1);
+
+  add_move_binding (widget_class, GDK_KEY_KP_Left, GDK_ALT_MASK,
+                    GTK_MOVEMENT_WORDS, -1);
+
+  add_move_binding (widget_class, GDK_KEY_Right, GDK_ALT_MASK,
+                    GTK_MOVEMENT_DISPLAY_LINE_ENDS, 1);
+
+  add_move_binding (widget_class, GDK_KEY_Left, GDK_ALT_MASK,
+                    GTK_MOVEMENT_DISPLAY_LINE_ENDS, -1);
+
+  add_move_binding (widget_class, GDK_KEY_KP_Right, GDK_ALT_MASK,
+                    GTK_MOVEMENT_DISPLAY_LINE_ENDS, 1);
+
+  add_move_binding (widget_class, GDK_KEY_KP_Left, GDK_ALT_MASK,
+                    GTK_MOVEMENT_DISPLAY_LINE_ENDS, -1);
+
+  add_move_binding (widget_class, GDK_KEY_Up, GDK_META_MASK,
+                    GTK_MOVEMENT_BUFFER_ENDS, -1);
+
+  add_move_binding (widget_class, GDK_KEY_Down, GDK_META_MASK,
+                    GTK_MOVEMENT_BUFFER_ENDS, 1);
+
+  add_move_binding (widget_class, GDK_KEY_KP_Up, GDK_META_MASK,
+                    GTK_MOVEMENT_BUFFER_ENDS, -1);
+
+  add_move_binding (widget_class, GDK_KEY_KP_Down, GDK_META_MASK,
+                    GTK_MOVEMENT_BUFFER_ENDS, 1);
+#endif
+
+  /* Select all */
+#ifdef __APPLE__
+  gtk_widget_class_add_binding (widget_class,
+                                GDK_KEY_a, GDK_META_MASK,
+                                (GtkShortcutFunc) gtk_text_select_all,
+                                NULL);
+#else
   gtk_widget_class_add_binding (widget_class,
                                 GDK_KEY_a, GDK_CONTROL_MASK,
                                 (GtkShortcutFunc) gtk_text_select_all,
@@ -1394,8 +1485,15 @@ gtk_text_class_init (GtkTextClass *class)
                                 GDK_KEY_slash, GDK_CONTROL_MASK,
                                 (GtkShortcutFunc) gtk_text_select_all,
                                 NULL);
-  /* Unselect all
-   */
+#endif
+
+  /* Unselect all */
+#ifdef __APPLE__
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_a, GDK_SHIFT_MASK | GDK_META_MASK,
+                                       "move-cursor",
+                                       "(iib)", GTK_MOVEMENT_VISUAL_POSITIONS, 0, FALSE);
+#else
   gtk_widget_class_add_binding_signal (widget_class,
                                        GDK_KEY_backslash, GDK_CONTROL_MASK,
                                        "move-cursor",
@@ -1404,6 +1502,7 @@ gtk_text_class_init (GtkTextClass *class)
                                        GDK_KEY_a, GDK_SHIFT_MASK | GDK_CONTROL_MASK,
                                        "move-cursor",
                                        "(iib)", GTK_MOVEMENT_VISUAL_POSITIONS, 0, FALSE);
+#endif
 
   /* Activate
    */
@@ -1444,6 +1543,17 @@ gtk_text_class_init (GtkTextClass *class)
                                        "backspace",
                                        NULL);
 
+#ifdef __APPLE__
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_Delete, GDK_ALT_MASK,
+                                       "delete-from-cursor",
+                                       "(ii)", GTK_DELETE_WORD_ENDS, 1);
+
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_BackSpace, GDK_ALT_MASK,
+                                       "delete-from-cursor",
+                                       "(ii)", GTK_DELETE_WORD_ENDS, -1);
+#else
   gtk_widget_class_add_binding_signal (widget_class,
                                        GDK_KEY_Delete, GDK_CONTROL_MASK,
                                        "delete-from-cursor",
@@ -1458,8 +1568,23 @@ gtk_text_class_init (GtkTextClass *class)
                                        GDK_KEY_BackSpace, GDK_CONTROL_MASK,
                                        "delete-from-cursor",
                                        "(ii)", GTK_DELETE_WORD_ENDS, -1);
+#endif
 
   /* Cut/copy/paste */
+#ifdef __APPLE__
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_x, GDK_META_MASK,
+                                       "cut-clipboard",
+                                       NULL);
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_c, GDK_META_MASK,
+                                       "copy-clipboard",
+                                       NULL);
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_v, GDK_META_MASK,
+                                       "paste-clipboard",
+                                       NULL);
+#else
   gtk_widget_class_add_binding_signal (widget_class,
                                        GDK_KEY_x, GDK_CONTROL_MASK,
                                        "cut-clipboard",
@@ -1498,6 +1623,7 @@ gtk_text_class_init (GtkTextClass *class)
                                        GDK_KEY_KP_Insert, GDK_SHIFT_MASK,
                                        "paste-clipboard",
                                        NULL);
+#endif
 
   /* Overwrite */
   gtk_widget_class_add_binding_signal (widget_class,
@@ -1520,6 +1646,14 @@ gtk_text_class_init (GtkTextClass *class)
                                        NULL);
 
   /* Undo/Redo */
+#ifdef __APPLE__
+  gtk_widget_class_add_binding_action (widget_class,
+                                       GDK_KEY_z, GDK_META_MASK,
+                                       "text.undo", NULL);
+  gtk_widget_class_add_binding_action (widget_class,
+                                       GDK_KEY_z, GDK_META_MASK | GDK_SHIFT_MASK,
+                                       "text.redo", NULL);
+#else
   gtk_widget_class_add_binding_action (widget_class,
                                        GDK_KEY_z, GDK_CONTROL_MASK,
                                        "text.undo", NULL);
@@ -1529,6 +1663,7 @@ gtk_text_class_init (GtkTextClass *class)
   gtk_widget_class_add_binding_action (widget_class,
                                        GDK_KEY_z, GDK_CONTROL_MASK | GDK_SHIFT_MASK,
                                        "text.redo", NULL);
+#endif
 
   gtk_widget_class_set_css_name (widget_class, I_("text"));
   gtk_widget_class_set_accessible_role (widget_class, GTK_ACCESSIBLE_ROLE_NONE);
@@ -2919,11 +3054,13 @@ gtk_text_click_gesture_released (GtkGestureClick *gesture,
                                  GtkText         *self)
 {
   GtkTextPrivate *priv = gtk_text_get_instance_private (self);
+  GdkEvent *event =
+    gtk_event_controller_get_current_event (GTK_EVENT_CONTROLLER (gesture));
 
   if (n_press == 1 &&
       !priv->in_drag &&
       priv->current_pos == priv->selection_bound)
-    gtk_im_context_activate_osk (priv->im_context);
+    gtk_im_context_activate_osk (priv->im_context, event);
 }
 
 static char *
@@ -3440,6 +3577,11 @@ gtk_text_insert_text (GtkText    *self,
   if (n_inserted != n_chars)
     gtk_widget_error_bell (GTK_WIDGET (self));
 
+  gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (self),
+                                       GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_INSERT,
+                                       *position,
+                                       *position + n_inserted);
+
   *position += n_inserted;
 
   update_placeholder_visibility (self);
@@ -3454,8 +3596,16 @@ gtk_text_delete_text (GtkText *self,
 {
   GtkTextPrivate *priv = gtk_text_get_instance_private (self);
 
+  if (end_pos < 0)
+    end_pos = gtk_entry_buffer_get_length (get_buffer (self));
+
   if (start_pos == end_pos)
     return;
+
+  gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (self),
+                                       GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_REMOVE,
+                                       start_pos,
+                                       end_pos);
 
   if (priv->change_count == 0)
     gtk_text_history_begin_irreversible_action (priv->history);
@@ -3481,6 +3631,9 @@ gtk_text_delete_selection (GtkText *self)
   int end_pos = MAX (priv->selection_bound, priv->current_pos);
 
   gtk_editable_delete_text (GTK_EDITABLE (self), start_pos, end_pos);
+  gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (self),
+                                       GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_REMOVE,
+                                       start_pos, end_pos);
 }
 
 static void
@@ -3499,8 +3652,6 @@ gtk_text_set_selection_bounds (GtkText *self,
   gtk_text_reset_im_context (self);
 
   gtk_text_set_positions (self, MIN (end, length), MIN (start, length));
-
-  gtk_text_update_primary_selection (self);
 }
 
 static gboolean
@@ -3831,6 +3982,15 @@ get_better_cursor_x (GtkText *self,
 }
 
 static void
+selection_style_changed_cb (GtkCssNode        *node,
+                            GtkCssStyleChange *change,
+                            GtkText           *self)
+{
+  if (gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_REDRAW))
+    gtk_widget_queue_draw (GTK_WIDGET (self));
+}
+
+static void
 gtk_text_move_cursor (GtkText         *self,
                       GtkMovementStep  step,
                       int              count,
@@ -3982,6 +4142,10 @@ gtk_text_insert_at_cursor (GtkText    *self,
       begin_change (self);
       gtk_text_reset_im_context (self);
       gtk_editable_insert_text (GTK_EDITABLE (self), str, -1, &pos);
+      gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (self),
+                                           GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_INSERT,
+                                           pos,
+                                           pos + g_utf8_strlen (str, -1));
       gtk_text_set_selection_bounds (self, pos, pos);
       end_change (self);
     }
@@ -4056,7 +4220,6 @@ gtk_text_delete_from_cursor (GtkText       *self,
         gtk_editable_delete_text (GTK_EDITABLE (self), 0, priv->current_pos);
       else
         gtk_editable_delete_text (GTK_EDITABLE (self), priv->current_pos, -1);
-
       break;
 
     case GTK_DELETE_DISPLAY_LINES:
@@ -4136,8 +4299,12 @@ gtk_text_backspace (GtkText *self)
               int pos = priv->current_pos;
 
               gtk_editable_insert_text (GTK_EDITABLE (self), normalized_text,
-                                    g_utf8_offset_to_pointer (normalized_text, len - 1) - normalized_text,
-                                    &pos);
+                                        g_utf8_offset_to_pointer (normalized_text, len - 1) - normalized_text,
+                                        &pos);
+              gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (self),
+                                                   GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_INSERT,
+                                                   pos,
+                                                   pos + len);
               gtk_text_set_selection_bounds (self, pos, pos);
             }
 
@@ -4423,6 +4590,9 @@ gtk_text_enter_text (GtkText    *self,
 
   tmp_pos = priv->current_pos;
   gtk_editable_insert_text (GTK_EDITABLE (self), str, strlen (str), &tmp_pos);
+  gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (self),
+                                       GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_INSERT,
+                                       tmp_pos, tmp_pos + g_utf8_strlen (str, -1));
   gtk_text_set_selection_bounds (self, tmp_pos, tmp_pos);
 
   end_change (self);
@@ -4472,6 +4642,8 @@ gtk_text_set_positions (GtkText *self,
           gtk_css_node_set_name (priv->selection_node, g_quark_from_static_string ("selection"));
           gtk_css_node_set_parent (priv->selection_node, widget_node);
           gtk_css_node_set_state (priv->selection_node, gtk_css_node_get_state (widget_node));
+          g_signal_connect (priv->selection_node, "style-changed",
+                            G_CALLBACK (selection_style_changed_cb), self);
           g_object_unref (priv->selection_node);
         }
     }
@@ -4488,6 +4660,10 @@ gtk_text_set_positions (GtkText *self,
     {
       gtk_text_update_clipboard_actions (self);
       gtk_text_recompute (self);
+
+      gtk_text_update_primary_selection (self);
+      gtk_accessible_text_update_caret_position (GTK_ACCESSIBLE_TEXT (self));
+      gtk_accessible_text_update_selection_bound (GTK_ACCESSIBLE_TEXT (self));
     }
 }
 
@@ -4796,7 +4972,7 @@ gtk_text_draw_cursor (GtkText     *self,
       gtk_css_boxes_init_border_box (&boxes, style, 0, 0, width, height);
       gtk_snapshot_push_clip (snapshot, &bounds);
       gtk_css_style_snapshot_background (&boxes, snapshot);
-      gtk_css_style_snapshot_layout (&boxes,snapshot, x, y, layout);
+      gtk_css_style_snapshot_layout (&boxes, snapshot, x, y, layout);
       gtk_snapshot_pop (snapshot);
     }
 
@@ -5379,6 +5555,8 @@ paste_received (GObject      *clipboard,
 
   if (priv->truncate_multiline)
     length = truncate_multiline (text);
+  else
+    length = strlen (text);
 
   begin_change (self);
   if (priv->selection_bound != priv->current_pos)
@@ -5386,6 +5564,9 @@ paste_received (GObject      *clipboard,
 
   pos = priv->current_pos;
   gtk_editable_insert_text (GTK_EDITABLE (self), text, length, &pos);
+  gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (self),
+                                       GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_INSERT,
+                                       pos, pos + length);
   gtk_text_set_selection_bounds (self, pos, pos);
   end_change (self);
 
@@ -5474,7 +5655,7 @@ get_buffer (GtkText *self)
 }
 
 /**
- * gtk_text_get_buffer: (attributes org.gtk.Method.get_property=buffer)
+ * gtk_text_get_buffer:
  * @self: a `GtkText`
  *
  * Get the `GtkEntryBuffer` object which holds the text for
@@ -5491,7 +5672,7 @@ gtk_text_get_buffer (GtkText *self)
 }
 
 /**
- * gtk_text_set_buffer: (attributes org.gtk.Method.set_property=buffer)
+ * gtk_text_set_buffer:
  * @self: a `GtkText`
  * @buffer: a `GtkEntryBuffer`
  *
@@ -5617,8 +5798,14 @@ gtk_text_set_text (GtkText     *self,
   begin_change (self);
   g_object_freeze_notify (G_OBJECT (self));
   gtk_editable_delete_text (GTK_EDITABLE (self), 0, -1);
+  gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (self),
+                                       GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_REMOVE,
+                                       0, G_MAXUINT);
   tmp_pos = 0;
   gtk_editable_insert_text (GTK_EDITABLE (self), text, strlen (text), &tmp_pos);
+  gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (self),
+                                       GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_INSERT,
+                                       tmp_pos, tmp_pos + g_utf8_strlen (text, -1));
   g_object_thaw_notify (G_OBJECT (self));
   end_change (self);
 
@@ -5626,7 +5813,7 @@ gtk_text_set_text (GtkText     *self,
 }
 
 /**
- * gtk_text_set_visibility: (attributes org.gtk.Method.set_property=visibility)
+ * gtk_text_set_visibility:
  * @self: a `GtkText`
  * @visible: %TRUE if the contents of the `GtkText` are displayed
  *   as plaintext
@@ -5672,7 +5859,7 @@ gtk_text_set_visibility (GtkText  *self,
 }
 
 /**
- * gtk_text_get_visibility: (attributes org.gtk.Method.get_property=visibility)
+ * gtk_text_get_visibility:
  * @self: a `GtkText`
  *
  * Retrieves whether the text in @self is visible.
@@ -5690,7 +5877,7 @@ gtk_text_get_visibility (GtkText *self)
 }
 
 /**
- * gtk_text_set_invisible_char: (attributes org.gtk.Method.set_property=invisible-char)
+ * gtk_text_set_invisible_char:
  * @self: a `GtkText`
  * @ch: a Unicode character
  *
@@ -5724,7 +5911,7 @@ gtk_text_set_invisible_char (GtkText  *self,
 }
 
 /**
- * gtk_text_get_invisible_char: (attributes org.gtk.Method.get_property=invisible-char)
+ * gtk_text_get_invisible_char:
  * @self: a `GtkText`
  *
  * Retrieves the character displayed when visibility is set to false.
@@ -5780,7 +5967,7 @@ gtk_text_unset_invisible_char (GtkText *self)
 }
 
 /**
- * gtk_text_set_overwrite_mode: (attributes org.gtk.Method.set_property=overwrite-mode)
+ * gtk_text_set_overwrite_mode:
  * @self: a `GtkText`
  * @overwrite: new value
  *
@@ -5804,7 +5991,7 @@ gtk_text_set_overwrite_mode (GtkText  *self,
 }
 
 /**
- * gtk_text_get_overwrite_mode: (attributes org.gtk.Method.get_property=overwrite-mode)
+ * gtk_text_get_overwrite_mode:
  * @self: a `GtkText`
  *
  * Gets whether text is overwritten when typing in the `GtkText`.
@@ -5825,7 +6012,7 @@ gtk_text_get_overwrite_mode (GtkText *self)
 }
 
 /**
- * gtk_text_set_max_length: (attributes org.gtk.Method.set_property=max-length)
+ * gtk_text_set_max_length:
  * @self: a `GtkText`
  * @length: the maximum length of the `GtkText`, or 0 for no maximum.
  *   (other than the maximum length of entries.) The value passed
@@ -5848,7 +6035,7 @@ gtk_text_set_max_length (GtkText *self,
 }
 
 /**
- * gtk_text_get_max_length: (attributes org.gtk.Method.get_property=max-length)
+ * gtk_text_get_max_length:
  * @self: a `GtkText`
  *
  * Retrieves the maximum allowed length of the text in @self.
@@ -5890,7 +6077,7 @@ gtk_text_get_text_length (GtkText *self)
 }
 
 /**
- * gtk_text_set_activates_default: (attributes org.gtk.Method.set_property=activates-default)
+ * gtk_text_set_activates_default:
  * @self: a `GtkText`
  * @activates: %TRUE to activate window’s default widget on Enter keypress
  *
@@ -5919,7 +6106,7 @@ gtk_text_set_activates_default (GtkText  *self,
 }
 
 /**
- * gtk_text_get_activates_default: (attributes org.gtk.Method.get_property=activates-default)
+ * gtk_text_get_activates_default:
  * @self: a `GtkText`
  *
  * Returns whether pressing Enter will activate
@@ -6417,6 +6604,9 @@ gtk_text_drag_drop (GtkDropTarget *dest,
       drop_position > priv->current_pos)
     {
       gtk_editable_insert_text (GTK_EDITABLE (self), str, length, &drop_position);
+      gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (self),
+                                           GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_INSERT,
+                                           drop_position, drop_position + g_utf8_strlen (str, length));
     }
   else
     {
@@ -6426,6 +6616,9 @@ gtk_text_drag_drop (GtkDropTarget *dest,
       gtk_text_delete_selection (self);
       pos = MIN (priv->selection_bound, priv->current_pos);
       gtk_editable_insert_text (GTK_EDITABLE (self), str, length, &pos);
+      gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (self),
+                                           GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_INSERT,
+                                           pos, pos + g_utf8_strlen (str, length));
       end_change (self);
     }
 
@@ -6724,7 +6917,7 @@ gtk_text_reset_blink_time (GtkText *self)
 }
 
 /**
- * gtk_text_set_placeholder_text: (attributes org.gtk.Method.set_property=placeholder-text)
+ * gtk_text_set_placeholder_text:
  * @self: a `GtkText`
  * @text: (nullable): a string to be displayed when @self
  *   is empty and unfocused
@@ -6765,7 +6958,7 @@ gtk_text_set_placeholder_text (GtkText    *self,
 }
 
 /**
- * gtk_text_get_placeholder_text: (attributes org.gtk.Method.get_property=placeholder-text)
+ * gtk_text_get_placeholder_text:
  * @self: a `GtkText`
  *
  * Retrieves the text that will be displayed when
@@ -6789,7 +6982,7 @@ gtk_text_get_placeholder_text (GtkText *self)
 }
 
 /**
- * gtk_text_set_input_purpose: (attributes org.gtk.Method.set_property=input-purpose)
+ * gtk_text_set_input_purpose:
  * @self: a `GtkText`
  * @purpose: the purpose
  *
@@ -6817,10 +7010,12 @@ gtk_text_set_input_purpose (GtkText         *self,
 }
 
 /**
- * gtk_text_get_input_purpose: (attributes org.gtk.Method.get_property=input-purpose)
+ * gtk_text_get_input_purpose:
  * @self: a `GtkText`
  *
  * Gets the input purpose of the `GtkText`.
+ *
+ * Returns: the input purpose
  */
 GtkInputPurpose
 gtk_text_get_input_purpose (GtkText *self)
@@ -6838,7 +7033,7 @@ gtk_text_get_input_purpose (GtkText *self)
 }
 
 /**
- * gtk_text_set_input_hints: (attributes org.gtk.Method.set_property=input-hints)
+ * gtk_text_set_input_hints:
  * @self: a `GtkText`
  * @hints: the hints
  *
@@ -6866,10 +7061,12 @@ gtk_text_set_input_hints (GtkText       *self,
 }
 
 /**
- * gtk_text_get_input_hints: (attributes org.gtk.Method.get_property=input-hints)
+ * gtk_text_get_input_hints:
  * @self: a `GtkText`
  *
  * Gets the input hints of the `GtkText`.
+ *
+ * Returns: the input hints
  */
 GtkInputHints
 gtk_text_get_input_hints (GtkText *self)
@@ -6887,7 +7084,7 @@ gtk_text_get_input_hints (GtkText *self)
 }
 
 /**
- * gtk_text_set_attributes: (attributes org.gtk.Method.set_property=attributes)
+ * gtk_text_set_attributes:
  * @self: a `GtkText`
  * @attrs: (nullable): a `PangoAttrList`
  *
@@ -6918,7 +7115,7 @@ gtk_text_set_attributes (GtkText       *self,
 }
 
 /**
- * gtk_text_get_attributes: (attributes org.gtk.Method.get_property=attributes)
+ * gtk_text_get_attributes:
  * @self: a `GtkText`
  *
  * Gets the attribute list that was set on the `GtkText`.
@@ -6938,7 +7135,7 @@ gtk_text_get_attributes (GtkText *self)
 }
 
 /**
- * gtk_text_set_tabs: (attributes org.gtk.Method.set_property=tabs)
+ * gtk_text_set_tabs:
  * @self: a `GtkText`
  * @tabs: (nullable): a `PangoTabArray`
  *
@@ -6967,7 +7164,7 @@ gtk_text_set_tabs (GtkText       *self,
 }
 
 /**
- * gtk_text_get_tabs: (attributes org.gtk.Method.get_property=tabs)
+ * gtk_text_get_tabs:
  * @self: a `GtkText`
  *
  * Gets the tabstops that were set on the `GtkText`.
@@ -7001,6 +7198,9 @@ emoji_picked (GtkEmojiChooser *chooser,
 
   pos = priv->current_pos;
   gtk_editable_insert_text (GTK_EDITABLE (self), text, -1, &pos);
+  gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (self),
+                                       GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_INSERT,
+                                       pos, pos + g_utf8_strlen (text, -1));
   gtk_text_set_selection_bounds (self, pos, pos);
   end_change (self);
 }
@@ -7042,7 +7242,7 @@ gtk_text_get_key_controller (GtkText *self)
 }
 
 /**
- * gtk_text_set_extra_menu: (attributes org.gtk.Method.set_property=extra-menu)
+ * gtk_text_set_extra_menu:
  * @self: a `GtkText`
  * @model: (nullable): a `GMenuModel`
  *
@@ -7066,7 +7266,7 @@ gtk_text_set_extra_menu (GtkText    *self,
 }
 
 /**
- * gtk_text_get_extra_menu: (attributes org.gtk.Method.get_property=extra-menu)
+ * gtk_text_get_extra_menu:
  * @self: a `GtkText`
  *
  * Gets the menu model for extra items in the context menu.
@@ -7086,7 +7286,7 @@ gtk_text_get_extra_menu (GtkText *self)
 }
 
 /**
- * gtk_text_set_enable_emoji_completion: (attributes org.gtk.Method.set_property=enable-emoji-completion)
+ * gtk_text_set_enable_emoji_completion:
  * @self: a `GtkText`
  * @enable_emoji_completion: %TRUE to enable Emoji completion
  *
@@ -7118,7 +7318,7 @@ gtk_text_set_enable_emoji_completion (GtkText  *self,
 }
 
 /**
- * gtk_text_get_enable_emoji_completion: (attributes org.gtk.Method.get_property=enable-emoji-completion)
+ * gtk_text_get_enable_emoji_completion:
  * @self: a `GtkText`
  *
  * Returns whether Emoji completion is enabled for this
@@ -7137,7 +7337,7 @@ gtk_text_get_enable_emoji_completion (GtkText *self)
 }
 
 /**
- * gtk_text_set_propagate_text_width: (attributes org.gtk.Method.set_property=propagate-text-width)
+ * gtk_text_set_propagate_text_width:
  * @self: a `GtkText`
  * @propagate_text_width: %TRUE to propagate the text width
  *
@@ -7162,7 +7362,7 @@ gtk_text_set_propagate_text_width (GtkText  *self,
 }
 
 /**
- * gtk_text_get_propagate_text_width: (attributes org.gtk.Method.get_property=propagate-text-width)
+ * gtk_text_get_propagate_text_width:
  * @self: a `GtkText`
  *
  * Returns whether the `GtkText` will grow and shrink
@@ -7181,7 +7381,7 @@ gtk_text_get_propagate_text_width (GtkText *self)
 }
 
 /**
- * gtk_text_set_truncate_multiline: (attributes org.gtk.Method.set_property=truncate-multiline)
+ * gtk_text_set_truncate_multiline:
  * @self: a `GtkText`
  * @truncate_multiline: %TRUE to truncate multi-line text
  *
@@ -7205,7 +7405,7 @@ gtk_text_set_truncate_multiline (GtkText  *self,
 }
 
 /**
- * gtk_text_get_truncate_multiline: (attributes org.gtk.Method.get_property=truncate-multiline)
+ * gtk_text_get_truncate_multiline:
  * @self: a `GtkText`
  *
  * Returns whether the `GtkText` will truncate multi-line text
@@ -7328,6 +7528,9 @@ gtk_text_history_insert_cb (gpointer    funcs_data,
   int location = begin;
 
   gtk_editable_insert_text (GTK_EDITABLE (text), str, len, &location);
+  gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (text),
+                                       GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_INSERT,
+                                       location, location + g_utf8_strlen (str, len));
 }
 
 static void
@@ -7378,3 +7581,185 @@ gtk_text_update_history (GtkText *self)
                                 priv->visible &&
                                 priv->editable);
 }
+
+/* {{{ GtkAccessibleText implementation */
+
+static GBytes *
+gtk_text_accessible_text_get_contents (GtkAccessibleText *self,
+                                       unsigned int       start,
+                                       unsigned int       end)
+{
+  const char *text;
+  int len;
+  char *string;
+  gsize size;
+
+  text = gtk_editable_get_text (GTK_EDITABLE (self));
+  len = g_utf8_strlen (text, -1);
+
+  start = CLAMP (start, 0, len);
+  end = CLAMP (end, 0, len);
+
+  if (end <= start)
+    {
+      string = g_strdup ("");
+      size = 1;
+    }
+  else
+    {
+      const char *p, *q;
+      p = g_utf8_offset_to_pointer (text, start);
+      q = g_utf8_offset_to_pointer (text, end);
+      size = q - p + 1;
+      string = g_strndup (p, q - p);
+    }
+
+  return g_bytes_new_take (string, size);
+}
+
+static GBytes *
+gtk_text_accessible_text_get_contents_at (GtkAccessibleText            *self,
+                                          unsigned int                  offset,
+                                          GtkAccessibleTextGranularity  granularity,
+                                          unsigned int                 *start,
+                                          unsigned int                 *end)
+{
+  PangoLayout *layout = gtk_text_get_layout (GTK_TEXT (self));
+  char *string = gtk_pango_get_string_at (layout, offset, granularity, start, end);
+
+  return g_bytes_new_take (string, strlen (string));
+}
+
+static unsigned int
+gtk_text_accessible_text_get_caret_position (GtkAccessibleText *self)
+{
+  return gtk_editable_get_position (GTK_EDITABLE (self));
+}
+
+static gboolean
+gtk_text_accessible_text_get_selection (GtkAccessibleText       *self,
+                                        gsize                   *n_ranges,
+                                        GtkAccessibleTextRange **ranges)
+{
+  int start, end;
+
+  if (!gtk_editable_get_selection_bounds (GTK_EDITABLE (self), &start, &end))
+    return FALSE;
+
+  *n_ranges = 1;
+  *ranges = g_new (GtkAccessibleTextRange, 1);
+  (*ranges)[0].start = start;
+  (*ranges)[0].length = end - start;
+
+  return TRUE;
+}
+
+static gboolean
+gtk_text_accessible_text_get_attributes (GtkAccessibleText        *self,
+                                         unsigned int              offset,
+                                         gsize                    *n_ranges,
+                                         GtkAccessibleTextRange  **ranges,
+                                         char                   ***attribute_names,
+                                         char                   ***attribute_values)
+{
+  PangoLayout *layout = gtk_text_get_layout (GTK_TEXT (self));
+  unsigned int start, end;
+  char **names, **values;
+
+  gtk_pango_get_run_attributes (layout, offset, &names, &values, &start, &end);
+
+  *n_ranges = g_strv_length (names);
+  *ranges = g_new (GtkAccessibleTextRange, *n_ranges);
+
+  for (unsigned i = 0; i < *n_ranges; i++)
+    {
+      GtkAccessibleTextRange *range = &(*ranges)[i];
+
+      range->start = start;
+      range->length = end - start;
+    }
+
+  *attribute_names = names;
+  *attribute_values = values;
+
+  return TRUE;
+}
+
+static void
+gtk_text_accessible_text_get_default_attributes (GtkAccessibleText   *self,
+                                                 char              ***attribute_names,
+                                                 char              ***attribute_values)
+{
+  PangoLayout *layout = gtk_text_get_layout (GTK_TEXT (self));
+  char **names, **values;
+
+  gtk_pango_get_default_attributes (layout, &names, &values);
+
+  *attribute_names = names;
+  *attribute_values = values;
+}
+
+static gboolean
+gtk_text_accessible_text_get_extents (GtkAccessibleText *self,
+                                      unsigned int       start,
+                                      unsigned int       end,
+                                      graphene_rect_t   *extents)
+{
+  PangoLayout *layout = gtk_text_get_layout (GTK_TEXT (self));
+  const char *text;
+  int lx, ly;
+  int range[2];
+  cairo_region_t *range_clip;
+  cairo_rectangle_int_t clip_rect;
+
+  layout = gtk_text_get_layout (GTK_TEXT (self));
+  text = gtk_entry_buffer_get_text (get_buffer (GTK_TEXT (self)));
+  get_layout_position (GTK_TEXT (self), &lx, &ly);
+
+  range[0] = g_utf8_pointer_to_offset (text, text + start);
+  range[1] = g_utf8_pointer_to_offset (text, text + end);
+
+  range_clip = gdk_pango_layout_get_clip_region (layout, lx, ly, range, 1);
+  cairo_region_get_extents (range_clip, &clip_rect);
+  cairo_region_destroy (range_clip);
+
+  extents->origin.x = clip_rect.x;
+  extents->origin.y = clip_rect.y;
+  extents->size.width = clip_rect.width;
+  extents->size.height = clip_rect.height;
+
+  return TRUE;
+}
+
+static gboolean
+gtk_text_accessible_text_get_offset (GtkAccessibleText      *self,
+                                     const graphene_point_t *point,
+                                     unsigned int           *offset)
+{
+  int lx;
+  int index;
+  const char *text;
+
+  gtk_text_get_layout_offsets (GTK_TEXT (self), &lx, NULL);
+  index = gtk_text_find_position (GTK_TEXT (self), point->x - lx);
+  text = gtk_entry_buffer_get_text (get_buffer (GTK_TEXT (self)));
+
+  *offset = (unsigned int) g_utf8_pointer_to_offset (text, text + index);
+
+  return TRUE;
+}
+
+static void
+gtk_text_accessible_text_init (GtkAccessibleTextInterface *iface)
+{
+  iface->get_contents = gtk_text_accessible_text_get_contents;
+  iface->get_contents_at = gtk_text_accessible_text_get_contents_at;
+  iface->get_caret_position = gtk_text_accessible_text_get_caret_position;
+  iface->get_selection = gtk_text_accessible_text_get_selection;
+  iface->get_attributes = gtk_text_accessible_text_get_attributes;
+  iface->get_default_attributes = gtk_text_accessible_text_get_default_attributes;
+  iface->get_extents = gtk_text_accessible_text_get_extents;
+  iface->get_offset = gtk_text_accessible_text_get_offset;
+}
+
+/* vim:set foldmethod=marker expandtab: */

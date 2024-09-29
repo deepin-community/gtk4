@@ -325,7 +325,7 @@ gtk_sorter_get_keys (GtkSorter *self)
  * update the sort order without a full resorting. Refer to
  * the [enum@Gtk.SorterChange] documentation for details.
  *
- * This function is intended for implementors of `GtkSorter`
+ * This function is intended for implementers of `GtkSorter`
  * subclasses and should not be called from other functions.
  */
 void
@@ -372,7 +372,7 @@ gtk_sorter_changed_with_keys (GtkSorter       *self,
  */
 #ifdef __GI_SCANNER__
 /**
- * gtk_ordering_from_cmpfunc:
+ * gtk_ordering_from_cmpfunc: (skip)
  * @cmpfunc_result: Result of a comparison function
  *
  * Converts the result of a `GCompareFunc` like strcmp() to a

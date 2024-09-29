@@ -69,6 +69,12 @@
  * applications, and GTK provides a [class@Gtk.VolumeButton] subclass that
  * is tailored for this use case.
  *
+ * # Shortcuts and Gestures
+ *
+ * The following signals have default keybindings:
+ *
+ * - [signal@Gtk.ScaleButton::popup]
+ *
  * # CSS nodes
  *
  * ```
@@ -102,7 +108,8 @@ enum
   PROP_SIZE,
   PROP_ADJUSTMENT,
   PROP_ICONS,
-  PROP_ACTIVE
+  PROP_ACTIVE,
+  PROP_HAS_FRAME
 };
 
 typedef struct
@@ -214,7 +221,7 @@ gtk_scale_button_class_init (GtkScaleButtonClass *klass)
   g_object_class_override_property (gobject_class, PROP_ORIENTATION, "orientation");
 
   /**
-   * GtkScaleButton:value: (attributes org.gtk.Property.get=gtk_scale_button_get_value org.gtk.Property.set=gtk_scale_button_set_value)
+   * GtkScaleButton:value:
    *
    * The value of the scale.
    */
@@ -227,7 +234,7 @@ gtk_scale_button_class_init (GtkScaleButtonClass *klass)
 							GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
 
   /**
-   * GtkScaleButton:adjustment: (attributes org.gtk.Property.get=gtk_scale_button_get_adjustment org.gtk.Property.set=gtk_scale_button_set_adjustment)
+   * GtkScaleButton:adjustment:
    *
    * The `GtkAdjustment` that is used as the model.
    */
@@ -238,7 +245,7 @@ gtk_scale_button_class_init (GtkScaleButtonClass *klass)
                                                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
 
   /**
-   * GtkScaleButton:icons: (attributes org.gtk.Property.set=gtk_scale_button_set_icons)
+   * GtkScaleButton:icons:
    *
    * The names of the icons to be used by the scale button.
    *
@@ -264,7 +271,7 @@ gtk_scale_button_class_init (GtkScaleButtonClass *klass)
                                                        GTK_PARAM_READWRITE));
 
   /**
-   * GtkScaleButton:active: (attributes org.gtk.Property.get=gtk_scale_button_get_active)
+   * GtkScaleButton:active:
    *
    * If the scale button should be pressed in.
    *
@@ -275,6 +282,19 @@ gtk_scale_button_class_init (GtkScaleButtonClass *klass)
                                    g_param_spec_boolean ("active", NULL, NULL,
                                                          FALSE,
                                                          GTK_PARAM_READABLE));
+
+  /**
+   * GtkScaleButton:has-frame:
+   *
+   * If the scale button has a frame.
+   *
+   * Since: 4.14
+   */
+  g_object_class_install_property (gobject_class,
+                                   PROP_HAS_FRAME,
+                                   g_param_spec_boolean ("has-frame", NULL, NULL,
+                                                         FALSE,
+                                                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
 
   /**
    * GtkScaleButton::value-changed:
@@ -509,6 +529,9 @@ gtk_scale_button_set_property (GObject       *object,
       gtk_scale_button_set_icons (button,
                                   (const char **)g_value_get_boxed (value));
       break;
+    case PROP_HAS_FRAME:
+      gtk_scale_button_set_has_frame (button, g_value_get_boolean (value));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -540,6 +563,9 @@ gtk_scale_button_get_property (GObject     *object,
       break;
     case PROP_ACTIVE:
       g_value_set_boolean (value, gtk_scale_button_get_active (button));
+      break;
+    case PROP_HAS_FRAME:
+      g_value_set_boolean (value, gtk_scale_button_get_has_frame (button));
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -609,7 +635,7 @@ gtk_scale_button_new (double        min,
 }
 
 /**
- * gtk_scale_button_get_value: (attributes org.gtk.Method.get_property=value)
+ * gtk_scale_button_get_value:
  * @button: a `GtkScaleButton`
  *
  * Gets the current value of the scale button.
@@ -627,7 +653,7 @@ gtk_scale_button_get_value (GtkScaleButton * button)
 }
 
 /**
- * gtk_scale_button_set_value: (attributes org.gtk.Method.set_property=value)
+ * gtk_scale_button_set_value:
  * @button: a `GtkScaleButton`
  * @value: new value of the scale button
  *
@@ -652,7 +678,7 @@ gtk_scale_button_set_value (GtkScaleButton *button,
 }
 
 /**
- * gtk_scale_button_set_icons: (attributes org.gtk.Method.set_property=icons)
+ * gtk_scale_button_set_icons:
  * @button: a `GtkScaleButton`
  * @icons: (array zero-terminated=1): a %NULL-terminated array of icon names
  *
@@ -676,7 +702,7 @@ gtk_scale_button_set_icons (GtkScaleButton  *button,
 }
 
 /**
- * gtk_scale_button_get_adjustment: (attributes org.gtk.Method.get_property=adjustment)
+ * gtk_scale_button_get_adjustment:
  * @button: a `GtkScaleButton`
  *
  * Gets the `GtkAdjustment` associated with the `GtkScaleButton`’s scale.
@@ -696,7 +722,7 @@ gtk_scale_button_get_adjustment	(GtkScaleButton *button)
 }
 
 /**
- * gtk_scale_button_set_adjustment: (attributes org.gtk.Method.set_property=adjustment)
+ * gtk_scale_button_set_adjustment:
  * @button: a `GtkScaleButton`
  * @adjustment: a `GtkAdjustment`
  *
@@ -795,7 +821,7 @@ gtk_scale_button_get_popup (GtkScaleButton *button)
 }
 
 /**
- * gtk_scale_button_get_active: (attributes org.gtk.Method.get_property=active)
+ * gtk_scale_button_get_active:
  * @button: a `GtkScaleButton`
  *
  * Queries a `GtkScaleButton` and returns its current state.
@@ -815,6 +841,50 @@ gtk_scale_button_get_active (GtkScaleButton *button)
   g_return_val_if_fail (GTK_IS_SCALE_BUTTON (button), FALSE);
 
   return gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (priv->button));
+}
+
+/**
+ * gtk_scale_button_get_has_frame:
+ * @button: a `GtkScaleButton`
+ *
+ * Returns whether the button has a frame.
+ *
+ * Returns: %TRUE if the button has a frame
+ *
+ * Since: 4.14
+ */
+gboolean
+gtk_scale_button_get_has_frame (GtkScaleButton *button)
+{
+  GtkScaleButtonPrivate *priv = gtk_scale_button_get_instance_private (button);
+
+  g_return_val_if_fail (GTK_IS_SCALE_BUTTON (button), TRUE);
+
+  return gtk_button_get_has_frame (GTK_BUTTON (priv->button));
+}
+
+/**
+ * gtk_scale_button_set_has_frame:
+ * @button: a `GtkScaleButton`
+ * @has_frame: whether the button should have a visible frame
+ *
+ * Sets the style of the button.
+ *
+ * Since: 4.14
+ */
+void
+gtk_scale_button_set_has_frame (GtkScaleButton *button,
+                                gboolean        has_frame)
+{
+  GtkScaleButtonPrivate *priv = gtk_scale_button_get_instance_private (button);
+
+  g_return_if_fail (GTK_IS_SCALE_BUTTON (button));
+
+  if (gtk_button_get_has_frame (GTK_BUTTON (priv->button)) == has_frame)
+    return;
+
+  gtk_button_set_has_frame (GTK_BUTTON (priv->button), has_frame);
+  g_object_notify (G_OBJECT (button), "has-frame");
 }
 
 static void

@@ -465,6 +465,9 @@ gtk_list_factory_widget_click_gesture_released (GtkGestureClick      *gesture,
       state = gdk_event_get_modifier_state (event);
       extend = (state & GDK_SHIFT_MASK) != 0;
       modify = (state & GDK_CONTROL_MASK) != 0;
+#ifdef __APPLE__
+      modify = modify | ((state & GDK_META_MASK) != 0);
+#endif
 
       gtk_widget_activate_action (GTK_WIDGET (self),
                                   "list.select-item",
@@ -586,7 +589,7 @@ gtk_list_factory_widget_set_activatable (GtkListFactoryWidget *self,
   else
     gtk_widget_remove_css_class (GTK_WIDGET (self), "activatable");
 
-  g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_SINGLE_CLICK_ACTIVATE]);
+  g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_ACTIVATABLE]);
 }
 
 gboolean
@@ -608,7 +611,7 @@ gtk_list_factory_widget_set_selectable (GtkListFactoryWidget *self,
 
   priv->selectable = selectable;
 
-  g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_SINGLE_CLICK_ACTIVATE]);
+  g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_SELECTABLE]);
 }
 
 gboolean

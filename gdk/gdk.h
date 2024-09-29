@@ -29,7 +29,9 @@
 #include <gdk/gdkapplaunchcontext.h>
 #include <gdk/gdkcairo.h>
 #include <gdk/gdkcairocontext.h>
+#include <gdk/gdkcicpparams.h>
 #include <gdk/gdkclipboard.h>
+#include <gdk/gdkcolorstate.h>
 #include <gdk/gdkconfig.h>
 #include <gdk/gdkcontentdeserializer.h>
 #include <gdk/gdkcontentformats.h>
@@ -42,6 +44,9 @@
 #include <gdk/gdkdevicetool.h>
 #include <gdk/gdkdisplay.h>
 #include <gdk/gdkdisplaymanager.h>
+#include <gdk/gdkdmabufformats.h>
+#include <gdk/gdkdmabuftexture.h>
+#include <gdk/gdkdmabuftexturebuilder.h>
 #include <gdk/gdkdrag.h>
 #include <gdk/gdkdragsurface.h>
 #include <gdk/gdkdragsurfacesize.h>
@@ -58,6 +63,7 @@
 #include <gdk/gdkkeys.h>
 #include <gdk/gdkkeysyms.h>
 #include <gdk/gdkmemorytexture.h>
+#include <gdk/gdkmemorytexturebuilder.h>
 #include <gdk/gdkmonitor.h>
 #include <gdk/gdkpaintable.h>
 #include <gdk/gdkpango.h>

@@ -808,6 +808,11 @@ static const GtkAccessibleCollect collect_props[] = {
     .ctype = GTK_ACCESSIBLE_COLLECT_STRING,
     .name = "valuetext"
   },
+  [GTK_ACCESSIBLE_PROPERTY_HELP_TEXT] = {
+    .value = GTK_ACCESSIBLE_PROPERTY_HELP_TEXT,
+    .ctype = GTK_ACCESSIBLE_COLLECT_STRING,
+    .name = "helptext"
+  },
 };
 
 /* § 6.6.4 Relationship Attributes */
@@ -854,7 +859,7 @@ static const GtkAccessibleCollect collect_rels[] = {
   },
   [GTK_ACCESSIBLE_RELATION_ERROR_MESSAGE] = {
     .value = GTK_ACCESSIBLE_RELATION_ERROR_MESSAGE,
-    .ctype = GTK_ACCESSIBLE_COLLECT_REFERENCE,
+    .ctype = GTK_ACCESSIBLE_COLLECT_REFERENCE_LIST,
     .name = "errormessage"
   },
   [GTK_ACCESSIBLE_RELATION_FLOW_TO] = {
@@ -1332,7 +1337,18 @@ gtk_accessible_value_collect_value (const GtkAccessibleCollect  *cstate,
         GtkAccessibleValueRefListCtor ctor =
           (GtkAccessibleValueRefListCtor) cstate->ctor;
 
-        GList *value = g_value_get_pointer (value_);
+        GList *value;
+
+        if (g_type_is_a (G_VALUE_TYPE(value_), GTK_ACCESSIBLE_LIST))
+          {
+            GtkAccessibleList *boxed = g_value_get_boxed (value_);
+
+            value = gtk_accessible_list_get_objects (boxed);
+          }
+        else 
+          {
+            value = g_value_get_pointer (value_);
+          }
 
         if (ctor == NULL)
           {
@@ -1651,7 +1667,7 @@ gtk_accessible_value_get_default_for_property (GtkAccessibleProperty property)
 {
   const GtkAccessibleCollect *cstate = &collect_props[property];
 
-  g_return_val_if_fail (property <= GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT, NULL);
+  g_return_val_if_fail (property <= GTK_ACCESSIBLE_PROPERTY_HELP_TEXT, NULL);
 
   switch (cstate->value)
     {
@@ -1681,6 +1697,7 @@ gtk_accessible_value_get_default_for_property (GtkAccessibleProperty property)
     case GTK_ACCESSIBLE_PROPERTY_PLACEHOLDER:
     case GTK_ACCESSIBLE_PROPERTY_ROLE_DESCRIPTION:
     case GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT:
+    case GTK_ACCESSIBLE_PROPERTY_HELP_TEXT:
       return gtk_undefined_accessible_value_new ();
 
     /* Token properties */
@@ -1721,7 +1738,7 @@ gtk_accessible_value_collect_for_property (GtkAccessibleProperty   property,
 {
   const GtkAccessibleCollect *cstate = &collect_props[property];
 
-  g_return_val_if_fail (property <= GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT, NULL);
+  g_return_val_if_fail (property <= GTK_ACCESSIBLE_PROPERTY_HELP_TEXT, NULL);
 
   return gtk_accessible_value_collect_valist (cstate, error, args);
 }
@@ -1749,7 +1766,7 @@ gtk_accessible_value_collect_for_property_value (GtkAccessibleProperty   propert
 {
   const GtkAccessibleCollect *cstate = &collect_props[property];
 
-  g_return_val_if_fail (property <= GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT, NULL);
+  g_return_val_if_fail (property <= GTK_ACCESSIBLE_PROPERTY_HELP_TEXT, NULL);
 
   return gtk_accessible_value_collect_value (cstate, value, error);
 }
@@ -1762,7 +1779,7 @@ gtk_accessible_value_parse_for_property (GtkAccessibleProperty   property,
 {
   const GtkAccessibleCollect *cstate = &collect_props[property];
 
-  g_return_val_if_fail (property <= GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT, NULL);
+  g_return_val_if_fail (property <= GTK_ACCESSIBLE_PROPERTY_HELP_TEXT, NULL);
 
   return gtk_accessible_value_parse (cstate, str, len, error);
 }
@@ -1783,7 +1800,7 @@ gtk_accessible_property_init_value (GtkAccessibleProperty  property,
 {
   const GtkAccessibleCollect *cstate = &collect_props[property];
 
-  g_return_if_fail (property <= GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT);
+  g_return_if_fail (property <= GTK_ACCESSIBLE_PROPERTY_HELP_TEXT);
 
   gtk_accessible_attribute_init_value (cstate, value);
 }

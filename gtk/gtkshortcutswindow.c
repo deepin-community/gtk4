@@ -56,9 +56,14 @@
  * showing information that is not relevant in the current application context.
  *
  * The recommended way to construct a `GtkShortcutsWindow` is with
- * [class@Gtk.Builder], by populating a `GtkShortcutsWindow` with one or
- * more `GtkShortcutsSection` objects, which contain `GtkShortcutsGroups`
- * that in turn contain objects of class `GtkShortcutsShortcut`.
+ * [class@Gtk.Builder], by using the `<child>` tag to populate a
+ * `GtkShortcutsWindow` with one or more [class@Gtk.ShortcutsSection] objects,
+ * which contain one or more [class@Gtk.ShortcutsGroup] instances, which, in turn,
+ * contain [class@Gtk.ShortcutsShortcut] instances.
+ *
+ * If you need to add a section programmatically, use [method@Gtk.ShortcutsWindow.add_section]
+ * instead of [method@Gtk.Window.set_child], as the shortcuts window manages
+ * its children directly.
  *
  * # A simple example:
  *
@@ -88,7 +93,14 @@
  *
  * The .ui file for this example can be found [here](https://gitlab.gnome.org/GNOME/gtk/tree/main/demos/gtk-demo/shortcuts-builder.ui).
  *
- * ## CSS nodes
+ * # Shortcuts and Gestures
+ *
+ * The following signals have default keybindings:
+ *
+ * - [signal@Gtk.ShortcutsWindow::close]
+ * - [signal@Gtk.ShortcutsWindow::search]
+ *
+ * # CSS nodes
  *
  * `GtkShortcutsWindow` has a single CSS node with the name `window` and style
  * class `.shortcuts`.
@@ -333,10 +345,29 @@ section_notify_cb (GObject    *section,
     }
 }
 
-static void
+/**
+ * gtk_shortcuts_window_add_section:
+ * @self: a `GtkShortcutsWindow`
+ * @section: the `GtkShortcutsSection` to add
+ *
+ * Adds a section to the shortcuts window.
+ *
+ * This is the programmatic equivalent to using [class@Gtk.Builder] and a
+ * `<child>` tag to add the child.
+ * 
+ * Using [method@Gtk.Window.set_child] is not appropriate as the shortcuts
+ * window manages its children internally.
+ *
+ * Since: 4.14
+ */
+void
 gtk_shortcuts_window_add_section (GtkShortcutsWindow  *self,
                                   GtkShortcutsSection *section)
 {
+  g_return_if_fail (GTK_IS_SHORTCUTS_WINDOW (self));
+  g_return_if_fail (GTK_IS_SHORTCUTS_SECTION (section));
+  g_return_if_fail (gtk_widget_get_parent (GTK_WIDGET (section)) == NULL);
+
   GtkListBoxRow *row;
   char *title;
   char *name;
@@ -783,7 +814,7 @@ gtk_shortcuts_window_class_init (GtkShortcutsWindowClass *klass)
    *
    * This is a [keybinding signal](class.SignalAction.html).
    *
-   * The default binding for this signal is the Escape key.
+   * The default binding for this signal is the <kbd>Escape</kbd> key.
    */
   signals[CLOSE] = g_signal_new (I_("close"),
                                  G_TYPE_FROM_CLASS (klass),
@@ -800,7 +831,7 @@ gtk_shortcuts_window_class_init (GtkShortcutsWindowClass *klass)
    *
    * This is a [keybinding signal](class.SignalAction.html).
    *
-   * The default binding for this signal is Control-F.
+   * The default binding for this signal is <kbd>Control</kbd>+<kbd>F</kbd>.
    */
   signals[SEARCH] = g_signal_new (I_("search"),
                                  G_TYPE_FROM_CLASS (klass),
@@ -814,10 +845,18 @@ gtk_shortcuts_window_class_init (GtkShortcutsWindowClass *klass)
                                        GDK_KEY_Escape, 0,
                                        "close",
                                        NULL);
+
+#ifdef __APPLE__
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_f, GDK_META_MASK,
+                                       "search",
+                                       NULL);
+#else
   gtk_widget_class_add_binding_signal (widget_class,
                                        GDK_KEY_f, GDK_CONTROL_MASK,
                                        "search",
                                        NULL);
+#endif
 
   g_type_ensure (GTK_TYPE_SHORTCUTS_GROUP);
   g_type_ensure (GTK_TYPE_SHORTCUTS_SHORTCUT);
@@ -920,7 +959,8 @@ gtk_shortcuts_window_init (GtkShortcutsWindow *self)
   g_object_set (self->search_entry,
                 /* Translators: This is placeholder text for the search entry in the shortcuts window */
                 "placeholder-text", _("Search Shortcuts"),
-                "width-chars", 40,
+                "width-chars", 31,
+                "max-width-chars", 40,
                 NULL);
 
   gtk_accessible_update_property (GTK_ACCESSIBLE (self->search_entry),

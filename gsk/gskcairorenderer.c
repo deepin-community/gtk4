@@ -25,14 +25,14 @@
 #include "gskdebugprivate.h"
 #include "gskrendererprivate.h"
 #include "gskrendernodeprivate.h"
+#include "gdk/gdkcolorstateprivate.h"
+#include "gdk/gdkdrawcontextprivate.h"
 #include "gdk/gdktextureprivate.h"
 
-#ifdef G_ENABLE_DEBUG
 typedef struct {
   GQuark cpu_time;
   GQuark gpu_time;
 } ProfileTimers;
-#endif
 
 struct _GskCairoRenderer
 {
@@ -40,9 +40,7 @@ struct _GskCairoRenderer
 
   GdkCairoContext *cairo_context;
 
-#ifdef G_ENABLE_DEBUG
   ProfileTimers profile_timers;
-#endif
 };
 
 struct _GskCairoRendererClass
@@ -54,6 +52,7 @@ G_DEFINE_TYPE (GskCairoRenderer, gsk_cairo_renderer, GSK_TYPE_RENDERER)
 
 static gboolean
 gsk_cairo_renderer_realize (GskRenderer  *renderer,
+                            GdkDisplay   *display,
                             GdkSurface   *surface,
                             GError      **error)
 {
@@ -76,27 +75,22 @@ gsk_cairo_renderer_unrealize (GskRenderer *renderer)
 static void
 gsk_cairo_renderer_do_render (GskRenderer   *renderer,
                               cairo_t       *cr,
+                              GdkColorState *ccs,
                               GskRenderNode *root)
 {
-#ifdef G_ENABLE_DEBUG
   GskCairoRenderer *self = GSK_CAIRO_RENDERER (renderer);
   GskProfiler *profiler;
   gint64 cpu_time;
-#endif
 
-#ifdef G_ENABLE_DEBUG
   profiler = gsk_renderer_get_profiler (renderer);
   gsk_profiler_timer_begin (profiler, self->profile_timers.cpu_time);
-#endif
 
-  gsk_render_node_draw (root, cr);
+  gsk_render_node_draw_with_color_state (root, cr, ccs);
 
-#ifdef G_ENABLE_DEBUG
   cpu_time = gsk_profiler_timer_end (profiler, self->profile_timers.cpu_time);
   gsk_profiler_timer_set (profiler, self->profile_timers.cpu_time, cpu_time);
 
   gsk_profiler_push_samples (profiler);
-#endif
 }
 
 static GdkTexture *
@@ -149,7 +143,7 @@ gsk_cairo_renderer_render_texture (GskRenderer           *renderer,
 
   cairo_translate (cr, - viewport->origin.x, - viewport->origin.y);
 
-  gsk_cairo_renderer_do_render (renderer, cr, root);
+  gsk_cairo_renderer_do_render (renderer, cr, GDK_COLOR_STATE_SRGB, root);
 
   cairo_destroy (cr);
 
@@ -165,15 +159,22 @@ gsk_cairo_renderer_render (GskRenderer          *renderer,
                            const cairo_region_t *region)
 {
   GskCairoRenderer *self = GSK_CAIRO_RENDERER (renderer);
+  graphene_rect_t opaque_tmp;
+  const graphene_rect_t *opaque;
   cairo_t *cr;
 
-  gdk_draw_context_begin_frame (GDK_DRAW_CONTEXT (self->cairo_context),
-                                region);
+  if (gsk_render_node_get_opaque_rect (root, &opaque_tmp))
+    opaque = &opaque_tmp;
+  else
+    opaque = NULL;
+  gdk_draw_context_begin_frame_full (GDK_DRAW_CONTEXT (self->cairo_context),
+                                     GDK_MEMORY_U8,
+                                     region,
+                                     opaque);
   cr = gdk_cairo_context_cairo_create (self->cairo_context);
 
   g_return_if_fail (cr != NULL);
 
-#ifdef G_ENABLE_DEBUG
   if (GSK_RENDERER_DEBUG_CHECK (renderer, GEOMETRY))
     {
       GdkSurface *surface = gsk_renderer_get_surface (renderer);
@@ -187,13 +188,15 @@ gsk_cairo_renderer_render (GskRenderer          *renderer,
       cairo_stroke (cr);
       cairo_restore (cr);
     }
-#endif
 
-  gsk_cairo_renderer_do_render (renderer, cr, root);
+  gsk_cairo_renderer_do_render (renderer,
+                                cr,
+                                gdk_draw_context_get_color_state (GDK_DRAW_CONTEXT (self->cairo_context)),
+                                root);
 
   cairo_destroy (cr);
 
-  gdk_draw_context_end_frame (GDK_DRAW_CONTEXT (self->cairo_context));
+  gdk_draw_context_end_frame_full (GDK_DRAW_CONTEXT (self->cairo_context));
 }
 
 static void
@@ -210,11 +213,9 @@ gsk_cairo_renderer_class_init (GskCairoRendererClass *klass)
 static void
 gsk_cairo_renderer_init (GskCairoRenderer *self)
 {
-#ifdef G_ENABLE_DEBUG
   GskProfiler *profiler = gsk_renderer_get_profiler (GSK_RENDERER (self));
 
   self->profile_timers.cpu_time = gsk_profiler_add_timer (profiler, "cpu-time", "CPU time", FALSE, TRUE);
-#endif
 }
 
 /**

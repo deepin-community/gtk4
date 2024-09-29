@@ -2,48 +2,51 @@ Source: gtk4
 Section: libs
 Priority: optional
 Maintainer: Debian GNOME Maintainers <pkg-gnome-maintainers@lists.alioth.debian.org>
-Uploaders: Simon McVittie <smcv@debian.org>, Amin Bandali <bandali@ubuntu.com>, Jeremy Bícha <jbicha@ubuntu.com>, Marco Trevisan (Treviño) <marco@ubuntu.com>
+Uploaders: Simon McVittie <smcv@debian.org>, Amin Bandali <bandali@ubuntu.com>, Jeremy Bícha <jbicha@ubuntu.com>
 Build-Depends: adwaita-icon-theme <!nocheck>,
                at-spi2-core <!nocheck>,
                dbus-daemon <!nocheck>,
                debhelper-compat (= 13),
                dh-exec,
+               dh-sequence-gir,
+               dh-sequence-gnome,
                fonts-cantarell <!nocheck>,
                fonts-noto-core <!nocheck>,
-               gnome-pkg-tools,
+               gir1.2-cairo-1.0-dev,
+               gir1.2-gio-2.0-dev,
+               gir1.2-gdkpixbuf-2.0-dev,
+               gir1.2-graphene-1.0-dev,
+               gir1.2-pango-1.0-dev,
+               gir1.2-pangocairo-1.0-dev,
+               gir1.2-xlib-2.0-dev,
+               glslc,
                gobject-introspection (>= 1.76.0),
+               gobject-introspection (>= 1.78.1-9~) <cross>,
                gsettings-desktop-schemas <!nocheck>,
                iso-codes <!nocheck>,
-               libavcodec-dev [amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x],
-               libavdevice-dev [amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x],
-               libavfilter-dev [amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x],
-               libavformat-dev [amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x],
-               libavutil-dev [amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x],
-               libcairo2-dev,
-               libcolord-dev,
+               libcairo2-dev (>= 1.18.0),
+               libcolord-dev <!pkg.gtk4.nocolord>,
                libcloudproviders-dev (>= 0.3.1),
-               libcups2-dev,
+               libcpdb-dev (>= 2.0~b5),
+               libcpdb-frontend-dev (>= 2.0~b5),
                libegl1-mesa-dev [linux-any],
                libepoxy-dev,
                libfontconfig-dev,
                libfribidi-dev,
                libgdk-pixbuf-2.0-dev,
-               libgirepository1.0-dev (>= 1.72.0),
                libglib2.0-dev (>= 2.76.0),
                libgraphene-1.0-dev,
                libgstreamer1.0-dev,
                libgstreamer-plugins-base1.0-dev,
-               libharfbuzz-dev (>= 8.0.1), 
+               libharfbuzz-dev,
                libjpeg-dev,
                libjson-glib-dev:native,
-               libpango1.0-dev (>= 1.50.0),
+               libpango1.0-dev (>= 1.52.0),
                libpng-dev,
                libpolkit-gobject-1-dev [linux-any],
-               librsvg2-common [amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x powerpc ppc64 riscv64 sparc64 x32] <!nocheck>,
-               librsvg2-dev (>= 2.52.0) [amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x powerpc ppc64 riscv64 sparc64 x32],
-               libswresample-dev [amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x],
-               libswscale-dev [amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x],
-               libsysprof-capture-4-dev (>= 3.40.1) [linux-any],
+               librsvg2-common [amd64 arm64 armel armhf i386 loong64 mips64el ppc64el s390x powerpc ppc64 riscv64 sparc64 x32] <!nocheck>,
+               librsvg2-dev (>= 2.52.0) [amd64 arm64 armel armhf i386 loong64 mips64el ppc64el s390x powerpc ppc64 riscv64 sparc64 x32],
+               libsysprof-capture-4-dev (>= 3.40.1) [amd64 arm64 armel armhf i386 mips64el ppc64el riscv64 s390x hppa loong64 powerpc ppc64 sh4],
                libtiff-dev,
                libvulkan-dev [linux-any],
                libwayland-dev (>= 1.21.0) [linux-any],
@@ -61,11 +64,12 @@ Build-Depends: adwaita-icon-theme <!nocheck>,
                libxrandr-dev,
                locales <!nocheck> | locales-all <!nocheck>,
                meson (>= 0.63),
-               pkg-config,
+               pkgconf,
+               pkgconf:native,
                python3-docutils <!nodoc>,
-               python3-gi (>= 3.40),
+               python3-gi (>= 3.40) <!nocheck>,
                sassc,
-               wayland-protocols (>= 1.32) [linux-any],
+               wayland-protocols (>= 1.36) [linux-any],
                weston [linux-any] <!nocheck>,
                xauth <!nocheck>,
                xvfb <!nocheck>,
@@ -73,9 +77,8 @@ Build-Depends-Indep: gi-docgen <!nodoc>,
                      libcairo2-doc <!nodoc>,
                      libglib2.0-doc <!nodoc>,
                      libpango1.0-doc <!nodoc>,
-                     pandoc,
 Rules-Requires-Root: no
-Standards-Version: 4.6.2
+Standards-Version: 4.7.0
 Vcs-Browser: https://salsa.debian.org/gnome-team/gtk4
 Vcs-Git: https://salsa.debian.org/gnome-team/gtk4.git
 Homepage: https://www.gtk.org/
@@ -88,9 +91,11 @@ Depends: adwaita-icon-theme,
          shared-mime-info,
          ${misc:Depends},
          ${shlibs:Depends},
+         libgles2,
          libgtk-4-common (>= ${source:Version})
-Provides: gtk4-binver-4.0.0
+Provides: ${gtk:Provides}
 Recommends: libgtk-4-bin,
+            cpdb-backend-cups (>= 2.0~b5),
             iso-codes,
             librsvg2-common (>= 2.52.0),
             libgtk-4-media-gstreamer,
@@ -113,7 +118,7 @@ Section: debian-installer
 Architecture: any
 Depends: ${misc:Depends},
          ${shlibs:Depends}
-Provides: gtk4-binver-4.0.0
+Provides: ${gtk:Provides}
 Description: GTK graphical user interface library - minimal runtime
  This is a udeb, or a microdeb, for the debian-installer.
  .
@@ -143,7 +148,7 @@ Package: libgtk-4-bin
 Section: misc
 Architecture: any
 Multi-Arch: foreign
-Depends: gtk-update-icon-cache,
+Depends: gtk-update-icon-cache (>= ${binary:Version}),
          ${misc:Depends},
          ${shlibs:Depends},
          libgtk-4-common (>= ${source:Version}),
@@ -164,15 +169,15 @@ Section: libdevel
 Architecture: any
 Multi-Arch: same
 Depends: gir1.2-gtk-4.0 (= ${binary:Version}),
-         libcairo2-dev (>= 1.14.0),
+         libcairo2-dev (>= 1.18.0),
          libegl1-mesa-dev [linux-any],
          libepoxy-dev (>= 1.0),
          libfontconfig-dev,
          libgdk-pixbuf-2.0-dev (>= 2.30.0),
          libglib2.0-dev (>= 2.76.0),
          libgraphene-1.0-dev (>= 1.9.1),
-         libpango1.0-dev (>= 1.50.0),
-         libwayland-dev (>= 1.16.91) [linux-any],
+         libpango1.0-dev (>= 1.52.0),
+         libwayland-dev (>= 1.21.0) [linux-any],
          libx11-dev,
          libxcomposite-dev,
          libxcursor-dev,
@@ -184,14 +189,16 @@ Depends: gir1.2-gtk-4.0 (= ${binary:Version}),
          libxkbcommon-dev,
          libxrandr-dev,
          libvulkan-dev [linux-any],
-         pkg-config,
-         wayland-protocols (>= 1.32) [linux-any],
+         pkgconf,
+         wayland-protocols (>= 1.36) [linux-any],
+         ${gir:Depends},
          ${misc:Depends},
          ${shlibs:Depends},
          libgtk-4-common,
          libgtk-4-1 (= ${binary:Version})
 Suggests: libgtk-4-doc,
           gtk-4-examples
+Provides: ${gir:Provides}
 Description: development files for the GTK library
  GTK is a multi-platform toolkit for creating graphical user
  interfaces. Offering a complete set of widgets, GTK is suitable
@@ -233,23 +240,6 @@ Description: GStreamer media backend for the GTK graphical user interface librar
  .
  This package contains the media module that uses GStreamer as backend.
 
-Package: libgtk-4-media-ffmpeg
-Build-Profiles: <pkg.gtk4.ffmpeg>
-Section: x11
-Architecture: amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x
-Multi-Arch: foreign
-Depends: ${misc:Depends},
-         ${shlibs:Depends},
-Description: FFmpeg media backend for the GTK graphical user interface library
- GTK is a multi-platform toolkit for creating graphical user
- interfaces. Offering a complete set of widgets, GTK is suitable
- for projects ranging from small one-off tools to complete application
- suites.
- .
- This package contains the media module that uses FFmpeg as backend.
- This module is considered incomplete and experimental, and using the
- libgtk-4-media-gstreamer module instead is recommended.
-
 Package: gtk-4-examples
 Build-Profiles: <!noinsttest>
 Section: x11
@@ -258,7 +248,7 @@ Depends: ${misc:Depends},
          ${shlibs:Depends},
          libgtk-4-1 (= ${binary:Version})
 Recommends: fonts-cantarell,
-            librsvg2-common (>= 2.52.0) [amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x powerpc ppc64 riscv64 sparc64 x32],
+            librsvg2-common (>= 2.52.0) [amd64 arm64 armel armhf i386 loong64 mips64el ppc64el s390x powerpc ppc64 riscv64 sparc64 x32],
 Description: example files for GTK 4
  GTK is a multi-platform toolkit for creating graphical user
  interfaces. Offering a complete set of widgets, GTK is suitable
@@ -273,7 +263,7 @@ Build-Profiles: <!noinsttest>
 Section: x11
 Architecture: any
 Depends: iso-codes,
-         librsvg2-common (>= 2.52.0) [amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x powerpc ppc64 riscv64 sparc64 x32],
+         librsvg2-common (>= 2.52.0) [amd64 arm64 armel armhf i386 loong64 mips64el ppc64el s390x powerpc ppc64 riscv64 sparc64 x32],
          ${misc:Depends},
          ${shlibs:Depends},
          libgtk-4-1 (= ${binary:Version}),
@@ -296,10 +286,7 @@ Depends: ${gir:Depends},
          ${misc:Depends},
          ${shlibs:Depends},
          libgtk-4-common
-Provides: gir1.2-gdk-4.0 (= ${binary:Version}),
-          gir1.2-gdkwayland-4.0 (= ${binary:Version}) [linux-any],
-          gir1.2-gdkx11-4.0 (= ${binary:Version}),
-          gir1.2-gsk-4.0 (= ${binary:Version})
+Provides: ${gir:Provides},
 Description: GTK graphical user interface library -- gir bindings
  GTK is a multi-platform toolkit for creating graphical user
  interfaces. Offering a complete set of widgets, GTK is suitable
@@ -309,20 +296,18 @@ Description: GTK graphical user interface library -- gir bindings
  This package can be used by other packages using the GIRepository format to
  generate dynamic bindings.
 
-#Package: gtk-update-icon-cache
-#Section: misc
-#Architecture: any
-#Multi-Arch: foreign
-#Depends: ${misc:Depends},
-#         ${shlibs:Depends}
-#Breaks: libgtk2.0-bin (<< 2.24.30-2),
-#        libgtk-3-bin (<< 3.20.6-1)
-#Replaces: libgtk2.0-bin (<< 2.24.30-2),
-#          libgtk-3-bin (<< 3.20.6-1)
-#Description: icon theme caching utility
-# gtk-update-icon-cache creates mmap()able cache files for icon themes.
-# .
-# GTK can use the cache files created by gtk-update-icon-cache to avoid a lot
-# of system call and disk seek overhead when the application starts. Since the
-# format of the cache files allows them to be mmap()ed shared between multiple
-# applications, the overall memory consumption is reduced as well.
+Package: gtk-update-icon-cache
+Section: misc
+Architecture: any
+Multi-Arch: foreign
+Depends: ${misc:Depends},
+         ${shlibs:Depends}
+Breaks: libgtk-4-bin (<< 4.15)
+Replaces: libgtk-4-bin (<< 4.15)
+Description: icon theme caching utility
+ gtk-update-icon-cache creates mmap()able cache files for icon themes.
+ .
+ GTK can use the cache files created by gtk-update-icon-cache to avoid a lot
+ of system call and disk seek overhead when the application starts. Since the
+ format of the cache files allows them to be mmap()ed shared between multiple
+ applications, the overall memory consumption is reduced as well.

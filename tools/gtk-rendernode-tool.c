@@ -38,6 +38,9 @@ usage (void)
              "Perform various tasks on GTK render nodes.\n"
              "\n"
              "Commands:\n"
+             "  benchmark    Benchmark rendering of a node\n"
+             "  compare      Compare nodes or images\n"
+             "  extract      Extract data urls\n"
              "  info         Provide information about the node\n"
              "  show         Show the node\n"
              "  render       Take a screenshot of the node\n"
@@ -113,6 +116,12 @@ main (int argc, const char *argv[])
     do_render (&argc, &argv);
   else if (strcmp (argv[0], "info") == 0)
     do_info (&argc, &argv);
+  else if (strcmp (argv[0], "benchmark") == 0)
+    do_benchmark (&argc, &argv);
+  else if (strcmp (argv[0], "compare") == 0)
+    do_compare (&argc, &argv);
+  else if (strcmp (argv[0], "extract") == 0)
+    do_extract (&argc, &argv);
   else
     usage ();
 

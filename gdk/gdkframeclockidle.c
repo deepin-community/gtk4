@@ -548,7 +548,7 @@ gdk_frame_clock_paint_idle (void *data)
               priv->smoothed_frame_time_period = frame_interval;
               priv->smoothed_frame_time_reported = priv->smoothed_frame_time_base;
 
-              _gdk_frame_clock_begin_frame (clock);
+              _gdk_frame_clock_begin_frame (clock, priv->frame_time);
               /* Note "current" is different now so timings != prev_timings */
               timings = gdk_frame_clock_get_current_timings (clock);
 
@@ -585,14 +585,15 @@ gdk_frame_clock_paint_idle (void *data)
           if (!gdk_frame_clock_idle_is_frozen (clock_idle))
             {
 	      int iter;
-#ifdef G_ENABLE_DEBUG
               if (GDK_DEBUG_CHECK (FRAMES))
                 {
                   if (priv->phase != GDK_FRAME_CLOCK_PHASE_LAYOUT &&
                       (priv->requested & GDK_FRAME_CLOCK_PHASE_LAYOUT))
-                    timings->layout_start_time = g_get_monotonic_time ();
+                    {
+                      if (timings)
+                        timings->layout_start_time = g_get_monotonic_time ();
+                    }
                 }
-#endif
 
               priv->phase = GDK_FRAME_CLOCK_PHASE_LAYOUT;
 	      /* We loop in the layout phase, because we don't want to progress
@@ -616,14 +617,15 @@ gdk_frame_clock_paint_idle (void *data)
         case GDK_FRAME_CLOCK_PHASE_PAINT:
           if (!gdk_frame_clock_idle_is_frozen (clock_idle))
             {
-#ifdef G_ENABLE_DEBUG
               if (GDK_DEBUG_CHECK (FRAMES))
                 {
                   if (priv->phase != GDK_FRAME_CLOCK_PHASE_PAINT &&
                       (priv->requested & GDK_FRAME_CLOCK_PHASE_PAINT))
-                    timings->paint_start_time = g_get_monotonic_time ();
+                    {
+                      if (timings)
+                        timings->paint_start_time = g_get_monotonic_time ();
+                    }
                 }
-#endif
 
               priv->phase = GDK_FRAME_CLOCK_PHASE_PAINT;
               if (priv->requested & GDK_FRAME_CLOCK_PHASE_PAINT)
@@ -643,13 +645,11 @@ gdk_frame_clock_paint_idle (void *data)
                */
               priv->phase = GDK_FRAME_CLOCK_PHASE_NONE;
             }
-#ifdef G_ENABLE_DEBUG
           if (GDK_DEBUG_CHECK (FRAMES))
             {
               if (timings)
                 timings->frame_end_time = g_get_monotonic_time ();
             }
-#endif /* G_ENABLE_DEBUG */
           G_GNUC_FALLTHROUGH;
 
         case GDK_FRAME_CLOCK_PHASE_RESUME_EVENTS:
@@ -694,7 +694,7 @@ gdk_frame_clock_paint_idle (void *data)
   if (!gdk_frame_clock_idle_is_frozen (clock_idle))
     priv->sleep_serial = get_sleep_serial ();
 
-  gdk_profiler_end_mark (before, "frameclock cycle", NULL);
+  gdk_profiler_end_mark (before, "Frameclock cycle", NULL);
 
   return FALSE;
 }

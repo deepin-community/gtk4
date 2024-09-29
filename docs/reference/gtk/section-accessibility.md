@@ -155,6 +155,7 @@ Each property name is part of the `GtkAccessibleProperty` enumeration.
 | %GTK_ACCESSIBLE_PROPERTY_VALUE_MIN | “aria-valuemin” | double |
 | %GTK_ACCESSIBLE_PROPERTY_VALUE_NOW | “aria-valuenow” | double |
 | %GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT | “aria-valuetext” | translatable string |
+| %GTK_ACCESSIBLE_PROPERTY_HELP_TEXT | N/A | translatable string |
 
 #### List of accessible relations
 
@@ -170,7 +171,7 @@ Each relation name is part of the `GtkAccessibleRelation` enumeration.
 | %GTK_ACCESSIBLE_RELATION_CONTROLS | “aria-controls” | a list of `GtkAccessible` |
 | %GTK_ACCESSIBLE_RELATION_DESCRIBED_BY | “aria-describedby” | a list of `GtkAccessible` |
 | %GTK_ACCESSIBLE_RELATION_DETAILS | “aria-details” | a list of `GtkAccessible` |
-| %GTK_ACCESSIBLE_RELATION_ERROR_MESSAGE | “aria-errormessage” | `GtkAccessible` |
+| %GTK_ACCESSIBLE_RELATION_ERROR_MESSAGE | “aria-errormessage” | a list of `GtkAccessible` |
 | %GTK_ACCESSIBLE_RELATION_FLOW_TO | “aria-flowto” | a list of `GtkAccessible` |
 | %GTK_ACCESSIBLE_RELATION_LABELLED_BY | “aria-labelledby” | a list of `GtkAccessible` |
 | %GTK_ACCESSIBLE_RELATION_OWNS | “aria-owns” | a list of `GtkAccessible` |
@@ -207,7 +208,7 @@ you should ensure that:
 GTK will try to fill in some information by using ancillary UI control properties,
 for instance the accessible name will be taken from the label used by the UI control,
 or from its tooltip, if the `GTK_ACCESSIBLE_PROPERTY_LABEL` property or the
-`GTK_ACCESSIBLE_RELATION_LABELLED_BY` relation are unset. Similary for the accessible
+`GTK_ACCESSIBLE_RELATION_LABELLED_BY` relation are unset. Similarly for the accessible
 description. Nevertheless, it is good practice and project hygiene to explicitly specify
 the accessible properties, just like it's good practice to specify tooltips and style classes.
 
@@ -215,6 +216,10 @@ Application developers using GTK **should** ensure that their UI controls
 are accessible as part of the development process. The GTK Inspector shows
 the accessible attributes of each widget, and also provides an overlay that
 can highlight accessibility issues.
+
+If you support some non-standard keyboard interactions for a widget, you
+**should** set an appropriate `GTK_ACCESSIBLE_PROPERTY_HELP_TEXT` to help
+discoverability of the behavior.
 
 It is possible to set accessible attributes in UI files as well:
 ```xml
@@ -295,7 +300,7 @@ The attributes can also enhance the UI:
 
 ```c
 gtk_button_set_label (GTK_BUTTON (button), "Download");
-gtk_box_append (GTK_BOX (button), button);
+gtk_box_append (GTK_BOX (box), button);
 
 gtk_label_set_text (GTK_LABEL (label), "Final report.pdf");
 gtk_box_append (GTK_BOX (box), label);

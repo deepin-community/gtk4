@@ -99,6 +99,13 @@
 #include "broadway/gdkbroadway.h"
 #endif
 
+#define GDK_ARRAY_ELEMENT_TYPE GtkWidget *
+#define GDK_ARRAY_TYPE_NAME GtkWidgetStack
+#define GDK_ARRAY_NAME gtk_widget_stack
+#define GDK_ARRAY_FREE_FUNC g_object_unref
+#define GDK_ARRAY_PREALLOC 16
+#include "gdk/gdkarrayimpl.c"
+
 /**
  * GtkWindow:
  *
@@ -115,6 +122,28 @@
  * The `GtkWindow` implementation of the [iface@Gtk.Buildable] interface supports
  * setting a child as the titlebar by specifying “titlebar” as the “type”
  * attribute of a `<child>` element.
+ *
+ * # Shortcuts and Gestures
+ *
+ * `GtkWindow` supports the following keyboard shortcuts:
+ *
+ * - <kbd>F10</kbd> activates the menubar, if present.
+ * - <kbd>Alt</kbd> makes the mnemonics visible while pressed.
+ *
+ * The following signals have default keybindings:
+ *
+ * - [signal@Gtk.Window::activate-default]
+ * - [signal@Gtk.Window::activate-focus]
+ * - [signal@Gtk.Window::enable-debugging]
+ *
+ * # Actions
+ *
+ * `GtkWindow` defines a set of built-in actions:
+ *
+ * - `default.activate` activates the default widget.
+ * - `window.minimize` minimizes the window.
+ * - `window.toggle-maximized` maximizes or restores the window.
+ * - `window.close` closes the window.
  *
  * # CSS nodes
  *
@@ -151,14 +180,6 @@
  * Until GTK 4.10, `GtkWindow` used the `GTK_ACCESSIBLE_ROLE_WINDOW` role.
  *
  * Since GTK 4.12, `GtkWindow` uses the `GTK_ACCESSIBLE_ROLE_APPLICATION` role.
- *
- * # Actions
- *
- * `GtkWindow` defines a set of built-in actions:
- * - `default.activate`: Activate the default widget.
- * - `window.minimize`: Minimize the window.
- * - `window.toggle-maximized`: Maximize or restore the window.
- * - `window.close`: Close the window.
  */
 
 #define MENU_BAR_ACCEL GDK_KEY_F10
@@ -234,7 +255,6 @@ typedef struct
   guint    modal                     : 1;
   guint    resizable                 : 1;
   guint    transient_parent_group    : 1;
-  guint    csd_requested             : 1;
   guint    client_decorated          : 1; /* Decorations drawn client-side */
   guint    use_client_shadow         : 1; /* Decorations use client-side shadows */
   guint    maximized                 : 1;
@@ -397,10 +417,6 @@ static int gtk_window_focus              (GtkWidget        *widget,
 static void gtk_window_move_focus         (GtkWidget         *widget,
                                            GtkDirectionType   dir);
 
-static void gtk_window_get_remembered_size (GtkWindow         *window,
-                                            int               *width,
-                                            int               *height);
-
 static void gtk_window_real_activate_default (GtkWindow         *window);
 static void gtk_window_real_activate_focus   (GtkWindow         *window);
 static void gtk_window_keys_changed          (GtkWindow         *window);
@@ -453,8 +469,6 @@ static void gtk_window_activate_close (GtkWidget  *widget,
                                        const char *action_name,
                                        GVariant   *parameter);
 
-static void        gtk_window_css_changed               (GtkWidget      *widget,
-                                                         GtkCssStyleChange *change);
 static void _gtk_window_set_is_active (GtkWindow *window,
 			               gboolean   is_active);
 static void gtk_window_present_toplevel (GtkWindow *window);
@@ -765,7 +779,6 @@ gtk_window_class_init (GtkWindowClass *klass)
   widget_class->focus = gtk_window_focus;
   widget_class->move_focus = gtk_window_move_focus;
   widget_class->measure = gtk_window_measure;
-  widget_class->css_changed = gtk_window_css_changed;
 
   klass->activate_default = gtk_window_real_activate_default;
   klass->activate_focus = gtk_window_real_activate_focus;
@@ -774,7 +787,7 @@ gtk_window_class_init (GtkWindowClass *klass)
   klass->close_request = gtk_window_close_request;
 
   /**
-   * GtkWindow:title: (attributes org.gtk.Property.get=gtk_window_get_title org.gtk.Property.set=gtk_window_set_title)
+   * GtkWindow:title:
    *
    * The title of the window.
    */
@@ -784,7 +797,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                            GTK_PARAM_READWRITE);
 
   /**
-   * GtkWindow:startup-id: (attributes org.gtk.Property.set=gtk_window_set_startup_id)
+   * GtkWindow:startup-id:
    *
    * A write-only property for setting window's startup notification identifier.
    */
@@ -794,7 +807,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                            GTK_PARAM_WRITABLE);
 
   /**
-   * GtkWindow:resizable: (attributes org.gtk.Property.get=gtk_window_get_resizable org.gtk.Property.set=gtk_window_set_resizable)
+   * GtkWindow:resizable:
    *
    * If %TRUE, users can resize the window.
    */
@@ -804,7 +817,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:modal: (attributes org.gtk.Property.get=gtk_window_get_modal org.gtk.Property.set=gtk_window_set_modal)
+   * GtkWindow:modal:
    *
    * If %TRUE, the window is modal.
    */
@@ -836,7 +849,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:destroy-with-parent: (attributes org.gtk.Property.get=gtk_window_get_destroy_with_parent org.gtk.Property.set=gtk_window_set_destroy_with_parent)
+   * GtkWindow:destroy-with-parent:
    *
    * If this window should be destroyed when the parent is destroyed.
    */
@@ -846,7 +859,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:hide-on-close: (attributes org.gtk.Property.get=gtk_window_get_hide_on_close org.gtk.Property.set=gtk_window_set_hide_on_close)
+   * GtkWindow:hide-on-close:
    *
    * If this window should be hidden when the users clicks the close button.
    */
@@ -856,7 +869,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:mnemonics-visible: (attributes org.gtk.Property.get=gtk_window_get_mnemonics_visible org.gtk.Property.set=gtk_window_set_mnemonics_visible)
+   * GtkWindow:mnemonics-visible:
    *
    * Whether mnemonics are currently visible in this window.
    *
@@ -869,7 +882,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:focus-visible: (attributes org.gtk.Property.get=gtk_window_get_focus_visible org.gtk.Property.set=gtk_window_set_focus_visible)
+   * GtkWindow:focus-visible:
    *
    * Whether 'focus rectangles' are currently visible in this window.
    *
@@ -882,7 +895,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:icon-name: (attributes org.gtk.Property.get=gtk_window_get_icon_name org.gtk.Property.set=gtk_window_set_icon_name)
+   * GtkWindow:icon-name:
    *
    * Specifies the name of the themed icon to use as the window icon.
    *
@@ -894,7 +907,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:display: (attributes org.gtk.Property.set=gtk_window_set_display)
+   * GtkWindow:display:
    *
    * The display that will display this window.
    */
@@ -904,7 +917,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:is-active: (attributes org.gtk.Property.get=gtk_window_is_active)
+   * GtkWindow:is-active:
    *
    * Whether the toplevel is the currently active window.
    */
@@ -914,7 +927,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                             GTK_PARAM_READABLE);
 
   /**
-   * GtkWindow:decorated: (attributes org.gtk.Property.get=gtk_window_get_decorated org.gtk.Property.set=gtk_window_set_decorated)
+   * GtkWindow:decorated:
    *
    * Whether the window should have a frame (also known as *decorations*).
    */
@@ -924,7 +937,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:deletable: (attributes org.gtk.Property.get=gtk_window_get_deletable org.gtk.Property.set=gtk_window_set_deletable)
+   * GtkWindow:deletable:
    *
    * Whether the window frame should have a close button.
    */
@@ -934,7 +947,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:transient-for: (attributes org.gtk.Property.get=gtk_window_get_transient_for org.gtk.Property.set=gtk_window_set_transient_for)
+   * GtkWindow:transient-for:
    *
    * The transient parent of the window.
    */
@@ -944,7 +957,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                            GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:maximized: (attributes org.gtk.Property.get=gtk_window_is_maximized)
+   * GtkWindow:maximized: (getter is_maximized)
    *
    * Whether the window is maximized.
    *
@@ -960,7 +973,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                             GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:fullscreened: (attributes org.gtk.Property.get=gtk_window_is_fullscreen)
+   * GtkWindow:fullscreened: (getter is_fullscreen)
    *
    * Whether the window is fullscreen.
    *
@@ -976,7 +989,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                             GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:suspended: (attributes org.gtk.Property.get=gtk_window_is_suspended)
+   * GtkWindow:suspended: (getter is_suspended)
    *
    * Whether the window is suspended.
    *
@@ -990,7 +1003,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                             GTK_PARAM_READABLE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:application: (attributes org.gtk.Property.get=gtk_window_get_application org.gtk.Property.set=gtk_window_set_application)
+   * GtkWindow:application:
    *
    * The `GtkApplication` associated with the window.
    *
@@ -1008,7 +1021,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                            GTK_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:default-widget: (attributes org.gtk.Property.get=gtk_window_get_default_widget org.gtk.Property.set=gtk_window_set_default_widget)
+   * GtkWindow:default-widget:
    *
    * The default widget.
    */
@@ -1018,7 +1031,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                            GTK_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:focus-widget: (attributes org.gtk.Property.get=gtk_window_get_focus org.gtk.Property.set=gtk_window_set_focus)
+   * GtkWindow:focus-widget: (getter get_focus) (setter set_focus)
    *
    * The focus widget.
    */
@@ -1028,7 +1041,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                            GTK_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:child: (attributes org.gtk.Property.get=gtk_window_get_child org.gtk.Property.set=gtk_window_set_child)
+   * GtkWindow:child:
    *
    * The child widget.
    */
@@ -1038,7 +1051,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                            GTK_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:titlebar: (attributes org.gtk.Property.get=gtk_window_get_titlebar org.gtk.Property.set=gtk_window_set_titlebar)
+   * GtkWindow:titlebar:
    *
    * The titlebar widget.
    *
@@ -1050,7 +1063,7 @@ gtk_window_class_init (GtkWindowClass *klass)
                            GTK_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkWindow:handle-menubar-accel: (attributes org.gtk.Property.get=gtk_window_get_handle_menubar_accel org.gtk.Property.set=gtk_window_set_handle_menubar_accel)
+   * GtkWindow:handle-menubar-accel:
    *
    * Whether the window frame should handle F10 for activating
    * menubars.
@@ -1072,6 +1085,8 @@ gtk_window_class_init (GtkWindowClass *klass)
    * widget of @window.
    *
    * This is a [keybinding signal](class.SignalAction.html).
+   *
+   * The default binding for this signal is <kbd>␣</kbd>.
    */
   window_signals[ACTIVATE_FOCUS] =
     g_signal_new (I_("activate-focus"),
@@ -1091,6 +1106,8 @@ gtk_window_class_init (GtkWindowClass *klass)
    * of @window.
    *
    * This is a [keybinding signal](class.SignalAction.html).
+   *
+   * The keybindings for this signal are all forms of the <kbd>Enter</kbd> key.
    */
   window_signals[ACTIVATE_DEFAULT] =
     g_signal_new (I_("activate-default"),
@@ -1135,8 +1152,9 @@ gtk_window_class_init (GtkWindowClass *klass)
    *
    * This is a [keybinding signal](class.SignalAction.html).
    *
-   * The default bindings for this signal are Ctrl-Shift-I
-   * and Ctrl-Shift-D.
+   * The default bindings for this signal are
+   * <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd> and
+   * <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd>.
    *
    * Return: %TRUE if the key binding was handled
    */
@@ -1244,7 +1262,7 @@ gtk_window_class_init (GtkWindowClass *klass)
 }
 
 /**
- * gtk_window_is_maximized: (attributes org.gtk.Method.get_property=maximized)
+ * gtk_window_is_maximized: (get-property maximized)
  * @window: a `GtkWindow`
  *
  * Retrieves the current maximized state of @window.
@@ -1271,7 +1289,7 @@ gtk_window_is_maximized (GtkWindow *window)
 }
 
 /**
- * gtk_window_is_fullscreen: (attributes org.gtk.Property.get=fullscreened)
+ * gtk_window_is_fullscreen: (get-property fullscreened)
  * @window: a `GtkWindow`
  *
  * Retrieves the current fullscreen state of @window.
@@ -1298,7 +1316,7 @@ gtk_window_is_fullscreen (GtkWindow *window)
 }
 
 /**
- * gtk_window_is_suspended: (attributes org.gtk.Property.get=suspended)
+ * gtk_window_is_suspended: (get-property suspended)
  * @window: a `GtkWindow`
  *
  * Retrieves the current suspended state of @window.
@@ -1392,7 +1410,7 @@ constraints_for_edge (GdkSurfaceEdge edge)
 static int
 get_number (GtkCssValue *value)
 {
-  double d = _gtk_css_number_value_get (value, 100);
+  double d = gtk_css_number_value_get (value, 100);
 
   if (d < 1)
     return ceil (d);
@@ -2217,7 +2235,7 @@ gtk_window_new (void)
 }
 
 /**
- * gtk_window_set_title: (attributes org.gtk.Method.set_property=title)
+ * gtk_window_set_title:
  * @window: a `GtkWindow`
  * @title: (nullable): title of the window
  *
@@ -2256,7 +2274,7 @@ gtk_window_set_title (GtkWindow  *window,
 }
 
 /**
- * gtk_window_get_title: (attributes org.gtk.Method.get_property=title)
+ * gtk_window_get_title:
  * @window: a `GtkWindow`
  *
  * Retrieves the title of the window.
@@ -2274,66 +2292,7 @@ gtk_window_get_title (GtkWindow *window)
 }
 
 /**
- * gtk_window_set_startup_id: (attributes org.gtk.Method.set_property=startup-id)
- * @window: a `GtkWindow`
- * @startup_id: a string with startup-notification identifier
- *
- * Sets the startup notification ID.
- *
- * Startup notification identifiers are used by desktop environment
- * to track application startup, to provide user feedback and other
- * features. This function changes the corresponding property on the
- * underlying `GdkSurface`.
- *
- * Normally, startup identifier is managed automatically and you should
- * only use this function in special cases like transferring focus from
- * other processes. You should use this function before calling
- * [method@Gtk.Window.present] or any equivalent function generating
- * a window map event.
- *
- * This function is only useful on X11, not with other GTK targets.
- */
-void
-gtk_window_set_startup_id (GtkWindow   *window,
-                           const char *startup_id)
-{
-  GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
-  GtkWidget *widget;
-
-  g_return_if_fail (GTK_IS_WINDOW (window));
-
-  widget = GTK_WIDGET (window);
-
-  g_free (priv->startup_id);
-  priv->startup_id = g_strdup (startup_id);
-
-  if (_gtk_widget_get_realized (widget))
-    {
-      guint32 timestamp = extract_time_from_startup_id (priv->startup_id);
-
-#ifdef GDK_WINDOWING_X11
-      if (timestamp != GDK_CURRENT_TIME && GDK_IS_X11_SURFACE (priv->surface))
-	gdk_x11_surface_set_user_time (priv->surface, timestamp);
-#endif
-
-      /* Here we differentiate real and "fake" startup notification IDs,
-       * constructed on purpose just to pass interaction timestamp
-       */
-      if (startup_id_is_fake (priv->startup_id))
-	gtk_window_present_with_time (window, timestamp);
-      else
-        {
-          /* If window is mapped, terminate the startup-notification */
-          if (_gtk_widget_get_mapped (widget) && !disable_startup_notification)
-            gdk_toplevel_set_startup_id (GDK_TOPLEVEL (priv->surface), priv->startup_id);
-        }
-    }
-
-  g_object_notify_by_pspec (G_OBJECT (window), window_props[PROP_STARTUP_ID]);
-}
-
-/**
- * gtk_window_set_default_widget: (attributes org.gtk.Property.set=default-widget)
+ * gtk_window_set_default_widget:
  * @window: a `GtkWindow`
  * @default_widget: (nullable): widget to be the default
  *   to unset the default widget for the toplevel
@@ -2396,7 +2355,7 @@ gtk_window_set_default_widget (GtkWindow *window,
 }
 
 /**
- * gtk_window_get_default_widget: (attributes org.gtk.Property.get=default-widget)
+ * gtk_window_get_default_widget:
  * @window: a `GtkWindow`
  *
  * Returns the default widget for @window.
@@ -2445,7 +2404,7 @@ _gtk_window_notify_keys_changed (GtkWindow *window)
 }
 
 /**
- * gtk_window_get_focus: (attributes org.gtk.Property.get=focus-widget)
+ * gtk_window_get_focus: (get-property focus-widget)
  * @window: a `GtkWindow`
  *
  * Retrieves the current focused widget within the window.
@@ -2480,7 +2439,7 @@ gtk_window_real_activate_default (GtkWindow *window)
 }
 
 /**
- * gtk_window_set_modal: (attributes org.gtk.Method.set_property=modal)
+ * gtk_window_set_modal:
  * @window: a `GtkWindow`
  * @modal: whether the window is modal
  *
@@ -2529,7 +2488,7 @@ gtk_window_set_modal (GtkWindow *window,
 }
 
 /**
- * gtk_window_get_modal: (attributes org.gtk.Method.get_property=modal)
+ * gtk_window_get_modal:
  * @window: a `GtkWindow`
  *
  * Returns whether the window is modal.
@@ -2700,7 +2659,7 @@ gtk_window_unset_transient_for (GtkWindow *window)
 }
 
 /**
- * gtk_window_set_transient_for: (attributes org.gtk.Method.set_property=transient-for)
+ * gtk_window_set_transient_for:
  * @window: a `GtkWindow`
  * @parent: (nullable): parent window
  *
@@ -2770,7 +2729,7 @@ gtk_window_set_transient_for (GtkWindow *window,
 }
 
 /**
- * gtk_window_get_transient_for: (attributes org.gtk.Method.get_property=transient-for)
+ * gtk_window_get_transient_for:
  * @window: a `GtkWindow`
  *
  * Fetches the transient parent for this window.
@@ -2788,7 +2747,7 @@ gtk_window_get_transient_for (GtkWindow *window)
 }
 
 /**
- * gtk_window_get_application: (attributes org.gtk.Method.get_property=application)
+ * gtk_window_get_application:
  * @window: a `GtkWindow`
  *
  * Gets the `GtkApplication` associated with the window.
@@ -2827,7 +2786,7 @@ gtk_window_release_application (GtkWindow *window)
 }
 
 /**
- * gtk_window_set_application: (attributes org.gtk.Method.set_property=application)
+ * gtk_window_set_application:
  * @window: a `GtkWindow`
  * @application: (nullable): a `GtkApplication`, or %NULL to unset
  *
@@ -2884,7 +2843,7 @@ gtk_window_set_application (GtkWindow      *window,
 }
 
 /**
- * gtk_window_set_destroy_with_parent: (attributes org.gtk.Method.set_property=destroy-with-parent)
+ * gtk_window_set_destroy_with_parent:
  * @window: a `GtkWindow`
  * @setting: whether to destroy @window with its transient parent
  *
@@ -2911,7 +2870,7 @@ gtk_window_set_destroy_with_parent (GtkWindow *window,
 }
 
 /**
- * gtk_window_get_destroy_with_parent: (attributes org.gtk.Method.get_property=destroy-with-parent)
+ * gtk_window_get_destroy_with_parent:
  * @window: a `GtkWindow`
  *
  * Returns whether the window will be destroyed with its transient parent.
@@ -2929,7 +2888,7 @@ gtk_window_get_destroy_with_parent (GtkWindow *window)
 }
 
 /**
- * gtk_window_set_hide_on_close: (attributes org.gtk.Method.set_property=hide-on-close)
+ * gtk_window_set_hide_on_close:
  * @window: a `GtkWindow`
  * @setting: whether to hide the window when it is closed
  *
@@ -2953,7 +2912,7 @@ gtk_window_set_hide_on_close (GtkWindow *window,
 }
 
 /**
- * gtk_window_get_hide_on_close: (attributes org.gtk.Method.get_property=hide-on-close)
+ * gtk_window_get_hide_on_close:
  * @window: a `GtkWindow`
  *
  * Returns whether the window will be hidden when the close button is clicked.
@@ -3006,6 +2965,17 @@ unset_titlebar (GtkWindow *window)
 }
 
 static gboolean
+gtk_window_is_composited (GtkWindow *window)
+{
+  GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
+  GdkDisplay *display;
+
+  display = priv->display;
+
+  return gdk_display_is_rgba (display) && gdk_display_is_composited (display);
+}
+
+static gboolean
 gtk_window_supports_client_shadow (GtkWindow *window)
 {
   GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
@@ -3013,22 +2983,7 @@ gtk_window_supports_client_shadow (GtkWindow *window)
 
   display = priv->display;
 
-  if (!gdk_display_is_rgba (display))
-    return FALSE;
-
-  if (!gdk_display_is_composited (display))
-    return FALSE;
-
-#ifdef GDK_WINDOWING_X11
-  if (GDK_IS_X11_DISPLAY (display))
-    {
-      if (!gdk_x11_screen_supports_net_wm_hint (gdk_x11_display_get_screen (display),
-                                                g_intern_static_string ("_GTK_FRAME_EXTENTS")))
-        return FALSE;
-    }
-#endif
-
-  return TRUE;
+  return gdk_display_supports_shadow_width (display);
 }
 
 static void
@@ -3037,17 +2992,21 @@ gtk_window_enable_csd (GtkWindow *window)
   GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
   GtkWidget *widget = GTK_WIDGET (window);
 
-  /* We need a visual with alpha for client shadows */
-  if (priv->use_client_shadow)
-    gtk_widget_add_css_class (widget, "csd");
+  /* We need a visual with alpha for rounded corners */
+  if (gtk_window_is_composited (window))
+    {
+      gtk_widget_add_css_class (widget, "csd");
+    }
   else
-    gtk_widget_add_css_class (widget, "solid-csd");
+    {
+      gtk_widget_add_css_class (widget, "solid-csd");
+    }
 
   priv->client_decorated = TRUE;
 }
 
 /**
- * gtk_window_set_titlebar: (attributes org.gtk.Method.set_property=titlebar)
+ * gtk_window_set_titlebar:
  * @window: a `GtkWindow`
  * @titlebar: (nullable): the widget to use as titlebar
  *
@@ -3100,8 +3059,8 @@ gtk_window_set_titlebar (GtkWindow *window,
   else
     {
       priv->use_client_shadow = gtk_window_supports_client_shadow (window);
-
       gtk_window_enable_csd (window);
+
       priv->titlebar = titlebar;
       priv->title_box = titlebar;
       gtk_widget_insert_before (priv->title_box, widget, NULL);
@@ -3116,7 +3075,7 @@ gtk_window_set_titlebar (GtkWindow *window,
 }
 
 /**
- * gtk_window_get_titlebar: (attributes org.gtk.Method.get_property=titlebar)
+ * gtk_window_get_titlebar:
  * @window: a `GtkWindow`
  *
  * Returns the custom titlebar that has been set with
@@ -3135,7 +3094,7 @@ gtk_window_get_titlebar (GtkWindow *window)
 }
 
 /**
- * gtk_window_set_decorated: (attributes org.gtk.Method.set_property=decorated)
+ * gtk_window_set_decorated:
  * @window: a `GtkWindow`
  * @setting: %TRUE to decorate the window
  *
@@ -3178,7 +3137,7 @@ gtk_window_set_decorated (GtkWindow *window,
 }
 
 /**
- * gtk_window_get_decorated: (attributes org.gtk.Method.get_property=decorated)
+ * gtk_window_get_decorated:
  * @window: a `GtkWindow`
  *
  * Returns whether the window has been set to have decorations.
@@ -3196,7 +3155,7 @@ gtk_window_get_decorated (GtkWindow *window)
 }
 
 /**
- * gtk_window_set_deletable: (attributes org.gtk.Method.set_property=deletable)
+ * gtk_window_set_deletable:
  * @window: a `GtkWindow`
  * @setting: %TRUE to decorate the window as deletable
  *
@@ -3237,7 +3196,7 @@ gtk_window_set_deletable (GtkWindow *window,
 }
 
 /**
- * gtk_window_get_deletable: (attributes org.gtk.Method.get_property=deletable)
+ * gtk_window_get_deletable:
  * @window: a `GtkWindow`
  *
  * Returns whether the window has been set to have a close button.
@@ -3471,7 +3430,7 @@ update_themed_icon (GtkWindow *window)
 }
 
 /**
- * gtk_window_set_icon_name: (attributes org.gtk.Method.set_property=icon-name)
+ * gtk_window_set_icon_name:
  * @window: a `GtkWindow`
  * @name: (nullable): the name of the themed icon
  *
@@ -3507,7 +3466,7 @@ gtk_window_set_icon_name (GtkWindow  *window,
 }
 
 /**
- * gtk_window_get_icon_name: (attributes org.gtk.Method.get_property=icon-name)
+ * gtk_window_get_icon_name:
  * @window: a `GtkWindow`
  *
  * Returns the name of the themed icon for the window.
@@ -3718,9 +3677,15 @@ gtk_window_get_default_size (GtkWindow *window,
 			     int       *width,
 			     int       *height)
 {
+  GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
+
   g_return_if_fail (GTK_IS_WINDOW (window));
 
-  gtk_window_get_remembered_size (window, width, height);
+  if (width != NULL)
+    *width = priv->default_width;
+
+  if (height != NULL)
+    *height = priv->default_height;
 }
 
 static gboolean
@@ -3840,22 +3805,11 @@ update_window_actions (GtkWindow *window)
   update_csd_visibility (window);
 }
 
-void
-_gtk_window_request_csd (GtkWindow *window)
-{
-  GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
-
-  priv->csd_requested = TRUE;
-}
-
 static gboolean
 gtk_window_should_use_csd (GtkWindow *window)
 {
   GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
   const char *csd_env;
-
-  if (priv->csd_requested)
-    return TRUE;
 
   if (!priv->decorated)
     return FALSE;
@@ -4044,17 +3998,6 @@ gtk_window_unmap (GtkWidget *widget)
 }
 
 static void
-gtk_window_get_remembered_size (GtkWindow *window,
-                                int       *width,
-                                int       *height)
-{
-  GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
-
-  *width = priv->default_width;
-  *height = priv->default_height;
-}
-
-static void
 check_scale_changed (GtkWindow *window)
 {
   GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
@@ -4088,7 +4031,7 @@ get_shadow_width (GtkWindow *window,
   style = gtk_css_node_get_style (gtk_widget_get_css_node (GTK_WIDGET (window)));
 
   /* Calculate the size of the drop shadows ... */
-  gtk_css_shadow_value_get_extents (style->background->box_shadow, shadow_width);
+  gtk_css_shadow_value_get_extents (style->used->box_shadow, shadow_width);
 
   shadow_width->left = MAX (shadow_width->left, RESIZE_HANDLE_SIZE);
   shadow_width->top = MAX (shadow_width->top, RESIZE_HANDLE_SIZE);
@@ -4102,30 +4045,6 @@ out:
 }
 
 static void
-update_opaque_region (GtkWindow *window)
-{
-  GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
-  gboolean subtract_decoration_corners;
-  gboolean subtract_shadow;
-
-  subtract_decoration_corners = (priv->client_decorated &&
-                                 priv->decorated &&
-                                 !priv->fullscreen &&
-                                 !priv->maximized);
-  subtract_shadow = (priv->client_decorated &&
-                     priv->decorated &&
-                     priv->use_client_shadow &&
-                     !priv->maximized &&
-                     !priv->fullscreen);
-
-  gtk_native_update_opaque_region (GTK_NATIVE (window),
-                                   NULL,
-                                   subtract_decoration_corners,
-                                   subtract_shadow,
-                                   RESIZE_HANDLE_SIZE);
-}
-
-static void
 update_realized_window_properties (GtkWindow *window)
 {
   GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
@@ -4133,8 +4052,6 @@ update_realized_window_properties (GtkWindow *window)
   GtkCssBoxes css_boxes;
   const graphene_rect_t *border_rect;
   double native_x, native_y;
-
-  update_opaque_region (window);
 
   if (!priv->client_decorated || !priv->use_client_shadow)
     return;
@@ -4359,22 +4276,24 @@ gtk_window_realize (GtkWidget *widget)
   /* Create default title bar */
   if (!priv->client_decorated && gtk_window_should_use_csd (window))
     {
-      priv->use_client_shadow = gtk_window_supports_client_shadow (window);
-      if (priv->use_client_shadow)
+      if (gtk_window_is_composited (window))
         {
+          priv->use_client_shadow = gtk_window_supports_client_shadow (window);
           gtk_window_enable_csd (window);
 
-            if (priv->title_box == NULL)
-              {
-                priv->title_box = gtk_header_bar_new ();
-                gtk_widget_add_css_class (priv->title_box, "titlebar");
-                gtk_widget_add_css_class (priv->title_box, "default-decoration");
+          if (priv->title_box == NULL)
+            {
+              priv->title_box = gtk_header_bar_new ();
+              gtk_widget_add_css_class (priv->title_box, "titlebar");
+              gtk_widget_add_css_class (priv->title_box, "default-decoration");
 
-                gtk_widget_insert_before (priv->title_box, widget, NULL);
-              }
+              gtk_widget_insert_before (priv->title_box, widget, NULL);
+            }
 
-            update_window_actions (window);
+          update_window_actions (window);
         }
+      else
+        priv->use_client_shadow = FALSE;
     }
 
   surface = gdk_surface_new_toplevel (gtk_widget_get_display (widget));
@@ -4409,17 +4328,6 @@ gtk_window_realize (GtkWidget *widget)
 
   gdk_toplevel_set_decorated (GDK_TOPLEVEL (surface), priv->decorated && !priv->client_decorated);
   gdk_toplevel_set_deletable (GDK_TOPLEVEL (surface), priv->deletable);
-
-#ifdef GDK_WINDOWING_WAYLAND
-  if (GDK_IS_WAYLAND_SURFACE (surface))
-    {
-      if (priv->client_decorated)
-        gdk_wayland_toplevel_announce_csd (GDK_TOPLEVEL (surface));
-      else
-        gdk_wayland_toplevel_announce_ssd (GDK_TOPLEVEL (surface));
-    }
-#endif
-
   gdk_toplevel_set_modal (GDK_TOPLEVEL (surface), priv->modal);
 
   if (priv->startup_id)
@@ -4514,6 +4422,8 @@ gtk_window_unrealize (GtkWidget *widget)
 
   gdk_surface_set_widget (surface, NULL);
   g_clear_pointer (&priv->surface, gdk_surface_destroy);
+
+  priv->use_client_shadow = FALSE;
 }
 
 static void
@@ -4827,8 +4737,7 @@ surface_event (GdkSurface *surface,
                GdkEvent   *event,
                GtkWidget  *widget)
 {
-  gtk_main_do_event (event);
-  return TRUE;
+  return gtk_main_do_event (event);
 }
 
 static void
@@ -5051,28 +4960,34 @@ gtk_window_move_focus (GtkWidget        *widget,
 }
 
 void
-check_crossing_invariants (GtkWidget *widget,
+check_crossing_invariants (GtkWidget       *widget,
                            GtkCrossingData *crossing)
 {
-#ifdef G_ENBABLE_DEBUG
+#ifdef G_ENABLE_DEBUG
   if (crossing->old_target == NULL)
-    g_assert (crossing->old_descendent == NULL);
+    {
+      g_assert (crossing->old_descendent == NULL);
+    }
   else if (crossing->old_descendent == NULL)
-    g_assert (crossing->old_target == widget || !gtk_widget_is_ancestor (crossing->old_target, widget));
+    {
+      g_assert (crossing->old_target == widget || !gtk_widget_is_ancestor (crossing->old_target, widget));
+    }
   else
     {
       g_assert (gtk_widget_get_parent (crossing->old_descendent) == widget);
-      g_assert (gtk_widget_is_ancestor (crossing->old_descendent, widget));
       g_assert (crossing->old_target == crossing->old_descendent || gtk_widget_is_ancestor (crossing->old_target, crossing->old_descendent));
     }
   if (crossing->new_target == NULL)
-    g_assert (crossing->new_descendent == NULL);
+    {
+      g_assert (crossing->new_descendent == NULL);
+    }
   else if (crossing->new_descendent == NULL)
-    g_assert (crossing->new_target == widget || !gtk_widget_is_ancestor (crossing->new_target, widget));
+    {
+      g_assert (crossing->new_target == widget || !gtk_widget_is_ancestor (crossing->new_target, widget));
+    }
   else
     {
       g_assert (gtk_widget_get_parent (crossing->new_descendent) == widget);
-      g_assert (gtk_widget_is_ancestor (crossing->new_descendent, widget));
       g_assert (crossing->new_target == crossing->new_descendent || gtk_widget_is_ancestor (crossing->new_target, crossing->new_descendent));
     }
 #endif
@@ -5087,10 +5002,11 @@ synthesize_focus_change_events (GtkWindow       *window,
   GtkCrossingData crossing;
   GtkWidget *ancestor;
   GtkWidget *widget, *focus_child;
-  GList *list, *l;
   GtkStateFlags flags;
   GtkWidget *prev;
   gboolean seen_ancestor;
+  GtkWidgetStack focus_array;
+  int i;
 
   if (old_focus == new_focus)
     return;
@@ -5106,9 +5022,9 @@ synthesize_focus_change_events (GtkWindow       *window,
 
   crossing.type = type;
   crossing.mode = GDK_CROSSING_NORMAL;
-  crossing.old_target = old_focus;
+  crossing.old_target = old_focus ? g_object_ref (old_focus) : NULL;
   crossing.old_descendent = NULL;
-  crossing.new_target = new_focus;
+  crossing.new_target = new_focus ? g_object_ref (new_focus) : NULL;
   crossing.new_descendent = NULL;
 
   crossing.direction = GTK_CROSSING_OUT;
@@ -5152,18 +5068,19 @@ synthesize_focus_change_events (GtkWindow       *window,
   if (gtk_window_get_focus_visible (GTK_WINDOW (window)))
     flags |= GTK_STATE_FLAG_FOCUS_VISIBLE;
 
-  list = NULL;
-  for (widget = new_focus; widget; widget = gtk_widget_get_parent (widget))
-    list = g_list_prepend (list, widget);
+  gtk_widget_stack_init (&focus_array);
+  for (widget = new_focus; widget; widget = _gtk_widget_get_parent (widget))
+    gtk_widget_stack_append (&focus_array, g_object_ref (widget));
 
   crossing.direction = GTK_CROSSING_IN;
 
   seen_ancestor = FALSE;
-  for (l = list; l; l = l->next)
+  for (i = gtk_widget_stack_get_size (&focus_array) - 1; i >= 0; i--)
     {
-      widget = l->data;
-      if (l->next)
-        focus_child = l->next->data;
+      widget = gtk_widget_stack_get (&focus_array, i);
+
+      if (i > 0)
+        focus_child = gtk_widget_stack_get (&focus_array, i - 1);
       else
         focus_child = NULL;
 
@@ -5186,23 +5103,27 @@ synthesize_focus_change_events (GtkWindow       *window,
         }
       else
         {
-          crossing.old_descendent = old_focus ? focus_child : NULL;
+          crossing.old_descendent = (old_focus && ancestor) ? focus_child : NULL;
         }
+
       check_crossing_invariants (widget, &crossing);
       gtk_widget_handle_crossing (widget, &crossing, 0, 0);
 
-      if (l->next == NULL)
+      if (i == 0)
         flags = flags | GTK_STATE_FLAG_FOCUSED;
 
       gtk_widget_set_state_flags (widget, flags, FALSE);
       gtk_widget_set_focus_child (widget, focus_child);
     }
 
-  g_list_free (list);
+  g_clear_object (&crossing.old_target);
+  g_clear_object (&crossing.new_target);
+
+  gtk_widget_stack_clear (&focus_array);
 }
 
 /**
- * gtk_window_set_focus: (attributes org.gtk.Method.set_property=focus-widget)
+ * gtk_window_set_focus: (set-property focus-widget)
  * @window: a `GtkWindow`
  * @focus: (nullable): widget to be the new focus widget, or %NULL to unset
  *   any focus widget for the toplevel window.
@@ -5225,19 +5146,6 @@ gtk_window_set_focus (GtkWindow *window,
     gtk_widget_grab_focus (focus);
   else
     gtk_window_root_set_focus (GTK_ROOT (window), NULL);
-}
-
-static void
-gtk_window_css_changed (GtkWidget         *widget,
-                        GtkCssStyleChange *change)
-{
-  GtkWindow *window = GTK_WINDOW (widget);
-
-  GTK_WIDGET_CLASS (gtk_window_parent_class)->css_changed (widget, change);
-
-  if (!_gtk_widget_get_alloc_needed (widget) &&
-      (change == NULL || gtk_css_style_change_changes_property (change, GTK_CSS_PROPERTY_BACKGROUND_COLOR)))
-    update_opaque_region (window);
 }
 
 /*
@@ -5281,6 +5189,100 @@ _gtk_window_unset_focus_and_default (GtkWindow *window,
 #undef INCLUDE_CSD_SIZE
 #undef EXCLUDE_CSD_SIZE
 
+static void
+_gtk_window_present (GtkWindow *window,
+                     guint32    timestamp)
+{
+  GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
+  GtkWidget *widget = GTK_WIDGET (window);
+
+  if (gtk_widget_get_visible (widget))
+    {
+      /* Translate a timestamp of GDK_CURRENT_TIME appropriately */
+      if (timestamp == GDK_CURRENT_TIME)
+        {
+#ifdef GDK_WINDOWING_X11
+          if (GDK_IS_X11_SURFACE (priv->surface))
+            {
+              GdkDisplay *display = gtk_widget_get_display (widget);
+              timestamp = gdk_x11_display_get_user_time (display);
+            }
+          else
+#endif
+            timestamp = gtk_get_current_event_time ();
+        }
+    }
+  else
+    {
+      priv->initial_timestamp = timestamp;
+      priv->in_present = TRUE;
+      gtk_widget_set_visible (widget, TRUE);
+      priv->in_present = FALSE;
+    }
+
+  gdk_toplevel_focus (GDK_TOPLEVEL (priv->surface), timestamp);
+  gtk_window_notify_startup (window);
+}
+
+/**
+ * gtk_window_set_startup_id:
+ * @window: a `GtkWindow`
+ * @startup_id: a string with startup-notification identifier
+ *
+ * Sets the startup notification ID.
+ *
+ * Startup notification identifiers are used by desktop environment
+ * to track application startup, to provide user feedback and other
+ * features. This function changes the corresponding property on the
+ * underlying `GdkSurface`.
+ *
+ * Normally, startup identifier is managed automatically and you should
+ * only use this function in special cases like transferring focus from
+ * other processes. You should use this function before calling
+ * [method@Gtk.Window.present] or any equivalent function generating
+ * a window map event.
+ *
+ * This function is only useful on X11, not with other GTK targets.
+ */
+void
+gtk_window_set_startup_id (GtkWindow   *window,
+                           const char *startup_id)
+{
+  GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
+  GtkWidget *widget;
+
+  g_return_if_fail (GTK_IS_WINDOW (window));
+
+  widget = GTK_WIDGET (window);
+
+  g_free (priv->startup_id);
+  priv->startup_id = g_strdup (startup_id);
+
+  if (_gtk_widget_get_realized (widget))
+    {
+      guint32 timestamp = extract_time_from_startup_id (priv->startup_id);
+
+#ifdef GDK_WINDOWING_X11
+      if (timestamp != GDK_CURRENT_TIME && GDK_IS_X11_SURFACE (priv->surface))
+        gdk_x11_surface_set_user_time (priv->surface, timestamp);
+#endif
+
+      /* Here we differentiate real and "fake" startup notification IDs,
+       * constructed on purpose just to pass interaction timestamp
+       */
+      if (startup_id_is_fake (priv->startup_id))
+        _gtk_window_present (window, timestamp);
+      else
+        {
+          /* If window is mapped, terminate the startup-notification */
+          if (_gtk_widget_get_mapped (widget) && !disable_startup_notification)
+            gdk_toplevel_set_startup_id (GDK_TOPLEVEL (priv->surface), priv->startup_id);
+        }
+    }
+
+  g_object_notify_by_pspec (G_OBJECT (window), window_props[PROP_STARTUP_ID]);
+}
+
 /**
  * gtk_window_present:
  * @window: a `GtkWindow`
@@ -5297,7 +5299,9 @@ _gtk_window_unset_focus_and_default (GtkWindow *window,
 void
 gtk_window_present (GtkWindow *window)
 {
-  gtk_window_present_with_time (window, GDK_CURRENT_TIME);
+  g_return_if_fail (GTK_IS_WINDOW (window));
+
+  _gtk_window_present (window, GDK_CURRENT_TIME);
 }
 
 /**
@@ -5313,52 +5317,16 @@ gtk_window_present (GtkWindow *window)
  * The timestamp should be gathered when the window was requested
  * to be shown (when clicking a link for example), rather than once
  * the window is ready to be shown.
+ *
+ * Deprecated: 4.14: Use gtk_window_present()
  */
 void
 gtk_window_present_with_time (GtkWindow *window,
-			      guint32    timestamp)
+                              guint32    timestamp)
 {
-  GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
-  GtkWidget *widget;
-  GdkSurface *surface;
-
   g_return_if_fail (GTK_IS_WINDOW (window));
 
-  widget = GTK_WIDGET (window);
-
-  if (gtk_widget_get_visible (widget))
-    {
-      surface = priv->surface;
-
-      g_assert (surface != NULL);
-
-      /* Translate a timestamp of GDK_CURRENT_TIME appropriately */
-      if (timestamp == GDK_CURRENT_TIME)
-        {
-#ifdef GDK_WINDOWING_X11
-	  if (GDK_IS_X11_SURFACE (surface))
-	    {
-	      GdkDisplay *display;
-
-	      display = gtk_widget_get_display (widget);
-	      timestamp = gdk_x11_display_get_user_time (display);
-	    }
-	  else
-#endif
-	    timestamp = gtk_get_current_event_time ();
-        }
-    }
-  else
-    {
-      priv->initial_timestamp = timestamp;
-      priv->in_present = TRUE;
-      gtk_widget_set_visible (widget, TRUE);
-      priv->in_present = FALSE;
-    }
-
-  g_assert (priv->surface != NULL);
-  gdk_toplevel_focus (GDK_TOPLEVEL (priv->surface), timestamp);
-  gtk_window_notify_startup (window);
+  _gtk_window_present (window, timestamp);
 }
 
 /**
@@ -5643,7 +5611,7 @@ gtk_window_unfullscreen (GtkWindow *window)
 }
 
 /**
- * gtk_window_set_resizable: (attributes org.gtk.Method.set_property=resizable)
+ * gtk_window_set_resizable:
  * @window: a `GtkWindow`
  * @resizable: %TRUE if the user can resize this window
  *
@@ -5677,7 +5645,7 @@ gtk_window_set_resizable (GtkWindow *window,
 }
 
 /**
- * gtk_window_get_resizable: (attributes org.gtk.Method.get_property=resizable)
+ * gtk_window_get_resizable:
  * @window: a `GtkWindow`
  *
  * Gets the value set by gtk_window_set_resizable().
@@ -5695,7 +5663,7 @@ gtk_window_get_resizable (GtkWindow *window)
 }
 
 /**
- * gtk_window_set_display: (attributes org.gtk.Method.set_property=display)
+ * gtk_window_set_display:
  * @window: a `GtkWindow`
  * @display: a `GdkDisplay`
  *
@@ -5784,7 +5752,7 @@ gtk_window_on_theme_variant_changed (GtkSettings *settings,
 #endif
 
 /**
- * gtk_window_is_active: (attributes org.gtk.Method.get_property=is-active)
+ * gtk_window_is_active:
  * @window: a `GtkWindow`
  *
  * Returns whether the window is part of the current active toplevel.
@@ -5821,19 +5789,20 @@ gtk_window_is_active (GtkWindow *window)
 GtkWindowGroup *
 gtk_window_get_group (GtkWindow *window)
 {
-  GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
+  static GtkWindowGroup *default_group = NULL;
 
-  if (window && priv->group)
-    return priv->group;
-  else
+  if (window)
     {
-      static GtkWindowGroup *default_group = NULL;
+      GtkWindowPrivate *priv = gtk_window_get_instance_private (window);
 
-      if (!default_group)
-	default_group = gtk_window_group_new ();
-
-      return default_group;
+      if (priv->group)
+        return priv->group;
     }
+
+  if (!default_group)
+    default_group = gtk_window_group_new ();
+
+  return default_group;
 }
 
 /**
@@ -5985,7 +5954,7 @@ gtk_window_set_auto_startup_notification (gboolean setting)
 }
 
 /**
- * gtk_window_get_mnemonics_visible: (attributes org.gtk.Method.get_property=mnemonics-visible)
+ * gtk_window_get_mnemonics_visible:
  * @window: a `GtkWindow`
  *
  * Gets whether mnemonics are supposed to be visible.
@@ -6004,7 +5973,7 @@ gtk_window_get_mnemonics_visible (GtkWindow *window)
 }
 
 /**
- * gtk_window_set_mnemonics_visible: (attributes org.gtk.Method.set_property=mnemonics-visible)
+ * gtk_window_set_mnemonics_visible:
  * @window: a `GtkWindow`
  * @setting: the new value
  *
@@ -6065,7 +6034,7 @@ _gtk_window_schedule_mnemonics_visible (GtkWindow *window)
 }
 
 /**
- * gtk_window_get_focus_visible: (attributes org.gtk.Method.get_property=focus-visible)
+ * gtk_window_get_focus_visible:
  * @window: a `GtkWindow`
  *
  * Gets whether “focus rectangles” are supposed to be visible.
@@ -6097,7 +6066,7 @@ unset_focus_visible (gpointer data)
 }
 
 /**
- * gtk_window_set_focus_visible: (attributes org.gtk.Method.set_property=focus-visible)
+ * gtk_window_set_focus_visible:
  * @window: a `GtkWindow`
  * @setting: the new value
  *
@@ -6267,6 +6236,14 @@ G_GNUC_END_IGNORE_DEPRECATIONS
  *
  * The debugger offers access to the widget hierarchy of the application
  * and to useful debugging tools.
+ *
+ * This function allows applications that already use
+ * <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd>
+ * (or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd>)
+ * for their own key shortcuts to add a different shortcut to open the Inspector.
+ *
+ * If you are not overriding the default key shortcuts for the Inspector,
+ * you should not use this function.
  */
 void
 gtk_window_set_interactive_debugging (gboolean enable)
@@ -6730,7 +6707,7 @@ gtk_window_maybe_update_cursor (GtkWindow *window,
 }
 
 /**
- * gtk_window_set_child: (attributes org.gtk.Method.set_property=child)
+ * gtk_window_set_child:
  * @window: a `GtkWindow`
  * @child: (nullable): the child widget
  *
@@ -6760,7 +6737,7 @@ gtk_window_set_child (GtkWindow *window,
 }
 
 /**
- * gtk_window_get_child: (attributes org.gtk.Method.get_property=child)
+ * gtk_window_get_child:
  * @window: a `GtkWindow`
  *
  * Gets the child widget of @window.
@@ -6947,7 +6924,7 @@ gtk_window_grab_notify (GtkWindow *window,
 }
 
 /**
- * gtk_window_set_handle_menubar_accel: (attributes org.gtk.Method.set_property=handle-menubar-accel)
+ * gtk_window_set_handle_menubar_accel:
  * @window: a `GtkWindow`
  * @handle_menubar_accel: %TRUE to make @window handle F10
  *
@@ -6976,7 +6953,7 @@ gtk_window_set_handle_menubar_accel (GtkWindow *window,
 }
 
 /**
- * gtk_window_get_handle_menubar_accel: (attributes org.gtk.Method.get_property=handle-menubar-accel)
+ * gtk_window_get_handle_menubar_accel:
  * @window: a `GtkWindow`
  *
  * Returns whether this window reacts to F10 key presses by

@@ -310,7 +310,7 @@ gtk_expander_class_init (GtkExpanderClass *klass)
   klass->activate = gtk_expander_activate;
 
   /**
-   * GtkExpander:expanded: (attributes org.gtk.Property.get=gtk_expander_get_expanded org.gtk.Property.set=gtk_expander_set_expanded)
+   * GtkExpander:expanded:
    *
    * Whether the expander has been opened to reveal the child.
    */
@@ -321,7 +321,7 @@ gtk_expander_class_init (GtkExpanderClass *klass)
                                                          GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT|G_PARAM_EXPLICIT_NOTIFY));
 
   /**
-   * GtkExpander:label: (attributes org.gtk.Property.get=gtk_expander_get_label org.gtk.Property.set=gtk_expander_set_label)
+   * GtkExpander:label:
    *
    * The text of the expanders label.
    */
@@ -332,7 +332,7 @@ gtk_expander_class_init (GtkExpanderClass *klass)
                                                         GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT));
 
   /**
-   * GtkExpander:use-underline: (attributes org.gtk.Property.get=gtk_expander_get_use_underline org.gtk.Property.set=gtk_expander_set_use_underline)
+   * GtkExpander:use-underline:
    *
    * Whether an underline in the text indicates a mnemonic.
    */
@@ -343,7 +343,7 @@ gtk_expander_class_init (GtkExpanderClass *klass)
                                                          GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT|G_PARAM_EXPLICIT_NOTIFY));
 
   /**
-   * GtkExpander:use-markup: (attributes org.gtk.Property.get=gtk_expander_get_use_markup org.gtk.Property.set=gtk_expander_set_use_markup)
+   * GtkExpander:use-markup:
    *
    * Whether the text in the label is Pango markup.
    */
@@ -354,7 +354,7 @@ gtk_expander_class_init (GtkExpanderClass *klass)
                                                          GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT|G_PARAM_EXPLICIT_NOTIFY));
 
   /**
-   * GtkExpander:label-widget: (attributes org.gtk.Property.get=gtk_expander_get_label_widget org.gtk.Property.set=gtk_expander_set_label_widget)
+   * GtkExpander:label-widget:
    *
    * A widget to display instead of the usual expander label.
    */
@@ -365,7 +365,7 @@ gtk_expander_class_init (GtkExpanderClass *klass)
                                                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
 
   /**
-   * GtkExpander:resize-toplevel: (attributes org.gtk.Property.get=gtk_expander_get_resize_toplevel org.gtk.Property.set=gtk_expander_set_resize_toplevel)
+   * GtkExpander:resize-toplevel:
    *
    * When this property is %TRUE, the expander will resize the toplevel
    * widget containing the expander upon expanding and collapsing.
@@ -377,7 +377,7 @@ gtk_expander_class_init (GtkExpanderClass *klass)
                                                          GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
 
   /**
-   * GtkExpander:child: (attributes org.gtk.Property.get=gtk_expander_get_child org.gtk.Property.set=gtk_expander_set_child)
+   * GtkExpander:child:
    *
    * The child widget.
    */
@@ -857,7 +857,7 @@ gtk_expander_new_with_mnemonic (const char *label)
 }
 
 /**
- * gtk_expander_set_expanded: (attributes org.gtk.Method.set_property=expanded)
+ * gtk_expander_set_expanded:
  * @expander: a `GtkExpander`
  * @expanded: whether the child widget is revealed
  *
@@ -897,9 +897,14 @@ gtk_expander_set_expanded (GtkExpander *expander,
         {
           gtk_box_append (GTK_BOX (expander->box), child);
           g_object_unref (expander->child);
+          gtk_accessible_update_relation (GTK_ACCESSIBLE (expander),
+                                          GTK_ACCESSIBLE_RELATION_CONTROLS, expander->child, NULL,
+                                          -1);
         }
       else
         {
+          gtk_accessible_reset_relation (GTK_ACCESSIBLE (expander),
+                                         GTK_ACCESSIBLE_RELATION_CONTROLS);
           g_object_ref (expander->child);
           gtk_box_remove (GTK_BOX (expander->box), child);
         }
@@ -914,7 +919,7 @@ gtk_expander_set_expanded (GtkExpander *expander,
 }
 
 /**
- * gtk_expander_get_expanded: (attributes org.gtk.Method.get_property=expanded)
+ * gtk_expander_get_expanded:
  * @expander:a `GtkExpander`
  *
  * Queries a `GtkExpander` and returns its current state.
@@ -932,7 +937,7 @@ gtk_expander_get_expanded (GtkExpander *expander)
 }
 
 /**
- * gtk_expander_set_label: (attributes org.gtk.Method.set_property=label)
+ * gtk_expander_set_label:
  * @expander: a `GtkExpander`
  * @label: (nullable): a string
  *
@@ -965,7 +970,7 @@ gtk_expander_set_label (GtkExpander *expander,
 }
 
 /**
- * gtk_expander_get_label: (attributes org.gtk.Method.get_property=label)
+ * gtk_expander_get_label:
  * @expander: a `GtkExpander`
  *
  * Fetches the text from a label widget.
@@ -991,7 +996,7 @@ gtk_expander_get_label (GtkExpander *expander)
 }
 
 /**
- * gtk_expander_set_use_underline: (attributes org.gtk.Method.set_property=use-underline)
+ * gtk_expander_set_use_underline:
  * @expander: a `GtkExpander`
  * @use_underline: %TRUE if underlines in the text indicate mnemonics
  *
@@ -1017,7 +1022,7 @@ gtk_expander_set_use_underline (GtkExpander *expander,
 }
 
 /**
- * gtk_expander_get_use_underline: (attributes org.gtk.Method.get_property=use-underline)
+ * gtk_expander_get_use_underline:
  * @expander: a `GtkExpander`
  *
  * Returns whether an underline in the text indicates a mnemonic.
@@ -1034,7 +1039,7 @@ gtk_expander_get_use_underline (GtkExpander *expander)
 }
 
 /**
- * gtk_expander_set_use_markup: (attributes org.gtk.Method.set_property=use-markup)
+ * gtk_expander_set_use_markup:
  * @expander: a `GtkExpander`
  * @use_markup: %TRUE if the label’s text should be parsed for markup
  *
@@ -1060,7 +1065,7 @@ gtk_expander_set_use_markup (GtkExpander *expander,
 }
 
 /**
- * gtk_expander_get_use_markup: (attributes org.gtk.Method.get_property=use-markup)
+ * gtk_expander_get_use_markup:
  * @expander: a `GtkExpander`
  *
  * Returns whether the label’s text is interpreted as Pango markup.
@@ -1076,7 +1081,7 @@ gtk_expander_get_use_markup (GtkExpander *expander)
 }
 
 /**
- * gtk_expander_set_label_widget: (attributes org.gtk.Method.set_property=label-widget)
+ * gtk_expander_set_label_widget:
  * @expander: a `GtkExpander`
  * @label_widget: (nullable): the new label widget
  *
@@ -1120,7 +1125,7 @@ gtk_expander_set_label_widget (GtkExpander *expander,
 }
 
 /**
- * gtk_expander_get_label_widget: (attributes org.gtk.Method.get_property=label-widget)
+ * gtk_expander_get_label_widget:
  * @expander: a `GtkExpander`
  *
  * Retrieves the label widget for the frame.
@@ -1136,7 +1141,7 @@ gtk_expander_get_label_widget (GtkExpander *expander)
 }
 
 /**
- * gtk_expander_set_resize_toplevel: (attributes org.gtk.Method.set_property=resize-toplevel)
+ * gtk_expander_set_resize_toplevel:
  * @expander: a `GtkExpander`
  * @resize_toplevel: whether to resize the toplevel
  *
@@ -1157,7 +1162,7 @@ gtk_expander_set_resize_toplevel (GtkExpander *expander,
 }
 
 /**
- * gtk_expander_get_resize_toplevel: (attributes org.gtk.Method.get_property=resize-toplevel)
+ * gtk_expander_get_resize_toplevel:
  * @expander: a `GtkExpander`
  *
  * Returns whether the expander will resize the toplevel widget
@@ -1174,7 +1179,7 @@ gtk_expander_get_resize_toplevel (GtkExpander *expander)
 }
 
 /**
- * gtk_expander_set_child: (attributes org.gtk.Method.set_property=child)
+ * gtk_expander_set_child:
  * @expander: a `GtkExpander`
  * @child: (nullable): the child widget
  *
@@ -1209,13 +1214,18 @@ gtk_expander_set_child (GtkExpander *expander,
        * dropped once the expander is expanded
        */
       if (expander->expanded)
-        gtk_box_append (GTK_BOX (expander->box), expander->child);
+        {
+          gtk_box_append (GTK_BOX (expander->box), expander->child);
+          gtk_accessible_update_relation (GTK_ACCESSIBLE (expander),
+                                          GTK_ACCESSIBLE_RELATION_CONTROLS, expander->child, NULL,
+                                          -1);
+        }
       else
-        g_object_ref_sink (expander->child);
-
-      gtk_accessible_update_relation (GTK_ACCESSIBLE (expander),
-                                      GTK_ACCESSIBLE_RELATION_CONTROLS, expander->child, NULL,
-                                      -1);
+        {
+          gtk_accessible_reset_relation (GTK_ACCESSIBLE (expander),
+                                         GTK_ACCESSIBLE_RELATION_CONTROLS);
+          g_object_ref_sink (expander->child);
+        }
     }
   else
     {
@@ -1227,7 +1237,7 @@ gtk_expander_set_child (GtkExpander *expander,
 }
 
 /**
- * gtk_expander_get_child: (attributes org.gtk.Method.get_property=child)
+ * gtk_expander_get_child:
  * @expander: a `GtkExpander`
  *
  * Gets the child widget of @expander.

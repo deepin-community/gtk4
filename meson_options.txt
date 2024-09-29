@@ -1,5 +1,9 @@
 # GDK backends
 
+# Windowing system backends
+# Note: The options change the abi (what backend api is available) without
+# changing the soname, so think twice before deviating from the default values.
+
 option('x11-backend',
        type: 'boolean',
        value: true,
@@ -29,11 +33,6 @@ option('macos-backend',
 # For distros: GTK guarantees support for WebM video (VP8 and VP9), so a supported build
 # should provide that.
 
-option('media-ffmpeg',
-       type: 'feature',
-       value: 'disabled',
-       description : 'Build the experimental ffmpeg media backend')
-
 option('media-gstreamer',
        type: 'feature',
        value: 'enabled',
@@ -55,8 +54,8 @@ option('print-cups',
 
 option('vulkan',
        type: 'feature',
-       value: 'disabled',
-       description : 'Enable support for the experimental Vulkan renderer')
+       value: 'enabled',
+       description : 'Enable Vulkan support including the Vulkan renderer')
 
 option('cloudproviders',
        type: 'feature',
@@ -98,22 +97,10 @@ option('documentation',
        value: false,
        description : 'Build API reference and tools documentation')
 
-option('gtk_doc',
-       type: 'boolean',
-       value: false,
-       description : 'Build API reference and tools documentation',
-       deprecated: 'documentation')
-
 option('screenshots',
        type: 'boolean',
        value: false,
        description : 'Regenerate screenshots for the documentation')
-
-option('update_screenshots',
-       type: 'boolean',
-       value: false,
-       description : 'Regenerate screenshots for the documentation',
-       deprecated: 'screenshots')
 
 option('man-pages',
        type: 'boolean',
@@ -122,27 +109,16 @@ option('man-pages',
 
 # Demos, examples and tests
 
-option('demo-profile',
-       type: 'combo',
-       choices: [ 'default', 'devel' ],
-       value: 'default',
-       description : 'Profile to use for demos')
-
 option('profile',
        type: 'combo',
-       choices: [ 'default', 'devel' ],
-       value: 'default',
-       deprecated: 'demo-profile')
+       choices: [ 'auto', 'default', 'devel' ],
+       value: 'auto',
+       description : 'Profile to use for demos')
 
 option('build-demos',
        type: 'boolean',
        value: true,
        description : 'Build demo programs')
-
-option('demos',
-       type: 'boolean',
-       value: true,
-       deprecated: 'build-demos')
 
 option('build-testsuite',
        type: 'boolean',

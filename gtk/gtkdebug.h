@@ -52,13 +52,36 @@ G_BEGIN_DECLS
  * @GTK_DEBUG_CONSTRAINTS: Information from the constraints solver
  * @GTK_DEBUG_BUILDER_OBJECTS: Log unused GtkBuilder objects
  * @GTK_DEBUG_A11Y: Information about accessibility state changes
- * @GTK_DEBUG_ICONFALLBACK: Information about icon fallback. Since: 4.2
  *
  * Flags to use with gtk_set_debug_flags().
  *
  * Settings these flags causes GTK to print out different
  * types of debugging information. Some of these flags are
  * only available when GTK has been configured with `-Ddebug=true`.
+ */
+
+/**
+ * GTK_DEBUG_ICONFALLBACK:
+ *
+ * Information about icon fallback.
+ *
+ * Since: 4.2
+ */
+
+/**
+ * GTK_DEBUG_INVERT_TEXT_DIR:
+ *
+ * Inverts the default text-direction.
+ *
+ * Since: 4.8
+ */
+
+/**
+ * GTK_DEBUG_CSS:
+ *
+ * Information about deprecated CSS features.
+ *
+ * Since: 4.16
  */
 typedef enum {
   GTK_DEBUG_TEXT            = 1 <<  0,
@@ -80,17 +103,16 @@ typedef enum {
   GTK_DEBUG_A11Y            = 1 << 17,
   GTK_DEBUG_ICONFALLBACK    = 1 << 18,
   GTK_DEBUG_INVERT_TEXT_DIR = 1 << 19,
+  GTK_DEBUG_CSS             = 1 << 20,
 } GtkDebugFlags;
 
-#ifdef G_ENABLE_DEBUG
-
+/**
+ * GTK_DEBUG_CHECK:
+ * @type: type to check
+ *
+ * Whether the `type` debug flag is set.
+ **/
 #define GTK_DEBUG_CHECK(type) G_UNLIKELY (gtk_get_debug_flags () & GTK_DEBUG_##type)
-
-#else /* !G_ENABLE_DEBUG */
-
-#define GTK_DEBUG_CHECK(type) 0
-
-#endif /* G_ENABLE_DEBUG */
 
 GDK_AVAILABLE_IN_ALL
 GtkDebugFlags gtk_get_debug_flags (void);

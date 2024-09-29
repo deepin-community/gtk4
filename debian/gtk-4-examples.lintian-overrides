@@ -1,0 +1,4 @@
+# These are demos/examples, not real user-facing applications
+desktop-entry-lacks-keywords-entry [usr/share/applications/*.desktop]
+# These are demos/examples, not real user-facing applications
+no-manual-page [usr/bin/gtk4-*]

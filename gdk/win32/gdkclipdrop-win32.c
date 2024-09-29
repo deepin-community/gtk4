@@ -28,7 +28,7 @@ GTK has two clipboards - normal clipboard and primary clipboard
 Primary clipboard is only handled
 internally by GTK (it's not portable to Windows).
 
-("C:" means clipboard client (requestor), "S:" means clipboard server (provider))
+("C:" means clipboard client (requester), "S:" means clipboard server (provider))
 ("transmute" here means "change the format of some data"; this term is used here
  instead of "convert" to avoid clashing with the old g(t|d)k_selection_convert() APIs,
  which are completely unrelated)
@@ -149,7 +149,7 @@ GTK might also call gdk_clipboard_store_async(), which instructs
 the W32 backend to put the data into the OS clipboard manager by
 sending WM_RENDERALLFORMATS to itself and then handling it normally.
 
-Every time W32 backend gets WM_DRAWCLIPBOARD or WM_CLIPBOARDUPDATE,
+Every time W32 backend gets WM_CLIPBOARDUPDATE,
 it calls GetUpdatedClipboardFormats() and GetClipboardSequenceNumber()
 and caches the results of both. These calls do not require the clipboard
 to be opened.
@@ -245,7 +245,7 @@ When clipboard owner changes, the old owner receives WM_DESTROYCLIPBOARD message
 the clipboard thread schedules a call to gdk_clipboard_claim_remote()
 in the main thread, with an empty list of formats,
 to indicate that the clipboard is now owned by a remote process.
-Later the OS will send WM_DRAWCLIPBOARD or WM_CLIPBOARDUPDATE to indicate
+Later the OS will send WM_CLIPBOARDUPDATE to indicate
 the new clipboard contents (see above).
 
 DND:
@@ -415,8 +415,6 @@ struct _GdkWin32ClipboardThread
    * INVALID_HANDLE_VALUE means that the clipboard is closed.
    */
   HWND         clipboard_opened_for;
-
-  HWND         hwnd_next_viewer;
 
   /* We can't peek the queue or "unpop" queue items,
    * so the items that we can't act upon (yet) got
@@ -1171,7 +1169,7 @@ inner_clipboard_window_procedure (HWND   hwnd,
 
   switch (message)
     {
-    case WM_DESTROY: /* remove us from chain */
+    case WM_DESTROY: /* unregister the clipboard listener */
       {
         if (clipboard_thread_data == NULL)
           {
@@ -1179,26 +1177,8 @@ inner_clipboard_window_procedure (HWND   hwnd,
             return DefWindowProcW (hwnd, message, wparam, lparam);
           }
 
-        ChangeClipboardChain (hwnd, clipboard_thread_data->hwnd_next_viewer);
+        RemoveClipboardFormatListener (hwnd);
         PostQuitMessage (0);
-        return 0;
-      }
-    case WM_CHANGECBCHAIN:
-      {
-        HWND hwndRemove = (HWND) wparam; /* handle of window being removed */
-        HWND hwndNext   = (HWND) lparam; /* handle of next window in chain */
-
-        if (clipboard_thread_data == NULL)
-          {
-            g_warning ("Clipboard thread got an actionable message with no thread data");
-            return DefWindowProcW (hwnd, message, wparam, lparam);
-          }
-
-        if (hwndRemove == clipboard_thread_data->hwnd_next_viewer)
-          clipboard_thread_data->hwnd_next_viewer = hwndNext == hwnd ? NULL : hwndNext;
-        else if (clipboard_thread_data->hwnd_next_viewer != NULL)
-          return SendMessage (clipboard_thread_data->hwnd_next_viewer, message, wparam, lparam);
-
         return 0;
       }
     case WM_DESTROYCLIPBOARD:
@@ -1206,7 +1186,6 @@ inner_clipboard_window_procedure (HWND   hwnd,
         return 0;
       }
     case WM_CLIPBOARDUPDATE:
-    case WM_DRAWCLIPBOARD:
       {
         HWND hwnd_owner;
         HWND hwnd_opener;
@@ -1228,8 +1207,7 @@ inner_clipboard_window_procedure (HWND   hwnd,
 
         GDK_NOTE (DND, g_print (" drawclipboard owner: %p; opener %p ", hwnd_owner, hwnd_opener));
 
-#ifdef G_ENABLE_DEBUG
-        if (_gdk_debug_flags & GDK_DEBUG_DND)
+        if (GDK_DEBUG_CHECK (DND))
           {
             /* FIXME: grab and print clipboard formats without opening the clipboard
             if (clipboard_thread_data->clipboard_opened_for != INVALID_HANDLE_VALUE ||
@@ -1249,7 +1227,6 @@ inner_clipboard_window_procedure (HWND   hwnd,
               }
              */
           }
-#endif
 
         GDK_NOTE (DND, g_print (" \n"));
 
@@ -1271,9 +1248,6 @@ inner_clipboard_window_procedure (HWND   hwnd,
             if (hwnd_owner != clipboard_thread_data->clipboard_window)
               g_idle_add_full (G_PRIORITY_DEFAULT, clipboard_owner_changed, NULL, NULL);
           }
-
-        if (clipboard_thread_data->hwnd_next_viewer != NULL)
-          return SendMessage (clipboard_thread_data->hwnd_next_viewer, message, wparam, lparam);
 
         /* clear error to avoid confusing SetClipboardViewer() return */
         SetLastError (0);
@@ -1382,11 +1356,11 @@ inner_clipboard_window_procedure (HWND   hwnd,
         else if (returned_render->main_thread_data_handle)
           {
             BOOL set_data_succeeded;
-            /* The requestor is holding the clipboard, no
+            /* The requester is holding the clipboard, no
              * OpenClipboard() is required/possible
              */
             GDK_NOTE (DND,
-                      g_print (" SetClipboardData (%s, %p)",
+                      g_print (" SetClipboardData (%s, %p)\n",
                                _gdk_win32_cf_to_string (wparam),
                                returned_render->main_thread_data_handle));
 
@@ -1426,7 +1400,7 @@ _clipboard_window_procedure (HWND   hwnd,
 }
 
 /*
- * Creates a hidden window and adds it to the clipboard chain
+ * Creates a hidden window and add a clipboard listener
  */
 static gboolean
 register_clipboard_notification ()
@@ -1434,7 +1408,7 @@ register_clipboard_notification ()
   WNDCLASS wclass = { 0, };
   ATOM klass;
 
-  wclass.lpszClassName = "GdkClipboardNotification";
+  wclass.lpszClassName = L"GdkClipboardNotification";
   wclass.lpfnWndProc = _clipboard_window_procedure;
   wclass.hInstance = this_module ();
   wclass.cbWndExtra = sizeof (GdkWin32ClipboardThread *);
@@ -1452,20 +1426,14 @@ register_clipboard_notification ()
     goto failed;
 
   SetLastError (0);
-  clipboard_thread_data->hwnd_next_viewer = SetClipboardViewer (clipboard_thread_data->clipboard_window);
 
-  if (clipboard_thread_data->hwnd_next_viewer == NULL && GetLastError() != NO_ERROR)
+  if (AddClipboardFormatListener (clipboard_thread_data->clipboard_window) == FALSE)
     {
       DestroyWindow (clipboard_thread_data->clipboard_window);
       goto failed;
     }
 
   g_idle_add_full (G_PRIORITY_DEFAULT, clipboard_window_created, (gpointer) clipboard_thread_data->clipboard_window, NULL);
-
-  /* FIXME: http://msdn.microsoft.com/en-us/library/ms649033(v=VS.85).aspx */
-  /* This is only supported by Vista, and not yet by mingw64 */
-  /* if (AddClipboardFormatListener (hwnd) == FALSE) */
-  /*   goto failed; */
 
   return TRUE;
 
@@ -1538,9 +1506,9 @@ gdk_win32_clipdrop_init (GdkWin32Clipdrop *win32_clipdrop)
   GdkWin32ContentFormatPair fmt;
   HMODULE                   user32;
 
-  thread_wakeup_message = RegisterWindowMessage ("GDK_WORKER_THREAD_WEAKEUP");
+  thread_wakeup_message = RegisterWindowMessage (L"GDK_WORKER_THREAD_WEAKEUP");
 
-  user32 = LoadLibrary ("user32.dll");
+  user32 = LoadLibrary (L"user32.dll");
   win32_clipdrop->GetUpdatedClipboardFormats = (GetUpdatedClipboardFormatsFunc) GetProcAddress (user32, "GetUpdatedClipboardFormats");
   FreeLibrary (user32);
 
@@ -1589,21 +1557,21 @@ gdk_win32_clipdrop_init (GdkWin32Clipdrop *win32_clipdrop)
    * the lead and map the GDK contentformat "image/png" to the clipboard
    * format name "PNG" etc.
    */
-  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_PNG) = RegisterClipboardFormatA ("PNG");
-  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_JFIF) = RegisterClipboardFormatA ("JFIF");
-  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_GIF) = RegisterClipboardFormatA ("GIF");
+  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_PNG) = RegisterClipboardFormat (L"PNG");
+  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_JFIF) = RegisterClipboardFormat (L"JFIF");
+  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_GIF) = RegisterClipboardFormat (L"GIF");
 
-  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_UNIFORMRESOURCELOCATORW) = RegisterClipboardFormatA ("UniformResourceLocatorW");
-  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_CFSTR_SHELLIDLIST) = RegisterClipboardFormatA (CFSTR_SHELLIDLIST);
-  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_HTML_FORMAT) = RegisterClipboardFormatA ("HTML Format");
-  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_TEXT_HTML) = RegisterClipboardFormatA ("text/html");
+  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_UNIFORMRESOURCELOCATORW) = RegisterClipboardFormat (L"UniformResourceLocatorW");
+  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_CFSTR_SHELLIDLIST) = RegisterClipboardFormat (CFSTR_SHELLIDLIST);
+  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_HTML_FORMAT) = RegisterClipboardFormat (L"HTML Format");
+  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_TEXT_HTML) = RegisterClipboardFormat (L"text/html");
 
-  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_IMAGE_PNG) = RegisterClipboardFormatA ("image/png");
-  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_IMAGE_JPEG) = RegisterClipboardFormatA ("image/jpeg");
-  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_IMAGE_BMP) = RegisterClipboardFormatA ("image/bmp");
-  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_IMAGE_GIF) = RegisterClipboardFormatA ("image/gif");
-  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_TEXT_URI_LIST) = RegisterClipboardFormatA ("text/uri-list");
-  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_TEXT_PLAIN_UTF8) = RegisterClipboardFormatA ("text/plain;charset=utf-8");
+  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_IMAGE_PNG) = RegisterClipboardFormat (L"image/png");
+  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_IMAGE_JPEG) = RegisterClipboardFormat (L"image/jpeg");
+  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_IMAGE_BMP) = RegisterClipboardFormat (L"image/bmp");
+  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_IMAGE_GIF) = RegisterClipboardFormat (L"image/gif");
+  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_TEXT_URI_LIST) = RegisterClipboardFormat (L"text/uri-list");
+  _gdk_cf_array_index (cfs, GDK_WIN32_CF_INDEX_TEXT_PLAIN_UTF8) = RegisterClipboardFormat (L"text/plain;charset=utf-8");
 
   win32_clipdrop->active_source_drags = g_hash_table_new_full (NULL, NULL, (GDestroyNotify) g_object_unref, NULL);
 
@@ -2396,9 +2364,9 @@ transmute_cf_dib_to_image_bmp (const guchar    *data,
        * check?
        */
       (IsClipboardFormatAvailable
-       (RegisterClipboardFormatA ("application/x-moz-nativeimage")) ||
+       (RegisterClipboardFormat (L"application/x-moz-nativeimage")) ||
        IsClipboardFormatAvailable
-       (RegisterClipboardFormatA ("UniformResourceLocatorW"))) &&
+       (RegisterClipboardFormat (L"UniformResourceLocatorW"))) &&
 #endif
       TRUE)
     {

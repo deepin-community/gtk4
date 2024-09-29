@@ -36,9 +36,7 @@
  * should be modal.
  *
  * The dialog is shown with the [method@Gtk.ColorDialog.choose_rgba]
- * function. This API follows the GIO async pattern, and the
- * result can be obtained by calling
- * [method@Gtk.ColorDialog.choose_rgba_finish].
+ * function.
  *
  * See [class@Gtk.ColorDialogButton] for a convenient control
  * that uses `GtkColorDialog` and presents the results.
@@ -153,7 +151,7 @@ gtk_color_dialog_class_init (GtkColorDialogClass *class)
   object_class->set_property = gtk_color_dialog_set_property;
 
   /**
-   * GtkColorDialog:title: (attributes org.gtk.Property.get=gtk_color_dialog_get_title org.gtk.Property.set=gtk_color_dialog_set_title)
+   * GtkColorDialog:title:
    *
    * A title that may be shown on the color chooser
    * dialog that is presented by [method@Gtk.ColorDialog.choose_rgba].
@@ -166,7 +164,7 @@ gtk_color_dialog_class_init (GtkColorDialogClass *class)
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkColorDialog:modal: (attributes org.gtk.Property.get=gtk_color_dialog_get_modal org.gtk.Property.set=gtk_color_dialog_set_modal)
+   * GtkColorDialog:modal:
    *
    * Whether the color chooser dialog is modal.
    *
@@ -178,7 +176,7 @@ gtk_color_dialog_class_init (GtkColorDialogClass *class)
                             G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkColorDialog:with-alpha: (attributes org.gtk.Property.get=gtk_color_dialog_get_with_alpha org.gtk.Property.set=gtk_color_dialog_set_with_alpha)
+   * GtkColorDialog:with-alpha:
    *
    * Whether colors may have alpha (translucency).
    *
@@ -430,15 +428,12 @@ G_GNUC_END_IGNORE_DEPRECATIONS
  * @parent: (nullable): the parent `GtkWindow`
  * @initial_color: (nullable): the color to select initially
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
  * This function initiates a color choice operation by
  * presenting a color chooser dialog to the user.
- *
- * The @callback will be called when the dialog is dismissed.
- * It should call [method@Gtk.ColorDialog.choose_rgba_finish]
- * to obtain the result.
  *
  * Since: 4.10
  */

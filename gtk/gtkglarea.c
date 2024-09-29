@@ -34,6 +34,12 @@
 #include "gtkcssnodeprivate.h"
 #include "gdk/gdkgltextureprivate.h"
 #include "gdk/gdkglcontextprivate.h"
+#include "gdk/gdkdmabuftexturebuilderprivate.h"
+#include "gdk/gdkdmabuftextureprivate.h"
+
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
 
 #include <epoxy/gl.h>
 
@@ -47,6 +53,8 @@
  * `GtkGLArea` sets up its own [class@Gdk.GLContext], and creates a custom
  * GL framebuffer that the widget will do GL rendering onto. It also ensures
  * that this framebuffer is the default GL rendering target when rendering.
+ * The completed rendering is integrated into the larger GTK scene graph as
+ * a texture.
  *
  * In order to draw, you have to connect to the [signal@Gtk.GLArea::render]
  * signal, or subclass `GtkGLArea` and override the GtkGLAreaClass.render
@@ -63,6 +71,8 @@
  *
  * The `render()` function will be called when the `GtkGLArea` is ready
  * for you to draw its content:
+ *
+ * The initial contents of the framebuffer are transparent.
  *
  * ```c
  * static gboolean
@@ -146,7 +156,8 @@
 
 typedef struct {
   GdkGLTextureBuilder *builder;
-  GdkTexture *holder;
+  GdkTexture *gl_texture;
+  GdkTexture *dmabuf_texture;
 } Texture;
 
 typedef struct {
@@ -405,16 +416,20 @@ delete_one_texture (gpointer data)
   Texture *texture = data;
   guint id;
 
-  if (texture->holder)
-    gdk_gl_texture_release (GDK_GL_TEXTURE (texture->holder));
+  if (texture->gl_texture)
+    {
+      gdk_gl_texture_release (GDK_GL_TEXTURE (texture->gl_texture));
+      texture->gl_texture = NULL;
+    }
 
   id = gdk_gl_texture_builder_get_id (texture->builder);
   if (id != 0)
     glDeleteTextures (1, &id);
 
-  g_object_unref (texture->builder);
+  g_clear_object (&texture->builder);
 
-  g_free (texture);
+  if (texture->gl_texture == NULL && texture->dmabuf_texture == NULL)
+    g_free (texture);
 }
 
 static void
@@ -439,7 +454,7 @@ gtk_gl_area_ensure_texture (GtkGLArea *area)
           link = l;
           l = l->next;
 
-          if (texture->holder)
+          if (texture->gl_texture)
             continue;
 
           priv->textures = g_list_delete_link (priv->textures, link);
@@ -456,7 +471,8 @@ gtk_gl_area_ensure_texture (GtkGLArea *area)
       GLuint id;
 
       priv->texture = g_new (Texture, 1);
-      priv->texture->holder = NULL;
+      priv->texture->gl_texture = NULL;
+      priv->texture->dmabuf_texture = NULL;
 
       priv->texture->builder = gdk_gl_texture_builder_new ();
       gdk_gl_texture_builder_set_context (priv->texture->builder, priv->context);
@@ -514,7 +530,7 @@ gtk_gl_area_allocate_texture (GtkGLArea *area)
   if (priv->texture == NULL)
     return;
 
-  g_assert (priv->texture->holder == NULL);
+  g_assert (priv->texture->gl_texture == NULL);
 
   scale = gtk_widget_get_scale_factor (widget);
   width = gtk_widget_get_width (widget) * scale;
@@ -696,7 +712,7 @@ gtk_gl_area_draw_error_screen (GtkGLArea   *area,
 }
 
 static void
-release_texture (gpointer data)
+release_gl_texture (gpointer data)
 {
   Texture *texture = data;
   gpointer sync;
@@ -708,7 +724,22 @@ release_texture (gpointer data)
       gdk_gl_texture_builder_set_sync (texture->builder, NULL);
     }
 
-  texture->holder = NULL;
+  texture->gl_texture = NULL;
+}
+
+static void
+release_dmabuf_texture (gpointer data)
+{
+  Texture *texture = data;
+
+  g_clear_object (&texture->gl_texture);
+
+  if (texture->dmabuf_texture == NULL)
+    return;
+
+  gdk_dmabuf_close_fds ((GdkDmabuf *) gdk_dmabuf_texture_get_dmabuf (GDK_DMABUF_TEXTURE (texture->dmabuf_texture)));
+
+  texture->dmabuf_texture = NULL;
 }
 
 static void
@@ -754,6 +785,8 @@ gtk_gl_area_snapshot (GtkWidget   *widget,
     {
       Texture *texture;
       gpointer sync = NULL;
+      GdkDmabuf dmabuf;
+      GdkTexture *holder;
 
       if (priv->needs_render || priv->auto_render)
         {
@@ -772,14 +805,37 @@ gtk_gl_area_snapshot (GtkWidget   *widget,
       priv->texture = NULL;
       priv->textures = g_list_prepend (priv->textures, texture);
 
-      if (gdk_gl_context_has_sync (priv->context))
+      if (gdk_gl_context_has_feature (priv->context, GDK_GL_FEATURE_SYNC))
         sync = glFenceSync (GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 
       gdk_gl_texture_builder_set_sync (texture->builder, sync);
 
-      texture->holder = gdk_gl_texture_builder_build (texture->builder,
-                                                      release_texture,
-                                                      texture);
+      texture->gl_texture = gdk_gl_texture_builder_build (texture->builder,
+                                                          release_gl_texture,
+                                                          texture);
+      holder = texture->gl_texture;
+
+      if (gdk_gl_context_export_dmabuf (priv->context,
+                                        gdk_gl_texture_builder_get_id (texture->builder),
+                                        &dmabuf))
+        {
+          GdkDmabufTextureBuilder *builder = gdk_dmabuf_texture_builder_new ();
+
+          gdk_dmabuf_texture_builder_set_display (builder, gdk_gl_context_get_display (priv->context));
+          gdk_dmabuf_texture_builder_set_width (builder, gdk_texture_get_width (texture->gl_texture));
+          gdk_dmabuf_texture_builder_set_height (builder, gdk_texture_get_height (texture->gl_texture));
+          gdk_dmabuf_texture_builder_set_premultiplied (builder, TRUE);
+          gdk_dmabuf_texture_builder_set_dmabuf (builder, &dmabuf);
+
+          texture->dmabuf_texture = gdk_dmabuf_texture_builder_build (builder, release_dmabuf_texture, texture, NULL);
+
+          g_object_unref (builder);
+
+          if (texture->dmabuf_texture != NULL)
+            holder = texture->dmabuf_texture;
+          else
+            gdk_dmabuf_close_fds (&dmabuf);
+        }
 
       /* Our texture is rendered by OpenGL, so it is upside down,
        * compared to what GSK expects, so flip it back.
@@ -788,13 +844,13 @@ gtk_gl_area_snapshot (GtkWidget   *widget,
       gtk_snapshot_translate (snapshot, &GRAPHENE_POINT_INIT (0, gtk_widget_get_height (widget)));
       gtk_snapshot_scale (snapshot, 1, -1);
       gtk_snapshot_append_texture (snapshot,
-                                   texture->holder,
+                                   holder,
                                    &GRAPHENE_RECT_INIT (0, 0,
                                                         gtk_widget_get_width (widget),
                                                         gtk_widget_get_height (widget)));
       gtk_snapshot_restore (snapshot);
 
-      g_object_unref (texture->holder);
+      g_object_unref (holder);
     }
   else
     {
@@ -844,7 +900,7 @@ gtk_gl_area_class_init (GtkGLAreaClass *klass)
                          G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkGLArea:auto-render: (attributes org.gtk.Property.get=gtk_gl_area_get_auto_render org.gtk.Property.set=gtk_gl_area_set_auto_render)
+   * GtkGLArea:auto-render:
    *
    * If set to %TRUE the ::render signal will be emitted every time
    * the widget draws.
@@ -865,7 +921,7 @@ gtk_gl_area_class_init (GtkGLAreaClass *klass)
                           G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkGLArea:has-depth-buffer: (attributes org.gtk.Property.get=gtk_gl_area_get_has_depth_buffer org.gtk.Property.set=gtk_gl_area_set_has_depth_buffer)
+   * GtkGLArea:has-depth-buffer:
    *
    * If set to %TRUE the widget will allocate and enable a depth buffer for the
    * target framebuffer.
@@ -882,7 +938,7 @@ gtk_gl_area_class_init (GtkGLAreaClass *klass)
                           G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkGLArea:has-stencil-buffer: (attributes org.gtk.Property.get=gtk_gl_area_get_has_stencil_buffer org.gtk.Property.set=gtk_gl_area_set_has_stencil_buffer)
+   * GtkGLArea:has-stencil-buffer:
    *
    * If set to %TRUE the widget will allocate and enable a stencil buffer for the
    * target framebuffer.
@@ -895,7 +951,7 @@ gtk_gl_area_class_init (GtkGLAreaClass *klass)
                           G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkGLArea:use-es: (attributes org.gtk.Property.get=gtk_gl_area_get_use_es org.gtk.Property.set=gtk_gl_area_set_use_es)
+   * GtkGLArea:use-es:
    *
    * If set to %TRUE the widget will try to create a `GdkGLContext` using
    * OpenGL ES instead of OpenGL.
@@ -910,7 +966,7 @@ gtk_gl_area_class_init (GtkGLAreaClass *klass)
                           G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkGLArea:allowed-apis: (attributes org.gtk.Property.get=gtk_gl_area_get_allowed_apis org.gtk.Property.set=gtk_gl_area_set_allowed_apis)
+   * GtkGLArea:allowed-apis:
    *
    * The allowed APIs.
    *
@@ -925,7 +981,7 @@ gtk_gl_area_class_init (GtkGLAreaClass *klass)
                         G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkGLArea:api: (attributes org.gtk.Property.get=gtk_gl_area_get_api)
+   * GtkGLArea:api:
    *
    * The API currently in use.
    *
@@ -1099,7 +1155,7 @@ gtk_gl_area_get_error (GtkGLArea *area)
 }
 
 /**
- * gtk_gl_area_set_use_es: (attributes org.gtk.Method.set_property=use-es)
+ * gtk_gl_area_set_use_es:
  * @area: a `GtkGLArea`
  * @use_es: whether to use OpenGL or OpenGL ES
  *
@@ -1129,7 +1185,7 @@ gtk_gl_area_set_use_es (GtkGLArea *area,
 }
 
 /**
- * gtk_gl_area_get_use_es: (attributes org.gtk.Method.get_property=use-es)
+ * gtk_gl_area_get_use_es:
  * @area: a `GtkGLArea`
  *
  * Returns whether the `GtkGLArea` should use OpenGL ES.
@@ -1287,7 +1343,7 @@ gtk_gl_area_get_required_version (GtkGLArea *area,
 }
 
 /**
- * gtk_gl_area_get_has_depth_buffer: (attributes org.gtk.Method.get_property=has-depth-buffer)
+ * gtk_gl_area_get_has_depth_buffer:
  * @area: a `GtkGLArea`
  *
  * Returns whether the area has a depth buffer.
@@ -1305,7 +1361,7 @@ gtk_gl_area_get_has_depth_buffer (GtkGLArea *area)
 }
 
 /**
- * gtk_gl_area_set_has_depth_buffer: (attributes org.gtk.Method.set_property=has-depth-buffer)
+ * gtk_gl_area_set_has_depth_buffer:
  * @area: a `GtkGLArea`
  * @has_depth_buffer: %TRUE to add a depth buffer
  *
@@ -1336,7 +1392,7 @@ gtk_gl_area_set_has_depth_buffer (GtkGLArea *area,
 }
 
 /**
- * gtk_gl_area_get_has_stencil_buffer: (attributes org.gtk.Method.get_property=has-stencil-buffer)
+ * gtk_gl_area_get_has_stencil_buffer:
  * @area: a `GtkGLArea`
  *
  * Returns whether the area has a stencil buffer.
@@ -1354,7 +1410,7 @@ gtk_gl_area_get_has_stencil_buffer (GtkGLArea *area)
 }
 
 /**
- * gtk_gl_area_set_has_stencil_buffer: (attributes org.gtk.Method.set_property=has-stencil-buffer)
+ * gtk_gl_area_set_has_stencil_buffer:
  * @area: a `GtkGLArea`
  * @has_stencil_buffer: %TRUE to add a stencil buffer
  *
@@ -1412,7 +1468,7 @@ gtk_gl_area_queue_render (GtkGLArea *area)
 
 
 /**
- * gtk_gl_area_get_auto_render: (attributes org.gtk.Method.get_property=auto-render)
+ * gtk_gl_area_get_auto_render:
  * @area: a `GtkGLArea`
  *
  * Returns whether the area is in auto render mode or not.
@@ -1430,7 +1486,7 @@ gtk_gl_area_get_auto_render (GtkGLArea *area)
 }
 
 /**
- * gtk_gl_area_set_auto_render: (attributes org.gtk.Method.set_property=auto-render)
+ * gtk_gl_area_set_auto_render:
  * @area: a `GtkGLArea`
  * @auto_render: a boolean
  *

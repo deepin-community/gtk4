@@ -75,6 +75,9 @@ static GParamSpec *obj_props[N_PROPS];
 
 static guint obj_signals[LAST_SIGNAL];
 
+static char *gtk_at_context_get_description_internal (GtkATContext*self, gboolean check_duplicates);
+static char *gtk_at_context_get_name_internal (GtkATContext*self, gboolean check_duplicates);
+
 static void
 gtk_at_context_finalize (GObject *gobject)
 {
@@ -205,6 +208,24 @@ gtk_at_context_real_unrealize (GtkATContext *self)
 }
 
 static void
+gtk_at_context_real_update_caret_position (GtkATContext *self)
+{
+}
+
+static void
+gtk_at_context_real_update_selection_bound (GtkATContext *self)
+{
+}
+
+static void
+gtk_at_context_real_update_text_contents (GtkATContext *self,
+                                          GtkAccessibleTextContentChange change,
+                                          unsigned int start,
+                                          unsigned int end)
+{
+}
+
+static void
 gtk_at_context_class_init (GtkATContextClass *klass)
 {
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
@@ -220,9 +241,12 @@ gtk_at_context_class_init (GtkATContextClass *klass)
   klass->platform_change = gtk_at_context_real_platform_change;
   klass->bounds_change = gtk_at_context_real_bounds_change;
   klass->child_change = gtk_at_context_real_child_change;
+  klass->update_caret_position = gtk_at_context_real_update_caret_position;
+  klass->update_selection_bound = gtk_at_context_real_update_selection_bound;
+  klass->update_text_contents = gtk_at_context_real_update_text_contents;
 
   /**
-   * GtkATContext:accessible-role: (attributes org.gtk.Property.get=gtk_at_context_get_accessible_role)
+   * GtkATContext:accessible-role:
    *
    * The accessible role used by the AT context.
    *
@@ -238,7 +262,7 @@ gtk_at_context_class_init (GtkATContextClass *klass)
                        G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkATContext:accessible: (attributes org.gtk.Property.get=gtk_at_context_get_accessible)
+   * GtkATContext:accessible:
    *
    * The `GtkAccessible` that created the `GtkATContext` instance.
    */
@@ -304,6 +328,7 @@ static const char *property_attrs[] = {
   [GTK_ACCESSIBLE_PROPERTY_VALUE_MIN]           = "valuemin",
   [GTK_ACCESSIBLE_PROPERTY_VALUE_NOW]           = "valuenow",
   [GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT]          = "valuetext",
+  [GTK_ACCESSIBLE_PROPERTY_HELP_TEXT]           = "helptext",
 };
 
 /*< private >
@@ -318,7 +343,7 @@ const char *
 gtk_accessible_property_get_attribute_name (GtkAccessibleProperty property)
 {
   g_return_val_if_fail (property >= GTK_ACCESSIBLE_PROPERTY_AUTOCOMPLETE &&
-                        property <= GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT,
+                        property <= GTK_ACCESSIBLE_PROPERTY_HELP_TEXT,
                         "<none>");
 
   return property_attrs[property];
@@ -413,7 +438,7 @@ gtk_at_context_init (GtkATContext *self)
 }
 
 /**
- * gtk_at_context_get_accessible: (attributes org.gtk.Method.get_property=accessible)
+ * gtk_at_context_get_accessible:
  * @self: a `GtkATContext`
  *
  * Retrieves the `GtkAccessible` using this context.
@@ -453,7 +478,7 @@ gtk_at_context_set_accessible_role (GtkATContext      *self,
 }
 
 /**
- * gtk_at_context_get_accessible_role: (attributes org.gtk.Method.get_property=accessible-role)
+ * gtk_at_context_get_accessible_role:
  * @self: a `GtkATContext`
  *
  * Retrieves the accessible role of this context.
@@ -484,6 +509,9 @@ gtk_at_context_get_accessible_parent (GtkATContext *self)
   return self->accessible_parent;
 }
 
+
+static GtkATContext * get_parent_context (GtkATContext *self);
+
 /*< private >
  * gtk_at_context_set_accessible_parent:
  * @self: a `GtkAtContext`
@@ -505,8 +533,17 @@ gtk_at_context_set_accessible_parent (GtkATContext *self,
 
       self->accessible_parent = parent;
       if (self->accessible_parent != NULL)
-        g_object_add_weak_pointer (G_OBJECT (self->accessible_parent),
-                                   (gpointer *) &self->accessible_parent);
+        {
+          GtkATContext *parent_context = NULL;
+
+          g_object_add_weak_pointer (G_OBJECT (self->accessible_parent),
+                                     (gpointer *) &self->accessible_parent);
+
+          parent_context = get_parent_context (self);
+          if (parent_context && parent_context->realized)
+            gtk_at_context_realize (self);
+          g_clear_object (&parent_context);
+        }
     }
 }
 
@@ -604,14 +641,10 @@ static const struct {
                                      GtkAccessible    *accessible,
                                      GdkDisplay       *display);
 } a11y_backends[] = {
-#if defined(GDK_WINDOWING_WAYLAND)
-  { "AT-SPI (Wayland)", "atspi", gtk_at_spi_create_context },
-#endif
-#if defined(GDK_WINDOWING_X11)
-  { "AT-SPI (X11)", "atspi", gtk_at_spi_create_context },
+#if defined(GDK_WINDOWING_WAYLAND) || defined(GDK_WINDOWING_X11)
+  { "AT-SPI", "atspi", gtk_at_spi_create_context },
 #endif
   { "Test", "test", gtk_test_at_context_new },
-  { NULL, NULL, NULL },
 };
 
 /**
@@ -634,6 +667,7 @@ gtk_at_context_create (GtkAccessibleRole  accessible_role,
                        GdkDisplay        *display)
 {
   static const char *gtk_a11y_env;
+  GtkATContext *res = NULL;
 
   if (gtk_a11y_env == NULL)
     {
@@ -661,12 +695,9 @@ gtk_at_context_create (GtkAccessibleRole  accessible_role,
   if (g_ascii_strcasecmp (gtk_a11y_env, "none") == 0)
     return NULL;
 
-  GtkATContext *res = NULL;
-
-  for (guint i = 0; i < G_N_ELEMENTS (a11y_backends); i++)
+  for (size_t i = 0; i < G_N_ELEMENTS (a11y_backends); i++)
     {
-      if (a11y_backends[i].name == NULL)
-        break;
+      g_assert (a11y_backends[i].name != NULL);
 
       if (a11y_backends[i].create_context != NULL &&
           (*gtk_a11y_env == '0' || g_ascii_strcasecmp (a11y_backends[i].env_name, gtk_a11y_env) == 0))
@@ -901,7 +932,7 @@ gtk_at_context_set_accessible_property (GtkATContext          *self,
   else
     res = gtk_accessible_attribute_set_remove (self->properties, property);
 
-  if (res)
+  if (res && self->realized)
     self->updated_properties |= (1 << property);
 }
 
@@ -1025,7 +1056,10 @@ gtk_at_context_get_accessible_relation (GtkATContext          *self,
 static guint8 naming[] = {
   [GTK_ACCESSIBLE_ROLE_ALERT] = NAME_FROM_AUTHOR,
   [GTK_ACCESSIBLE_ROLE_ALERT_DIALOG] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_REQUIRED,
+  [GTK_ACCESSIBLE_ROLE_APPLICATION] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_REQUIRED,
+  [GTK_ACCESSIBLE_ROLE_ARTICLE] = NAME_FROM_AUTHOR,
   [GTK_ACCESSIBLE_ROLE_BANNER] = GTK_ACCESSIBLE_NAME_PROHIBITED,
+  [GTK_ACCESSIBLE_ROLE_BLOCK_QUOTE] = NAME_FROM_AUTHOR,
   [GTK_ACCESSIBLE_ROLE_BUTTON] = NAME_FROM_AUTHOR|NAME_FROM_CONTENT|GTK_ACCESSIBLE_NAME_REQUIRED,
   [GTK_ACCESSIBLE_ROLE_CAPTION] = GTK_ACCESSIBLE_NAME_PROHIBITED,
   [GTK_ACCESSIBLE_ROLE_CELL] = NAME_FROM_AUTHOR|NAME_FROM_CONTENT,
@@ -1033,6 +1067,7 @@ static guint8 naming[] = {
   [GTK_ACCESSIBLE_ROLE_COLUMN_HEADER] = NAME_FROM_AUTHOR|NAME_FROM_CONTENT|GTK_ACCESSIBLE_NAME_REQUIRED,
   [GTK_ACCESSIBLE_ROLE_COMBO_BOX] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_REQUIRED,
   [GTK_ACCESSIBLE_ROLE_COMMAND] = GTK_ACCESSIBLE_NAME_PROHIBITED,
+  [GTK_ACCESSIBLE_ROLE_COMMENT] = NAME_FROM_AUTHOR|NAME_FROM_CONTENT,
   [GTK_ACCESSIBLE_ROLE_COMPOSITE] = GTK_ACCESSIBLE_NAME_PROHIBITED,
   [GTK_ACCESSIBLE_ROLE_DIALOG] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_REQUIRED,
   [GTK_ACCESSIBLE_ROLE_DOCUMENT] = NAME_FROM_AUTHOR,
@@ -1066,6 +1101,7 @@ static guint8 naming[] = {
   [GTK_ACCESSIBLE_ROLE_NONE] = GTK_ACCESSIBLE_NAME_PROHIBITED,
   [GTK_ACCESSIBLE_ROLE_NOTE] = NAME_FROM_AUTHOR,
   [GTK_ACCESSIBLE_ROLE_OPTION] = NAME_FROM_AUTHOR|NAME_FROM_CONTENT|GTK_ACCESSIBLE_NAME_REQUIRED,
+  [GTK_ACCESSIBLE_ROLE_PARAGRAPH] = GTK_ACCESSIBLE_NAME_PROHIBITED,
   [GTK_ACCESSIBLE_ROLE_PRESENTATION] = GTK_ACCESSIBLE_NAME_PROHIBITED,
   [GTK_ACCESSIBLE_ROLE_PROGRESS_BAR] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_REQUIRED,
   [GTK_ACCESSIBLE_ROLE_RADIO] = NAME_FROM_AUTHOR|NAME_FROM_CONTENT|GTK_ACCESSIBLE_NAME_REQUIRED,
@@ -1091,9 +1127,11 @@ static guint8 naming[] = {
   [GTK_ACCESSIBLE_ROLE_TABLE] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_REQUIRED,
   [GTK_ACCESSIBLE_ROLE_TAB_LIST] = NAME_FROM_AUTHOR,
   [GTK_ACCESSIBLE_ROLE_TAB_PANEL] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_REQUIRED,
+  [GTK_ACCESSIBLE_ROLE_TERMINAL] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_REQUIRED,
   [GTK_ACCESSIBLE_ROLE_TEXT_BOX] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_REQUIRED,
   [GTK_ACCESSIBLE_ROLE_TIME] = GTK_ACCESSIBLE_NAME_PROHIBITED,
   [GTK_ACCESSIBLE_ROLE_TIMER] = NAME_FROM_AUTHOR,
+  [GTK_ACCESSIBLE_ROLE_TOGGLE_BUTTON] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_REQUIRED,
   [GTK_ACCESSIBLE_ROLE_TOOLBAR] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_RECOMMENDED,
   [GTK_ACCESSIBLE_ROLE_TOOLTIP] = NAME_FROM_AUTHOR|NAME_FROM_CONTENT,
   [GTK_ACCESSIBLE_ROLE_TREE] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_REQUIRED,
@@ -1101,8 +1139,6 @@ static guint8 naming[] = {
   [GTK_ACCESSIBLE_ROLE_TREE_ITEM] = NAME_FROM_AUTHOR|NAME_FROM_CONTENT|GTK_ACCESSIBLE_NAME_REQUIRED,
   [GTK_ACCESSIBLE_ROLE_WIDGET] = NAME_FROM_AUTHOR|NAME_FROM_CONTENT,
   [GTK_ACCESSIBLE_ROLE_WINDOW] = NAME_FROM_AUTHOR,
-  [GTK_ACCESSIBLE_ROLE_TOGGLE_BUTTON] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_REQUIRED,
-  [GTK_ACCESSIBLE_ROLE_APPLICATION] = NAME_FROM_AUTHOR|GTK_ACCESSIBLE_NAME_REQUIRED,
 };
 
 /* < private >
@@ -1233,7 +1269,8 @@ gtk_at_context_get_text_accumulate (GtkATContext          *self,
                                     GtkAccessibleProperty  property,
                                     GtkAccessibleRelation  relation,
                                     gboolean               is_ref,
-                                    gboolean               is_child)
+                                    gboolean               is_child,
+                                    gboolean               check_duplicates)
 {
   GtkAccessibleValue *value = NULL;
 
@@ -1266,7 +1303,7 @@ gtk_at_context_get_text_accumulate (GtkATContext          *self,
                   GtkATContext *rel_context = gtk_accessible_get_at_context (rel);
 
                   g_ptr_array_add (nodes, rel);
-                  gtk_at_context_get_text_accumulate (rel_context, nodes, res, property, relation, TRUE, FALSE);
+                  gtk_at_context_get_text_accumulate (rel_context, nodes, res, property, relation, TRUE, FALSE, check_duplicates);
 
                   g_object_unref (rel_context);
                 }
@@ -1290,33 +1327,36 @@ gtk_at_context_get_text_accumulate (GtkATContext          *self,
     }
 
   /* Step 2.E */
-  if (self->accessible_role == GTK_ACCESSIBLE_ROLE_TEXT_BOX)
+  if ((property == GTK_ACCESSIBLE_PROPERTY_LABEL && is_child) || (relation == GTK_ACCESSIBLE_RELATION_LABELLED_BY && is_ref))
     {
-      if (GTK_IS_EDITABLE (self->accessible))
+      if (self->accessible_role == GTK_ACCESSIBLE_ROLE_TEXT_BOX)
         {
-          const char *text = gtk_editable_get_text (GTK_EDITABLE (self->accessible));
-          if (text && not_just_space (text))
-            append_with_space (res, text);
-        }
-      return;
-    }
-  else if (gtk_accessible_role_is_range_subclass (self->accessible_role))
-    {
-      if (gtk_accessible_attribute_set_contains (self->properties, GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT))
+          if (GTK_IS_EDITABLE (self->accessible))
+            {
+              const char *text = gtk_editable_get_text (GTK_EDITABLE (self->accessible));
+            if (text && not_just_space (text))
+              append_with_space (res, text);
+          }
+        return;
+      }
+      else if (gtk_accessible_role_is_range_subclass (self->accessible_role))
         {
-          value = gtk_accessible_attribute_set_get_value (self->properties, GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT);
-          append_with_space (res, gtk_string_accessible_value_get (value));
-        }
-      else if (gtk_accessible_attribute_set_contains (self->properties, GTK_ACCESSIBLE_PROPERTY_VALUE_NOW))
-        {
-          value = gtk_accessible_attribute_set_get_value (self->properties, GTK_ACCESSIBLE_PROPERTY_VALUE_NOW);
-          if (res->len > 0)
-            g_string_append (res, " ");
-          g_string_append_printf (res, "%g", gtk_number_accessible_value_get (value));
-        }
+          if (gtk_accessible_attribute_set_contains (self->properties, GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT))
+            {
+              value = gtk_accessible_attribute_set_get_value (self->properties, GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT);
+              append_with_space (res, gtk_string_accessible_value_get (value));
+            }
+          else if (gtk_accessible_attribute_set_contains (self->properties, GTK_ACCESSIBLE_PROPERTY_VALUE_NOW))
+            {
+              value = gtk_accessible_attribute_set_get_value (self->properties, GTK_ACCESSIBLE_PROPERTY_VALUE_NOW);
+              if (res->len > 0)
+                g_string_append (res, " ");
+              g_string_append_printf (res, "%g", gtk_number_accessible_value_get (value));
+            }
 
-      return;
-    }
+          return;
+        }
+      }
 
   /* Step 2.F */
   if (gtk_accessible_role_supports_name_from_content (self->accessible_role) || is_ref || is_child)
@@ -1332,7 +1372,7 @@ gtk_at_context_get_text_accumulate (GtkATContext          *self,
               GtkAccessible *rel = GTK_ACCESSIBLE (child);
               GtkATContext *rel_context = gtk_accessible_get_at_context (rel);
 
-              gtk_at_context_get_text_accumulate (rel_context, nodes, s, property, relation, FALSE, TRUE);
+              gtk_at_context_get_text_accumulate (rel_context, nodes, s, property, relation, FALSE, TRUE, check_duplicates);
 
               g_object_unref (rel_context);
             }
@@ -1348,35 +1388,38 @@ gtk_at_context_get_text_accumulate (GtkATContext          *self,
         }
     }
 
-  /* Step 2.G */
-  if (GTK_IS_LABEL (self->accessible))
-    {
-      const char *text = gtk_label_get_text (GTK_LABEL (self->accessible));
-      if (text && not_just_space (text))
-        append_with_space (res, text);
-      return;
-    }
-  else if (GTK_IS_INSCRIPTION (self->accessible))
-    {
-      const char *text = gtk_inscription_get_text (GTK_INSCRIPTION (self->accessible));
-      if (text && not_just_space (text))
-        append_with_space (res, text);
-      return;
-    }
-
   /* Step 2.I */
   if (GTK_IS_WIDGET (self->accessible))
     {
       const char *text = gtk_widget_get_tooltip_text (GTK_WIDGET (self->accessible));
       if (text && not_just_space (text))
-        append_with_space (res, text);
+        {
+          gboolean append = !check_duplicates;
+
+          if (!append)
+            {
+              char *description = gtk_at_context_get_description_internal (self, FALSE);
+              char *name = gtk_at_context_get_name_internal (self, FALSE);
+
+              append =
+                (property == GTK_ACCESSIBLE_PROPERTY_LABEL && strcmp (text, description) != 0) ||
+                (property == GTK_ACCESSIBLE_PROPERTY_DESCRIPTION && strcmp (text, name) != 0);
+
+              g_free (description);
+              g_free (name);
+            }
+
+          if (append)
+            append_with_space (res, text);
+        }
     }
 }
 
 static char *
 gtk_at_context_get_text (GtkATContext          *self,
                          GtkAccessibleProperty  property,
-                         GtkAccessibleRelation  relation)
+                         GtkAccessibleRelation  relation,
+gboolean              check_duplicates)
 {
   GtkATContext *parent = NULL;
 
@@ -1408,13 +1451,19 @@ gtk_at_context_get_text (GtkATContext          *self,
   GString *res = g_string_new ("");
 
   /* Step 2 */
-  gtk_at_context_get_text_accumulate (self, nodes, res, property, relation, FALSE, FALSE);
+  gtk_at_context_get_text_accumulate (self, nodes, res, property, relation, FALSE, FALSE, check_duplicates);
 
   g_ptr_array_unref (nodes);
 
   g_clear_object (&parent);
 
   return g_string_free (res, FALSE);
+}
+
+static char *
+gtk_at_context_get_name_internal (GtkATContext *self, gboolean check_duplicates)
+{
+  return gtk_at_context_get_text (self, GTK_ACCESSIBLE_PROPERTY_LABEL, GTK_ACCESSIBLE_RELATION_LABELLED_BY, check_duplicates);
 }
 
 /*< private >
@@ -1430,7 +1479,18 @@ gtk_at_context_get_text (GtkATContext          *self,
 char *
 gtk_at_context_get_name (GtkATContext *self)
 {
-  return gtk_at_context_get_text (self, GTK_ACCESSIBLE_PROPERTY_LABEL, GTK_ACCESSIBLE_RELATION_LABELLED_BY);
+  /*
+  * We intentionally don't check for duplicates here, as the name
+  * is more important, and we want the tooltip as the name
+  * if everything else fails.
+  */
+  return gtk_at_context_get_name_internal (self, FALSE);
+}
+
+static char *
+gtk_at_context_get_description_internal (GtkATContext *self, gboolean check_duplicates)
+{
+  return gtk_at_context_get_text (self, GTK_ACCESSIBLE_PROPERTY_DESCRIPTION, GTK_ACCESSIBLE_RELATION_DESCRIBED_BY, check_duplicates);
 }
 
 /*< private >
@@ -1446,7 +1506,7 @@ gtk_at_context_get_name (GtkATContext *self)
 char *
 gtk_at_context_get_description (GtkATContext *self)
 {
-  return gtk_at_context_get_text (self, GTK_ACCESSIBLE_PROPERTY_DESCRIPTION, GTK_ACCESSIBLE_RELATION_DESCRIBED_BY);
+  return gtk_at_context_get_description_internal (self, TRUE);
 }
 
 void
@@ -1476,4 +1536,45 @@ gtk_at_context_child_changed (GtkATContext             *self,
     return;
 
   GTK_AT_CONTEXT_GET_CLASS (self)->child_change (self, change, child);
+}
+
+void
+gtk_at_context_announce (GtkATContext                      *self,
+                         const char                        *message,
+                         GtkAccessibleAnnouncementPriority  priority)
+{
+  if (!self->realized)
+    return;
+
+  GTK_AT_CONTEXT_GET_CLASS (self)->announce (self, message, priority);
+}
+
+void
+gtk_at_context_update_caret_position (GtkATContext *self)
+{
+  if (!self->realized)
+    return;
+
+  GTK_AT_CONTEXT_GET_CLASS (self)->update_caret_position (self);
+}
+
+void
+gtk_at_context_update_selection_bound (GtkATContext *self)
+{
+  if (!self->realized)
+    return;
+
+  GTK_AT_CONTEXT_GET_CLASS (self)->update_selection_bound (self);
+}
+
+void
+gtk_at_context_update_text_contents (GtkATContext *self,
+                                     GtkAccessibleTextContentChange change,
+                                     unsigned int start,
+                                     unsigned int end)
+{
+  if (!self->realized)
+    return;
+
+  GTK_AT_CONTEXT_GET_CLASS (self)->update_text_contents (self, change, start, end);
 }

@@ -665,7 +665,6 @@ gdk_x11_display_translate_event (GdkEventTranslator *translator,
       if (x11_screen->wmspec_check_window == xevent->xdestroywindow.window)
         {
           x11_screen->wmspec_check_window = None;
-          x11_screen->last_wmspec_check_time = 0;
           g_free (x11_screen->window_manager_name);
           x11_screen->window_manager_name = g_strdup ("unknown");
 
@@ -745,7 +744,6 @@ gdk_x11_display_translate_event (GdkEventTranslator *translator,
       break;
 
     case VisibilityNotify:
-#ifdef G_ENABLE_DEBUG
       if (GDK_DISPLAY_DEBUG_CHECK (display, EVENTS))
 	switch (xevent->xvisibility.state)
 	  {
@@ -764,7 +762,6 @@ gdk_x11_display_translate_event (GdkEventTranslator *translator,
           default:
             break;
 	  }
-#endif /* G_ENABLE_DEBUG */
       /* not handled */
       break;
 
@@ -1229,13 +1226,11 @@ _gdk_wm_protocols_filter (const XEvent  *xevent,
                 timings->refresh_interval = refresh_interval;
 
               timings->complete = TRUE;
-#ifdef G_ENABLE_DEBUG
               if (GDK_DISPLAY_DEBUG_CHECK (display, FRAMES))
                 _gdk_frame_clock_debug_print_timings (clock, timings);
 
               if (GDK_PROFILER_IS_RUNNING)
                 _gdk_frame_clock_add_timings_to_profiler (clock, timings);
-#endif /* G_ENABLE_DEBUG */
             }
         }
     }
@@ -1433,6 +1428,9 @@ gdk_x11_display_open (const char *display_name)
   int ignore;
   int maj, min;
   char *cm_name;
+  gboolean frame_extents;
+  gboolean rgba;
+  gboolean composited;
 
   XInitThreads ();
 
@@ -1474,7 +1472,7 @@ gdk_x11_display_open (const char *display_name)
   }
 #endif
 
-  /* initialize the display's screens */ 
+  /* initialize the display's screens */
   display_x11->screen = _gdk_x11_screen_new (display, DefaultScreen (display_x11->xdisplay));
 
   /* If GL is available we want to pick better default/rgba visuals,
@@ -1486,8 +1484,11 @@ gdk_x11_display_open (const char *display_name)
    */
   if (!gdk_display_prepare_gl (display, NULL))
     {
-      gdk_x11_display_query_default_visual (display_x11, &display_x11->window_visual, &display_x11->window_depth);
-      gdk_x11_display_init_leader_surface (display_x11);
+      if (!display_x11->leader_gdk_surface)
+        {
+          gdk_x11_display_query_default_visual (display_x11, &display_x11->window_visual, &display_x11->window_depth);
+          gdk_x11_display_init_leader_surface (display_x11);
+        }
     }
 
 #ifdef HAVE_XFIXES
@@ -1647,6 +1648,13 @@ gdk_x11_display_open (const char *display_name)
                                                   gdk_x11_get_xatom_by_name_for_display (display, cm_name)) != None);
   g_free (cm_name);
 
+  frame_extents = gdk_x11_screen_supports_net_wm_hint (gdk_x11_display_get_screen (display),
+                                                       g_intern_static_string ("_GTK_FRAME_EXTENTS"));
+  rgba = gdk_display_is_rgba (display);
+  composited = gdk_display_is_composited (display);
+
+  gdk_display_set_shadow_width (display, frame_extents && rgba && composited);
+
   gdk_display_emit_opened (display);
 
   return display;
@@ -1770,11 +1778,6 @@ _gdk_x11_display_is_root_window (GdkDisplay *display,
 
   return GDK_SCREEN_XROOTWIN (display_x11->screen) == xroot_window;
 }
-
-struct XPointerUngrabInfo {
-  GdkDisplay *display;
-  guint32 time;
-};
 
 static void
 device_grab_update_callback (GdkDisplay *display,
@@ -2993,7 +2996,7 @@ gdk_x11_display_init_gl_backend (GdkX11Display  *self,
     }
 
   if (!eglGetConfigAttrib (gdk_display_get_egl_display (display),
-                           gdk_display_get_egl_config (display),
+                           gdk_display_get_egl_config (display, GDK_MEMORY_U8),
                            EGL_NATIVE_VISUAL_ID,
                            &visualid))
     {
@@ -3009,6 +3012,8 @@ gdk_x11_display_init_gl_backend (GdkX11Display  *self,
 
   self->egl_version = epoxy_egl_version (egl_display);
 
+  XFree (visinfo);
+
   return TRUE;
 }
 
@@ -3019,7 +3024,7 @@ gdk_x11_display_init_gl (GdkDisplay  *display,
   GdkX11Display *self = GDK_X11_DISPLAY (display);
 
   if (!gdk_x11_display_init_gl_backend (self, &self->window_visual, &self->window_depth, error))
-    return FALSE;
+    return NULL;
 
   gdk_x11_display_init_leader_surface (self);
 
@@ -3071,7 +3076,7 @@ G_GNUC_END_IGNORE_DEPRECATIONS
 
   display_class->get_monitors = gdk_x11_display_get_monitors;
   display_class->get_setting = gdk_x11_display_get_setting;
-  display_class->set_cursor_theme = gdk_x11_display_set_cursor_theme;
+  display_class->set_cursor_theme = _gdk_x11_display_set_cursor_theme;
 
   class->xevent = gdk_event_source_xevent;
 

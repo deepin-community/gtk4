@@ -562,13 +562,18 @@ gtk_header_bar_class_init (GtkHeaderBarClass *class)
   widget_class->unroot = gtk_header_bar_unroot;
   widget_class->get_request_mode = gtk_header_bar_get_request_mode;
 
+  /**
+   * GtkHeaderBar:title-widget:
+   *
+   * The title widget to display.
+   */
   header_bar_props[PROP_TITLE_WIDGET] =
       g_param_spec_object ("title-widget", NULL, NULL,
                            GTK_TYPE_WIDGET,
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkHeaderBar:show-title-buttons: (attributes org.gtk.Property.get=gtk_header_bar_get_show_title_buttons org.gtk.Property.set=gtk_header_bar_set_show_title_buttons)
+   * GtkHeaderBar:show-title-buttons:
    *
    * Whether to show title buttons like close, minimize, maximize.
    *
@@ -583,7 +588,7 @@ gtk_header_bar_class_init (GtkHeaderBarClass *class)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkHeaderBar:decoration-layout: (attributes org.gtk.Property.get=gtk_header_bar_get_decoration_layout org.gtk.Property.set=gtk_header_bar_set_decoration_layout)
+   * GtkHeaderBar:decoration-layout:
    *
    * The decoration layout for buttons.
    *
@@ -699,7 +704,7 @@ gtk_header_bar_new (void)
 }
 
 /**
- * gtk_header_bar_get_show_title_buttons: (attributes org.gtk.Method.get_property=show-title-buttons)
+ * gtk_header_bar_get_show_title_buttons:
  * @bar: a `GtkHeaderBar`
  *
  * Returns whether this header bar shows the standard window
@@ -716,7 +721,7 @@ gtk_header_bar_get_show_title_buttons (GtkHeaderBar *bar)
 }
 
 /**
- * gtk_header_bar_set_show_title_buttons: (attributes org.gtk.Method.set_property=show-title-buttons)
+ * gtk_header_bar_set_show_title_buttons:
  * @bar: a `GtkHeaderBar`
  * @setting: %TRUE to show standard title buttons
  *
@@ -757,7 +762,7 @@ gtk_header_bar_set_show_title_buttons (GtkHeaderBar *bar,
 }
 
 /**
- * gtk_header_bar_set_decoration_layout: (attributes org.gtk.Method.set_property=decoration-layout)
+ * gtk_header_bar_set_decoration_layout:
  * @bar: a `GtkHeaderBar`
  * @layout: (nullable): a decoration layout, or %NULL to unset the layout
  *
@@ -792,7 +797,7 @@ gtk_header_bar_set_decoration_layout (GtkHeaderBar *bar,
 }
 
 /**
- * gtk_header_bar_get_decoration_layout: (attributes org.gtk.Method.get_property=decoration-layout)
+ * gtk_header_bar_get_decoration_layout:
  * @bar: a `GtkHeaderBar`
  *
  * Gets the decoration layout of the `GtkHeaderBar`.

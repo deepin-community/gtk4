@@ -1,5 +1,7 @@
 gtk_tests = [
   # testname, optional extra sources
+  ['callbackcursor'],
+  ['devicepixels'],
   ['testsections'],
   ['testfilelauncher'],
   ['input'],
@@ -15,7 +17,6 @@ gtk_tests = [
   ['animated-revealing', ['frame-stats.c', 'variable.c']],
   ['motion-compression'],
   ['scrolling-performance', ['frame-stats.c', 'variable.c']],
-  ['blur-performance', ['../gsk/gskcairoblur.c']],
   ['simple'],
   ['video-timer', ['variable.c']],
   ['testaccel'],
@@ -125,7 +126,15 @@ gtk_tests = [
 ]
 
 if os_unix
-  gtk_tests += [['testfontchooserdialog']]
+  gtk_tests += [
+    ['testfontchooserdialog'],
+  ]
+endif
+
+if os_linux
+  gtk_tests += [
+    ['testdmabuf', ['testdmabuf.c', 'gtkclipper.c']],
+  ]
 endif
 
 if x11_enabled
@@ -146,10 +155,3 @@ foreach t: gtk_tests
     dependencies: [libgtk_dep, libm],
   )
 endforeach
-
-if libsysprof_dep.found()
-  executable('testperf',
-    sources: 'testperf.c',
-    dependencies: [libsysprof_dep, platform_gio_dep, libm],
-  )
-endif

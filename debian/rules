@@ -1,19 +1,23 @@
 #!/usr/bin/make -f
 
-DISABLE_UPDATE_UPLOADERS = 1
-include /usr/share/gnome-pkg-tools/1/rules/uploaders.mk
-include /usr/share/dpkg/default.mk
 include /usr/share/dpkg/pkg-info.mk
+
+# Ensure the build aborts when there are still references to undefined symbols
+export DEB_LDFLAGS_MAINT_APPEND = -Wl,-z,defs
+
+# Make the linker work a bit harder so dynamic loading can be done faster
+DEB_LDFLAGS_MAINT_APPEND += -Wl,-O1
+
+# https://bugs.debian.org/1077289
+ifeq (i386,$(DEB_HOST_ARCH_CPU))
+export DEB_CFLAGS_MAINT_APPEND = -ffloat-store
+endif
+
+include /usr/share/dpkg/default.mk
 
 dh_options =
 built_binaries := $(shell dh_listpackages)
 all_binaries := $(shell sed -ne 's/^Package: *//p' < debian/control)
-
-# Ensure the build aborts when there are still references to undefined symbols
-LDFLAGS += -Wl,-z,defs
-
-# Make the linker work a bit harder so dynamic loading can be done faster
-LDFLAGS += -Wl,-O1
 
 export APIVER := 4
 export SONAME := 1
@@ -22,9 +26,6 @@ export LIBDIR := usr/lib/$(DEB_HOST_MULTIARCH)
 
 # earliest version that this release has backwards binary compatibility for
 export GTK_BINARY_VERSION := 4.0.0
-
-# Gtk binary version virtual Provide
-export GTK_BINVER_DEP := gtk$(APIVER)-binver-$(GTK_BINARY_VERSION)
 
 # relative base directory for configuration
 export CONFDIR := etc/gtk-4.0
@@ -40,7 +41,6 @@ export UDEB_PKG := $(SHARED_PKG)-udeb
 export DOC_PKG := libgtk-$(APIVER)-doc
 export BIN_PKG := libgtk-$(APIVER)-bin
 export MEDIA_GSTREAMER_PKG := libgtk-$(APIVER)-media-gstreamer
-export MEDIA_FFMPEG_PKG := libgtk-$(APIVER)-media-ffmpeg
 export EXAMPLES_PKG := gtk-$(APIVER)-examples
 export TESTS_PKG := gtk-$(APIVER)-tests
 
@@ -57,7 +57,6 @@ debian/%: debian/%.in
 	sed \
 		-e "s#@SONAME@#$(SONAME)#g" \
 		-e "s#@APIVER@#$(APIVER)#g" \
-		-e "s#@GTK_BINVER_DEP@#$(GTK_BINVER_DEP)#g" \
 		-e "s#@SHARED_PKG@#$(SHARED_PKG)#g" \
 		-e "s#@COMMON_PKG@#$(COMMON_PKG)#g" \
 		-e "s#@DEV_PKG@#$(DEV_PKG)#g" \
@@ -65,10 +64,8 @@ debian/%: debian/%.in
 		-e "s#@DOC_PKG@#$(DOC_PKG)#g" \
 		-e "s#@BIN_PKG@#$(BIN_PKG)#g" \
 		-e "s#@MEDIA_GSTREAMER_PKG@#$(MEDIA_GSTREAMER_PKG)#g" \
-		-e "s#@MEDIA_FFMPEG_PKG@#$(MEDIA_FFMPEG_PKG)#g" \
 		-e "s#@EXAMPLES_PKG@#$(EXAMPLES_PKG)#g" \
 		-e "s#@TESTS_PKG@#$(TESTS_PKG)#g" \
-		-e "s#@GNOME_TEAM@#$(UPLOADERS)#g" \
 		-e "s#@LIBDIR@#$(LIBDIR)#g" \
 		-e "s#@MODULES_BASE_PATH@#$(MODULES_BASE_PATH)#g" \
 		-e "s#@DEB_VERSION_UPSTREAM@#$(DEB_VERSION_UPSTREAM)#g" \
@@ -77,10 +74,16 @@ debian/%: debian/%.in
 configure_flags_deb = \
 	-Dauto_features=enabled \
 	-Dbroadway-backend=true \
+	-Dprint-cpdb=enabled \
+	-Dprint-cups=disabled \
 	-Dx11-backend=true \
 	${NULL}
 
-ifeq (,$(filter stage1,$(DEB_BUILD_PROFILES)))
+ifneq ($(DEB_BUILD_ARCH),$(DEB_HOST_ARCH))
+configure_flags_deb += --cross-file=$(DEB_HOST_GNU_TYPE)-gobject-introspection.ini
+endif
+
+ifeq (,$(filter pkg.gtk4.nocolord,$(DEB_BUILD_PROFILES)))
 configure_flags_deb += -Dcolord=enabled
 else
 configure_flags_deb += -Dcolord=disabled
@@ -93,12 +96,16 @@ configure_flags_deb += -Dman-pages=false
 endif
 
 ifeq (linux,$(DEB_HOST_ARCH_OS))
-configure_flags_deb += -Dsysprof=enabled
 configure_flags_deb += -Dwayland-backend=true
 else
-configure_flags_deb += -Dsysprof=disabled
 configure_flags_deb += -Dvulkan=disabled
 configure_flags_deb += -Dwayland-backend=false
+endif
+
+ifneq (,$(filter amd64 arm64 armel armhf i386 mips64el ppc64el riscv64 s390x hppa loong64 powerpc ppc64 sh4,$(DEB_HOST_ARCH)))
+configure_flags_deb += -Dsysprof=enabled
+else
+configure_flags_deb += -Dsysprof=disabled
 endif
 
 ifeq ($(filter %-doc,$(built_binaries)),)
@@ -108,25 +115,17 @@ configure_flags_deb += -Ddocumentation=true
 endif
 
 ifeq ($(filter %-examples,$(built_binaries)),)
+configure_flags_deb += -Dbuild-demos=false
 configure_flags_deb += -Dbuild-examples=false
-configure_flags_deb += -Ddemos=false
 else
+configure_flags_deb += -Dbuild-demos=true
 configure_flags_deb += -Dbuild-examples=true
-configure_flags_deb += -Ddemos=true
 endif
 
 ifeq ($(filter %-tests,$(built_binaries)),)
 configure_flags_deb += -Dinstall-tests=false
 else
 configure_flags_deb += -Dinstall-tests=true
-endif
-
-# Upstream consider the ffmpeg backend to be experimental, let's not
-# build that by default.
-ifeq ($(filter $(MEDIA_FFMPEG_PKG),$(built_binaries)),)
-configure_flags_deb += -Dmedia-ffmpeg=disabled
-else
-configure_flags_deb += -Dmedia-ffmpeg=enabled
 endif
 
 ifeq ($(shell dpkg-vendor --is Ubuntu && echo yes), yes)
@@ -140,19 +139,19 @@ configure_flags_udeb = \
 	-Dauto_features=disabled \
 	-Dbroadway-backend=false \
 	-Dbuild-examples=false \
-	-Ddemos=false \
+	-Dbuild-demos=false \
 	-Dbuild-tests=false \
 	-Dinstall-tests=false \
+	-Dintrospection=disabled \
+	-Dvulkan=disabled \
 	-Dwayland-backend=false \
 	-Dx11-backend=true \
 	$(NULL)
 
 %:
-	dh $@ --with gir --buildsystem=meson $(dh_options)
+	dh $@ --buildsystem=meson $(dh_options)
 
 override_dh_clean: debian/control
-	# gross kludge to force control generation with the %.in target
-	touch debian/control.in
 	rm -f $(call dh_subst_files,$(all_binaries))
 	rm -rf debian/build debian/install
 	# Rebuild the CSS from source. Note that gtk.css is hand-written,
@@ -165,12 +164,13 @@ override_dh_auto_build: $(call dh_subst_files,$(all_binaries))
 
 override_dh_auto_build: rebuild-emoji
 rebuild-emoji:
-	gcc -o debian/convert-emoji gtk/emoji/convert-emoji.c `pkg-config --cflags --libs json-glib-1.0`
+	gcc -o debian/convert-emoji gtk/emoji/convert-emoji.c $$(${DEB_BUILD_GNU_TYPE}-pkgconf --cflags --libs json-glib-1.0)
 	set -eu; for input in debian/missing-sources/emojibase/packages/data/??/data.raw.json; do \
 		lang="$$(echo "$$input" | sed -ne 's,^.*/\([a-z][a-z]\)/data.raw.json$$,\1,p')"; \
 		output="gtk/emoji/$$lang.data"; \
+		inputen="debian/missing-sources/emojibase/packages/data/en/data.raw.json"; \
 		test -f "$$output" || continue; \
-		debian/convert-emoji "$$input" "$$output"; \
+		debian/convert-emoji "$$inputen" "$$input" "$$output"; \
 	done
 
 override_dh_auto_configure: debian/control
@@ -194,7 +194,7 @@ ifneq ($(filter %-udeb,$(built_binaries)),)
 endif
 
 test_backends = x11
-test_timeout_multiplier = 1
+test_timeout_multiplier = 3
 
 ifeq (linux,$(DEB_HOST_ARCH_OS))
 	test_backends += wayland
@@ -205,16 +205,12 @@ $(info Slow architecture detected, increasing test timeout)
 test_timeout_multiplier = 10
 endif
 
-ifneq ($(filter m68k riscv64 sh4,$(DEB_HOST_ARCH_CPU)),)
+ifneq ($(filter loong64 m68k riscv64 sh4,$(DEB_HOST_ARCH_CPU)),)
 $(info Architecture with qemu buildds detected, increasing test timeout a lot)
 test_timeout_multiplier = 20
 endif
 
-ifneq ($(filter mips%,$(DEB_HOST_ARCH_CPU)),)
-$(info Disabling use of llvmpipe due to mips family CPU, see https://bugs.debian.org/993550)
-export GALLIUM_DRIVER=softpipe
 export LIBGL_ALWAYS_SOFTWARE=true
-endif
 
 fuzzy_gsk_compare = \
 	$(NULL)
@@ -242,12 +238,44 @@ xfail_reftests = \
 	sizegroups-evolution-identity-page \
 	$(NULL)
 
+# ignore some of the gsk compare suites, upstream said those are going
+# to give slightly different results depending on the renderers and the
+# software rendering stack and are meant to be used in CI in a well
+# defined environment and not really suitable for distros
+# https://gitlab.gnome.org/GNOME/gtk/-/issues/6383
 skipped_suites = \
 	failing \
 	flaky \
+	headless \
 	wayland_failing \
 	wayland_gles_failing \
+	gsk-compare-broadway \
+	gsk-compare-gl \
+	gsk-compare-cairo \
+	gsk-compare-ngl \
+	gsk-compare-vulkan \
+	needs-udmabuf \
 	$(NULL)
+
+# The doc-check tests aren't passing yet
+skipped_suites += docs
+
+# mips*: many tests segfault as of 2024-09-16, see also https://bugs.debian.org/993550
+# powerpc: "LLVM ERROR: Relocation type not implemented yet!" as of 2024-09-16, https://bugs.debian.org/1081947
+# sparc*: "Target has no JIT support" as of 2024-09-16, https://bugs.debian.org/1081943
+ifneq ($(filter mips% powerpc sparc%,$(DEB_HOST_ARCH_CPU)),)
+$(info Disabling use of llvmpipe on this CPU)
+export GALLIUM_DRIVER=softpipe
+# https://bugs.debian.org/1077178
+ignore_reftests += label-shadows
+# These succeed with llvmpipe, but fail with softpipe
+# https://gitlab.gnome.org/GNOME/gtk/-/issues/6085
+# https://bugs.debian.org/1050077
+# https://bugs.debian.org/1051168
+fuzzy_gsk_compare += opacity-overdraw
+ignore_gsk_compare += border-one-rounded
+fuzzy_reftests += opacity
+endif
 
 # https://bugs.debian.org/1050312
 ifeq (i386,$(DEB_HOST_ARCH_CPU))
@@ -257,26 +285,43 @@ ignore_reftests += \
 	$(NULL)
 endif
 
-# These succeed with llvmpipe, but fail with softpipe
-# https://gitlab.gnome.org/GNOME/gtk/-/issues/6085
-# https://bugs.debian.org/1050077
-# https://bugs.debian.org/1051168
-fuzzy_gsk_compare += opacity-overdraw
-ignore_gsk_compare += border-one-rounded
-fuzzy_reftests += opacity
-
 # https://bugs.debian.org/1024391
 ifeq (big,$(DEB_HOST_ARCH_ENDIAN))
 	ignore_reftests += border-image-excess-size
 endif
 
-# TODO: Known failures: https://gitlab.gnome.org/GNOME/gtk/-/issues/4110
-# s390x: many (endianness?)
+# workaround 4.14 tests failing on s390x
 ifeq (big,$(DEB_HOST_ARCH_ENDIAN))
-	skipped_suites += \
-		gsk-compare-broadway \
-		gsk-compare-gl \
-		$(NULL)
+	ignore_reftests += \
+	background-blend-mode-clip-interaction \
+	gradient-hard-stop \
+	linear-gradient \
+	background-origin \
+	background-position-repeat \
+	background-position \
+	center-center-100x100-picture-in-100x200 \
+	center-center-100x100-picture-in-100x200-overlay \
+	center-center-100x100-picture-in-200x100 \
+	center-center-100x100-picture-in-200x100-overlay \
+	center-center-20x20-picture-in-100x200 \
+	center-center-20x20-picture-in-100x200-overlay \
+	center-center-20x20-picture-in-200x100 \
+	center-center-20x20-picture-in-200x100-overlay \
+	center-center-150x150-picture-in-100x200 \
+	center-center-150x150-picture-in-100x200-overlay \
+	center-center-150x150-picture-in-200x100 \
+	center-center-150x150-picture-in-200x100-overlay \
+	center-center-300x300-picture-in-100x200 \
+	center-center-300x300-picture-in-100x200-overlay \
+	center-center-300x300-picture-in-200x100 \
+	center-center-300x300-picture-in-200x100-overlay \
+	css-match-class \
+	css-match-name \
+	css-match-type \
+	icon-vfuncs \
+	image-load-from-file \
+	linear-gradient-transition-to-other \
+	$(NULL)
 endif
 
 override_dh_auto_test:
@@ -300,9 +345,13 @@ ifneq ($(filter %-udeb,$(built_binaries)),)
 endif
 
 override_dh_installman:
+	dh_installman -p gtk-update-icon-cache debian/update-icon-caches.8 \
+		debian/install/deb/usr/share/man/man1/gtk4-update-icon-cache.1
 	dh_installman --sourcedir=debian/install/deb
 
 override_dh_install:
+	# upstream's Gitlab-CI has /dev/udmabuf but Debian kernels normally don't
+	rm -fv debian/install/deb/usr/share/installed-tests/gtk-4.0/gdk/dmabuf-support.test
 	rm -fv debian/install/udeb/usr/bin/gtk4-update-icon-cache
 	rm -frv debian/install/udeb/usr/share/gtk-4.0/valgrind
 	rm -frv debian/install/udeb/usr/share/metainfo
@@ -316,13 +365,18 @@ override_dh_fixperms:
 	dh_fixperms -Xusr/libexec/installed-tests
 ifneq ($(filter %-tests,$(built_binaries)),)
 	chmod --recursive --changes a+rX,u+w,og-w debian/*-tests/usr/libexec/installed-tests
+	chmod +x debian/*-tests/usr/libexec/installed-tests/gtk-4.0/tools/simplify \
+	         debian/*-tests/usr/libexec/installed-tests/gtk-4.0/tools/settings \
+	         debian/*-tests/usr/libexec/installed-tests/gtk-4.0/tools/enumerate \
+	         debian/*-tests/usr/libexec/installed-tests/gtk-4.0/tools/simplify-3to4 \
+	         debian/*-tests/usr/libexec/installed-tests/gtk-4.0/tools/validate
 endif
 
 override_dh_missing:
 ifneq ($(filter %-udeb,$(built_binaries)),)
 	dh_missing --sourcedir=debian/install/udeb --list-missing -X.la
 endif
-	dh_missing --sourcedir=debian/install/deb --fail-missing -X.la
+	dh_missing --sourcedir=debian/install/deb --fail-missing -X.la -Xusr/share/man/man1/gtk4-update-icon-cache.1
 
 override_dh_installdocs:
 	dh_installdocs -p$(COMMON_PKG) AUTHORS README.md NEWS
@@ -332,3 +386,14 @@ override_dh_installdocs:
 override_dh_makeshlibs:
 	dh_makeshlibs -p$(SHARED_PKG) -V --add-udeb=$(UDEB_PKG) -X$(MODULES_BASE_PATH) -- -c4
 	dh_makeshlibs --remaining-packages -X$(MODULES_BASE_PATH)
+
+override_dh_gencontrol-arch:
+	dh_gencontrol -p$(SHARED_PKG) -- \
+		-Vgtk:Provides=gtk$(APIVER)-binver-$(GTK_BINARY_VERSION)
+ifneq ($(filter %-udeb,$(built_binaries)),)
+	dh_gencontrol -p$(UDEB_PKG) -- \
+		-Vgtk:Provides=gtk$(APIVER)-binver-$(GTK_BINARY_VERSION)
+endif
+	dh_gencontrol --remaining-packages
+
+override_dh_gnome_clean:

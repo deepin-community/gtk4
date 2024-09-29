@@ -402,7 +402,6 @@ gdk_event_alloc (GdkEventType event_type,
 
   GdkEvent *event = (GdkEvent *) g_type_create_instance (gdk_event_types[event_type]);
 
-#ifdef G_ENABLE_DEBUG
   if (GDK_DEBUG_CHECK (EVENTS))
     {
       char *str = g_enum_to_string (GDK_TYPE_EVENT_TYPE, event_type);
@@ -410,7 +409,6 @@ gdk_event_alloc (GdkEventType event_type,
                          g_type_name (gdk_event_types[event_type]), str);
       g_free (str);
     }
-#endif
 
   event->event_type = event_type;
   event->surface = surface != NULL ? g_object_ref (surface) : NULL;
@@ -479,18 +477,18 @@ check_event_sanity (GdkEvent *event)
 }
 #endif
 
-void
+gboolean
 _gdk_event_emit (GdkEvent *event)
 {
 #ifdef G_ENABLE_DEBUG
   if (!check_event_sanity (event))
-    return;
+    return FALSE;
 #endif
 
   if (gdk_drag_handle_source_event (event))
-    return;
+    return TRUE;
 
-  gdk_surface_handle_event (event);
+  return gdk_surface_handle_event (event);
 }
 
 /*********************************************
@@ -980,9 +978,13 @@ gdk_event_get_axis (GdkEvent   *event,
  * according to platform conventions.
  *
  * The right mouse button typically triggers context menus.
+ * On macOS, Control+left mouse button also triggers.
  *
  * This function should always be used instead of simply checking for
- * event->button == %GDK_BUTTON_SECONDARY.
+ *
+ * ```c
+ * event->button == GDK_BUTTON_SECONDARY
+ * ```
  *
  * Returns: %TRUE if the event should trigger a context menu.
  */
@@ -1000,6 +1002,13 @@ gdk_event_triggers_context_menu (GdkEvent *event)
       if (bevent->button == GDK_BUTTON_SECONDARY &&
           ! (bevent->state & (GDK_BUTTON1_MASK | GDK_BUTTON2_MASK)))
         return TRUE;
+
+#ifdef __APPLE__
+      if (bevent->button == GDK_BUTTON_PRIMARY &&
+          (bevent->state & GDK_CONTROL_MASK) &&
+          ! (bevent->state & (GDK_BUTTON1_MASK | GDK_BUTTON2_MASK)))
+        return TRUE;
+#endif
     }
 
   return FALSE;
@@ -1373,6 +1382,8 @@ gdk_event_get_modifier_state (GdkEvent *event)
  * Extract the event surface relative x/y coordinates from an event.
  *
  * This position is in [surface coordinates](coordinates.html).
+ *
+ * Returns: whether the positions were set
  */
 gboolean
 gdk_event_get_position (GdkEvent *event,

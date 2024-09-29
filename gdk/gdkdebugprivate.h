@@ -36,24 +36,37 @@ typedef enum {
   GDK_DEBUG_VULKAN          = 1 <<  8,
   GDK_DEBUG_SELECTION       = 1 <<  9,
   GDK_DEBUG_CLIPBOARD       = 1 << 10,
+  GDK_DEBUG_DMABUF          = 1 << 11,
+  GDK_DEBUG_OFFLOAD         = 1 << 12,
+
   /* flags below are influencing behavior */
-  GDK_DEBUG_NOGRABS         = 1 << 11,
-  GDK_DEBUG_PORTALS         = 1 << 12,
-  GDK_DEBUG_NO_PORTALS      = 1 << 13,
-  GDK_DEBUG_GL_DISABLE      = 1 << 14,
-  GDK_DEBUG_GL_FRACTIONAL   = 1 << 15,
-  GDK_DEBUG_GL_LEGACY       = 1 << 16,
-  GDK_DEBUG_GL_GLES         = 1 << 17,
-  GDK_DEBUG_GL_DEBUG        = 1 << 18,
-  GDK_DEBUG_GL_EGL          = 1 << 19,
-  GDK_DEBUG_GL_GLX          = 1 << 20,
-  GDK_DEBUG_GL_WGL          = 1 << 21,
-  GDK_DEBUG_VULKAN_DISABLE  = 1 << 22,
-  GDK_DEBUG_VULKAN_VALIDATE = 1 << 23,
-  GDK_DEBUG_DEFAULT_SETTINGS= 1 << 24,
-  GDK_DEBUG_HIGH_DEPTH      = 1 << 25,
-  GDK_DEBUG_NO_VSYNC        = 1 << 26,
+  GDK_DEBUG_LINEAR          = 1 << 13,
+  GDK_DEBUG_HDR             = 1 << 14,
+  GDK_DEBUG_PORTALS         = 1 << 15,
+  GDK_DEBUG_NO_PORTALS      = 1 << 16,
+  GDK_DEBUG_GL_NO_FRACTIONAL= 1 << 17,
+  GDK_DEBUG_FORCE_OFFLOAD   = 1 << 18,
+  GDK_DEBUG_GL_PREFER_GL    = 1 << 19,
+  GDK_DEBUG_GL_DEBUG        = 1 << 20,
+  GDK_DEBUG_DEFAULT_SETTINGS= 1 << 21,
+  GDK_DEBUG_HIGH_DEPTH      = 1 << 22,
+  GDK_DEBUG_NO_VSYNC        = 1 << 23,
 } GdkDebugFlags;
+
+typedef enum {
+  GDK_FEATURE_OPENGL           = 1 << 0,
+  GDK_FEATURE_GL_API           = 1 << 1,
+  GDK_FEATURE_GLES_API         = 1 << 2,
+  GDK_FEATURE_EGL              = 1 << 3,
+  GDK_FEATURE_GLX              = 1 << 4,
+  GDK_FEATURE_WGL              = 1 << 5,
+  GDK_FEATURE_VULKAN           = 1 << 6,
+  GDK_FEATURE_DMABUF           = 1 << 7,
+  GDK_FEATURE_OFFLOAD          = 1 << 8,
+  GDK_FEATURE_COLOR_MANAGEMENT = 1 << 9,
+} GdkFeatures;
+
+#define GDK_ALL_FEATURES ((1 << 10) - 1)
 
 extern guint _gdk_debug_flags;
 
@@ -61,13 +74,26 @@ GdkDebugFlags    gdk_display_get_debug_flags    (GdkDisplay       *display);
 void             gdk_display_set_debug_flags    (GdkDisplay       *display,
                                                  GdkDebugFlags     flags);
 
-#ifdef GLIB_USING_SYSTEM_PRINTF
-#define gdk_debug_message(format, ...) fprintf (stderr, format "\n", ##__VA_ARGS__)
-#else
-#define gdk_debug_message(format, ...) g_fprintf (stderr, format "\n", ##__VA_ARGS__)
-#endif
+gboolean         gdk_has_feature                (GdkFeatures       feature);
 
-#ifdef G_ENABLE_DEBUG
+static inline void
+gdk_debug_message (const char *format, ...) G_GNUC_PRINTF(1, 2);
+static inline void
+gdk_debug_message (const char *format, ...)
+{
+  va_list args;
+  char *s;
+
+  va_start (args, format);
+  s = g_strdup_vprintf (format, args);
+  va_end (args);
+#ifdef GLIB_USING_SYSTEM_PRINTF
+  fprintf (stderr, "%s\n", s);
+#else
+  g_fprintf (stderr, "%s\n", s);
+#endif
+  g_free (s);
+}
 
 #define GDK_DISPLAY_DEBUG_CHECK(display,type) \
     G_UNLIKELY (gdk_display_get_debug_flags (display) & GDK_DEBUG_##type)
@@ -78,13 +104,6 @@ void             gdk_display_set_debug_flags    (GdkDisplay       *display,
       gdk_debug_message (__VA_ARGS__);                                    \
     } G_STMT_END
 
-#else /* !G_ENABLE_DEBUG */
-
-#define GDK_DISPLAY_DEBUG_CHECK(display,type) 0
-#define GDK_DISPLAY_DEBUG(display,type,...)
-
-#endif /* G_ENABLE_DEBUG */
-
 #define GDK_DEBUG_CHECK(type) GDK_DISPLAY_DEBUG_CHECK (NULL,type)
 #define GDK_DEBUG(type,...) GDK_DISPLAY_DEBUG (NULL,type,__VA_ARGS__)
 
@@ -93,10 +112,10 @@ typedef struct
   const char *key;
   guint value;
   const char *help;
-  gboolean always_enabled;
 } GdkDebugKey;
 
 guint gdk_parse_debug_var (const char        *variable,
+                           const char        *docs,
                            const GdkDebugKey *keys,
                            guint              nkeys);
 

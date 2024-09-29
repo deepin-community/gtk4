@@ -73,7 +73,9 @@
  * utilities that let the user change these settings.
  *
  * On Wayland, the settings are obtained either via a settings portal,
- * or by reading desktop settings from DConf.
+ * or by reading desktop settings from [class@Gio.Settings].
+ *
+ * On macOS, the settings are obtained from `NSUserDefaults`.
  *
  * In the absence of these sharing mechanisms, GTK reads default values for
  * settings from `settings.ini` files in `/etc/gtk-4.0`, `$XDG_CONFIG_DIRS/gtk-4.0`
@@ -98,13 +100,13 @@ typedef struct _GtkSettingsValue GtkSettingsValue;
 /*< private >
  * GtkSettingsValue:
  * @origin: Origin should be something like “filename:linenumber” for
- *    rc files, or e.g. “XProperty” for other sources.
+ *    ini files, or e.g. “XProperty” for other sources.
  * @value: Valid types are LONG, DOUBLE and STRING corresponding to
  *    the token parsed, or a GSTRING holding an unparsed statement
  */
 struct _GtkSettingsValue
 {
-  /* origin should be something like "filename:linenumber" for rc files,
+  /* origin should be something like "filename:linenumber" for ini files,
    * or e.g. "XProperty" for other sources
    */
   char *origin;
@@ -172,6 +174,7 @@ enum {
   PROP_ALTERNATIVE_SORT_ARROWS,
   PROP_ENABLE_ANIMATIONS,
   PROP_ERROR_BELL,
+  PROP_STATUS_SHAPES,
   PROP_PRINT_BACKENDS,
   PROP_PRINT_PREVIEW_COMMAND,
   PROP_ENABLE_ACCELS,
@@ -199,6 +202,7 @@ enum {
   PROP_LONG_PRESS_TIME,
   PROP_KEYNAV_USE_CARET,
   PROP_OVERLAY_SCROLLING,
+  PROP_FONT_RENDERING,
 
   NUM_PROPERTIES
 };
@@ -474,6 +478,9 @@ gtk_settings_class_init (GtkSettingsClass *class)
    * The type of subpixel antialiasing to use.
    *
    * The possible values are none, rgb, bgr, vrgb, vbgr.
+   *
+   * Note that GSK does not support subpixel antialiasing, and this
+   * setting has no effect on font rendering in GTK.
    */
   pspecs[PROP_XFT_RGBA] = g_param_spec_string ("gtk-xft-rgba", NULL, NULL,
                                                NULL,
@@ -501,7 +508,7 @@ gtk_settings_class_init (GtkSettingsClass *class)
    * Since: 4.6
    */
   pspecs[PROP_HINT_FONT_METRICS] = g_param_spec_boolean ("gtk-hint-font-metrics", NULL, NULL,
-                                                         FALSE,
+                                                         TRUE,
                                                          GTK_PARAM_READWRITE);
 
   /**
@@ -570,6 +577,17 @@ gtk_settings_class_init (GtkSettingsClass *class)
   pspecs[PROP_ERROR_BELL] = g_param_spec_boolean ("gtk-error-bell", NULL, NULL,
                                                   TRUE,
                                                   GTK_PARAM_READWRITE);
+
+  /**
+   * GtkSettings:gtk-show-status-shapes:
+   *
+   * When %TRUE, widgets like switches include shapes to indicate their on/off state.
+   *
+   * Since: 4.14
+   */
+  pspecs[PROP_STATUS_SHAPES] = g_param_spec_boolean ("gtk-show-status-shapes", NULL, NULL,
+                                                     FALSE,
+                                                     GTK_PARAM_READWRITE);
 
   /**
    * GtkSettings:gtk-print-backends:
@@ -938,6 +956,27 @@ gtk_settings_class_init (GtkSettingsClass *class)
                                                          TRUE,
                                                          GTK_PARAM_READWRITE);
 
+  /**
+   * GtkSettings:gtk-font-rendering:
+   *
+   * How GTK font rendering is set up.
+   *
+   * When set to [enum@Gtk.FontRendering.MANUAL], GTK respects the low-level
+   * font-related settings ([property@Gtk.Settings:gtk-hint-font-metrics],
+   * [property@Gtk.Settings:gtk-xft-antialias], [property@Gtk.Settings:gtk-xft-hinting],
+   * [property@Gtk.Settings:gtk-xft-hintstyle] and [property@Gtk.Settings:gtk-xft-rgba])
+   * as much as practical.
+   *
+   * When set to [enum@Gtk.FontRendering.AUTOMATIC], GTK will consider factors such
+   * as screen resolution and scale in deciding how to render fonts.
+   *
+   * Since: 4.16
+   */
+  pspecs[PROP_FONT_RENDERING] = g_param_spec_enum ("gtk-font-rendering", NULL, NULL,
+                                                   GTK_TYPE_FONT_RENDERING,
+                                                   GTK_FONT_RENDERING_AUTOMATIC,
+                                                   GTK_PARAM_READWRITE);
+
   g_object_class_install_properties (gobject_class, NUM_PROPERTIES, pspecs);
 }
 
@@ -1243,6 +1282,9 @@ gtk_settings_notify (GObject    *object,
       if (settings_update_fontconfig (settings))
         gtk_system_setting_changed (settings->display, GTK_SYSTEM_SETTING_FONT_CONFIG);
       break;
+    case PROP_FONT_RENDERING:
+      gtk_system_setting_changed (settings->display, GTK_SYSTEM_SETTING_FONT_CONFIG);
+      break;
     case PROP_ENABLE_ANIMATIONS:
       settings_invalidate_style (settings);
       break;
@@ -1303,7 +1345,7 @@ apply_queued_setting (GtkSettings      *settings,
     {
       char *debug = g_strdup_value_contents (&qvalue->value);
 
-      g_message ("%s: failed to retrieve property '%s' of type '%s' from rc file value \"%s\" of type '%s'",
+      g_message ("%s: failed to retrieve property '%s' of type '%s' from ini file value \"%s\" of type '%s'",
                  qvalue->origin ? qvalue->origin : "(for origin information, set GTK_DEBUG)",
                  pspec->name,
                  g_type_name (G_PARAM_SPEC_VALUE_TYPE (pspec)),
@@ -1337,6 +1379,7 @@ gtk_settings_set_property_value_internal (GtkSettings            *settings,
 
   if (!G_VALUE_HOLDS_LONG (&new_value->value) &&
       !G_VALUE_HOLDS_DOUBLE (&new_value->value) &&
+      !G_VALUE_HOLDS_ENUM (&new_value->value) &&
       !G_VALUE_HOLDS_STRING (&new_value->value) &&
       !G_VALUE_HOLDS (&new_value->value, G_TYPE_GSTRING))
     {
@@ -1409,8 +1452,6 @@ settings_update_font_options (GtkSettings *settings)
   cairo_hint_style_t hint_style;
   int antialias;
   cairo_antialias_t antialias_mode;
-  char *rgba_str;
-  cairo_subpixel_order_t subpixel_order;
   gboolean hint_font_metrics;
 
   if (settings->font_options)
@@ -1420,7 +1461,6 @@ settings_update_font_options (GtkSettings *settings)
                 "gtk-xft-antialias", &antialias,
                 "gtk-xft-hinting", &hinting,
                 "gtk-xft-hintstyle", &hint_style_str,
-                "gtk-xft-rgba", &rgba_str,
                 "gtk-hint-font-metrics", &hint_font_metrics,
                 NULL);
 
@@ -1454,35 +1494,10 @@ settings_update_font_options (GtkSettings *settings)
 
   cairo_font_options_set_hint_style (settings->font_options, hint_style);
 
-  subpixel_order = CAIRO_SUBPIXEL_ORDER_DEFAULT;
-  if (rgba_str)
-    {
-      if (strcmp (rgba_str, "rgb") == 0)
-        subpixel_order = CAIRO_SUBPIXEL_ORDER_RGB;
-      else if (strcmp (rgba_str, "bgr") == 0)
-        subpixel_order = CAIRO_SUBPIXEL_ORDER_BGR;
-      else if (strcmp (rgba_str, "vrgb") == 0)
-        subpixel_order = CAIRO_SUBPIXEL_ORDER_VRGB;
-      else if (strcmp (rgba_str, "vbgr") == 0)
-        subpixel_order = CAIRO_SUBPIXEL_ORDER_VBGR;
-    }
-
-  g_free (rgba_str);
-
-  cairo_font_options_set_subpixel_order (settings->font_options, subpixel_order);
-
-  antialias_mode = CAIRO_ANTIALIAS_DEFAULT;
   if (antialias == 0)
-    {
-      antialias_mode = CAIRO_ANTIALIAS_NONE;
-    }
-  else if (antialias == 1)
-    {
-      if (subpixel_order != CAIRO_SUBPIXEL_ORDER_DEFAULT)
-        antialias_mode = CAIRO_ANTIALIAS_SUBPIXEL;
-      else
-        antialias_mode = CAIRO_ANTIALIAS_GRAY;
-    }
+    antialias_mode = CAIRO_ANTIALIAS_NONE;
+  else
+    antialias_mode = CAIRO_ANTIALIAS_GRAY;
 
   cairo_font_options_set_antialias (settings->font_options, antialias_mode);
 }
@@ -1698,7 +1713,7 @@ gtk_settings_load_from_key_file (GtkSettings       *settings,
         continue;
 
       value_type = G_PARAM_SPEC_VALUE_TYPE (pspec);
-      switch (value_type)
+      switch (G_TYPE_FUNDAMENTAL (value_type))
         {
         case G_TYPE_BOOLEAN:
           {
@@ -1731,6 +1746,35 @@ gtk_settings_load_from_key_file (GtkSettings       *settings,
             d_val = g_key_file_get_double (keyfile, "Settings", key, &error);
             if (!error)
               g_value_set_double (&svalue.value, d_val);
+            break;
+          }
+
+        case G_TYPE_ENUM:
+          {
+            char *s_val;
+
+            g_value_init (&svalue.value, value_type);
+            s_val = g_key_file_get_string (keyfile, "Settings", key, &error);
+            if (!error)
+              {
+                GEnumClass *eclass;
+                GEnumValue *ev;
+
+                eclass = g_type_class_ref (value_type);
+                ev = g_enum_get_value_by_nick (eclass, s_val);
+
+                if (ev)
+                  g_value_set_enum (&svalue.value, ev->value);
+                else
+                  g_set_error (&error, G_KEY_FILE_ERROR,
+                               G_KEY_FILE_ERROR_INVALID_VALUE,
+                               "Key file contains key “%s” "
+                               "which has a value that cannot be interpreted.",
+                               key);
+
+                g_type_class_unref (eclass);
+              }
+            g_free (s_val);
             break;
           }
 
@@ -1784,7 +1828,6 @@ settings_update_xsetting (GtkSettings *settings,
                           gboolean     force)
 {
   GType value_type;
-  GType fundamental_type;
   gboolean retval = FALSE;
 
   if (settings->property_values[pspec->param_id - 1].source == GTK_SETTINGS_SOURCE_APPLICATION)
@@ -1794,10 +1837,8 @@ settings_update_xsetting (GtkSettings *settings,
     return FALSE;
 
   value_type = G_PARAM_SPEC_VALUE_TYPE (pspec);
-  fundamental_type = G_TYPE_FUNDAMENTAL (value_type);
 
-  if ((g_value_type_transformable (G_TYPE_INT, value_type) &&
-       !(fundamental_type == G_TYPE_ENUM || fundamental_type == G_TYPE_FLAGS)) ||
+  if (g_value_type_transformable (G_TYPE_INT, value_type) ||
       g_value_type_transformable (G_TYPE_STRING, value_type) ||
       g_value_type_transformable (GDK_TYPE_RGBA, value_type))
     {

@@ -129,7 +129,6 @@ gsk_gl_glyph_library_init_atlas (GskGLTextureLibrary *self,
       gl_format = GL_BGRA;
       gl_type = GL_UNSIGNED_INT_8_8_8_8_REV;
     }
-
   glBindTexture (GL_TEXTURE_2D, atlas->texture_id);
 
   glTexSubImage2D (GL_TEXTURE_2D, 0,
@@ -277,14 +276,16 @@ gsk_gl_glyph_library_upload_glyph (GskGLGlyphLibrary     *self,
 
   g_assert (texture_id > 0);
 
-  if G_UNLIKELY (gdk_gl_context_get_use_es (gdk_gl_context_get_current ()))
+  if (gdk_gl_context_get_use_es (gdk_gl_context_get_current ()))
     {
       pixel_data = free_data = g_malloc (width * height * 4);
       gdk_memory_convert (pixel_data, width * 4,
                           GDK_MEMORY_R8G8B8A8_PREMULTIPLIED,
+                          GDK_COLOR_STATE_SRGB,
                           cairo_image_surface_get_data (surface),
                           stride,
                           GDK_MEMORY_DEFAULT,
+                          GDK_COLOR_STATE_SRGB,
                           width, height);
       stride = width * 4;
       gl_format = GL_RGBA;
@@ -377,7 +378,7 @@ gsk_gl_glyph_library_upload_glyph (GskGLGlyphLibrary     *self,
     {
       char message[64];
       g_snprintf (message, sizeof message, "Size %dx%d", width, height);
-      gdk_profiler_add_mark (start_time, GDK_PROFILER_CURRENT_TIME-start_time, "Upload Glyph", message);
+      gdk_profiler_add_mark (start_time, GDK_PROFILER_CURRENT_TIME-start_time, "Upload glyph", message);
     }
 }
 
@@ -409,7 +410,7 @@ gsk_gl_glyph_library_add (GskGLGlyphLibrary      *self,
   width = (int) ceil (ink_rect.width * key->scale / 1024.0);
   height = (int) ceil (ink_rect.height * key->scale / 1024.0);
 
-  GSK_DEBUG (GLYPH_CACHE, "font %p glyph %u: %u x %u pixels", key->font, key->glyph, width, height);
+  GSK_DEBUG (CACHE, "font %p glyph %u: %u x %u pixels", key->font, key->glyph, width, height);
 
   value = gsk_gl_texture_library_pack (tl,
                                        key,

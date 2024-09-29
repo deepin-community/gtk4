@@ -8,8 +8,16 @@
 #include "gsktransformprivate.h"
 #include "gskrendererprivate.h"
 #include "gskrendernodeprivate.h"
+#include "gdk/gdkcolorstateprivate.h"
 #include "gdk/gdktextureprivate.h"
 
+/**
+ * GskBroadwayRenderer:
+ *
+ * A Broadway based renderer.
+ *
+ * See [class@Gsk.Renderer].
+ */
 struct _GskBroadwayRenderer
 {
   GskRenderer parent_instance;
@@ -35,6 +43,7 @@ G_DEFINE_TYPE (GskBroadwayRenderer, gsk_broadway_renderer, GSK_TYPE_RENDERER)
 
 static gboolean
 gsk_broadway_renderer_realize (GskRenderer  *renderer,
+                               GdkDisplay   *display,
                                GdkSurface   *surface,
                                GError      **error)
 {
@@ -271,6 +280,9 @@ collect_reused_child_nodes (GskRenderer *renderer,
     case GSK_CROSS_FADE_NODE:
     case GSK_BLUR_NODE:
     case GSK_MASK_NODE:
+    case GSK_FILL_NODE:
+    case GSK_STROKE_NODE:
+    case GSK_SUBSURFACE_NODE:
 
     default:
 
@@ -473,7 +485,7 @@ get_colorized_texture (GdkTexture *texture,
         return g_object_ref (colorized->texture);
     }
 
-  surface = gdk_texture_download_surface (texture);
+  surface = gdk_texture_download_surface (texture, GDK_COLOR_STATE_SRGB);
   image_surface = cairo_surface_map_to_image (surface, NULL);
   data = cairo_image_surface_get_data (image_surface);
   width = cairo_image_surface_get_width (image_surface);
@@ -801,6 +813,11 @@ gsk_broadway_renderer_add_node (GskRenderer *renderer,
         }
       return;
 
+    case GSK_SUBSURFACE_NODE:
+      gsk_broadway_renderer_add_node (renderer,
+                                      gsk_subsurface_node_get_child (node), offset_x, offset_y, clip_bounds);
+     return;
+
       /* Generic nodes */
 
     case GSK_CONTAINER_NODE:
@@ -862,6 +879,8 @@ gsk_broadway_renderer_add_node (GskRenderer *renderer,
     case GSK_CROSS_FADE_NODE:
     case GSK_BLUR_NODE:
     case GSK_GL_SHADER_NODE:
+    case GSK_FILL_NODE:
+    case GSK_STROKE_NODE:
     default:
       break; /* Fallback */
     }
@@ -915,7 +934,7 @@ gsk_broadway_renderer_render (GskRenderer          *renderer,
 
   self->node_lookup = g_hash_table_new (g_direct_hash, g_direct_equal);
 
-  gdk_draw_context_begin_frame (GDK_DRAW_CONTEXT (self->draw_context), update_area);
+  gdk_draw_context_begin_frame_full (GDK_DRAW_CONTEXT (self->draw_context), GDK_MEMORY_U8, update_area, NULL);
 
   /* These are owned by the draw context between begin and end, but
      cache them here for easier access during the render */
@@ -927,7 +946,7 @@ gsk_broadway_renderer_render (GskRenderer          *renderer,
   self->nodes = NULL;
   self->node_textures = NULL;
 
-  gdk_draw_context_end_frame (GDK_DRAW_CONTEXT (self->draw_context));
+  gdk_draw_context_end_frame_full (GDK_DRAW_CONTEXT (self->draw_context));
 
   if (self->last_node_lookup)
     g_hash_table_unref (self->last_node_lookup);

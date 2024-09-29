@@ -37,9 +37,7 @@
  * should be modal.
  *
  * The dialog is shown with the [method@Gtk.FontDialog.choose_font]
- * function or its variants. This API follows the GIO async pattern,
- * and the result can be obtained by calling the corresponding
- * finish function, such as [method@Gtk.FontDialog.choose_font_finish].
+ * function or its variants.
  *
  * See [class@Gtk.FontDialogButton] for a convenient control
  * that uses `GtkFontDialog` and presents the results.
@@ -178,7 +176,7 @@ gtk_font_dialog_class_init (GtkFontDialogClass *class)
   object_class->finalize = gtk_font_dialog_finalize;
 
   /**
-   * GtkFontDialog:title: (attributes org.gtk.Property.get=gtk_font_dialog_get_title org.gtk.Property.set=gtk_font_dialog_set_title)
+   * GtkFontDialog:title:
    *
    * A title that may be shown on the font chooser
    * dialog that is presented by [method@Gtk.FontDialog.choose_font].
@@ -191,7 +189,7 @@ gtk_font_dialog_class_init (GtkFontDialogClass *class)
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkFontDialog:modal: (attributes org.gtk.Property.get=gtk_font_dialog_get_modal org.gtk.Property.set=gtk_font_dialog_set_modal)
+   * GtkFontDialog:modal:
    *
    * Whether the font chooser dialog is modal.
    *
@@ -203,7 +201,7 @@ gtk_font_dialog_class_init (GtkFontDialogClass *class)
                             G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkFontDialog:language: (attributes org.gtk.Property.get=gtk_font_dialog_get_language org.gtk.Property.set=gtk_font_dialog_set_language)
+   * GtkFontDialog:language:
    *
    * The language for which the font features are selected.
    *
@@ -215,7 +213,7 @@ gtk_font_dialog_class_init (GtkFontDialogClass *class)
                           G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkFontDialog:font-map: (attributes org.gtk.Property.get=gtk_font_dialog_get_font_map org.gtk.Property.set=gtk_font_dialog_set_font_map)
+   * GtkFontDialog:font-map:
    *
    * Sets a custom font map to select fonts from.
    *
@@ -230,7 +228,7 @@ gtk_font_dialog_class_init (GtkFontDialogClass *class)
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkFontDialog:filter: (attributes org.gtk.Property.get=gtk_font_dialog_get_filter org.gtk.Property.set=gtk_font_dialog_set_filter)
+   * GtkFontDialog:filter:
    *
    * Sets a filter to restrict what fonts are shown
    * in the font chooser dialog.
@@ -621,15 +619,12 @@ G_GNUC_END_IGNORE_DEPRECATIONS
  * @parent: (nullable): the parent `GtkWindow`
  * @initial_value: (nullable): the initial value
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
  * This function initiates a font selection operation by
  * presenting a dialog to the user for selecting a font family.
- *
- * The @callback will be called when the dialog is dismissed.
- * It should call [method@Gtk.FontDialog.choose_family_finish]
- * to obtain the result.
  *
  * Since: 4.10
  */
@@ -709,16 +704,13 @@ gtk_font_dialog_choose_family_finish (GtkFontDialog  *self,
  * @parent: (nullable): the parent `GtkWindow`
  * @initial_value: (nullable): the initial value
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
  * This function initiates a font selection operation by
  * presenting a dialog to the user for selecting a font face
  * (i.e. a font family and style, but not a specific font size).
- *
- * The @callback will be called when the dialog is dismissed.
- * It should call [method@Gtk.FontDialog.choose_face_finish]
- * to obtain the result.
  *
  * Since: 4.10
  */
@@ -792,15 +784,12 @@ gtk_font_dialog_choose_face_finish (GtkFontDialog  *self,
  * @parent: (nullable): the parent `GtkWindow`
  * @initial_value: (nullable): the font to select initially
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
  * This function initiates a font selection operation by
  * presenting a dialog to the user for selecting a font.
- *
- * The @callback will be called when the dialog is dismissed.
- * It should call [method@Gtk.FontDialog.choose_font_finish]
- * to obtain the result.
  *
  * If you want to let the user select font features as well,
  * use [method@Gtk.FontDialog.choose_font_and_features] instead.
@@ -873,8 +862,9 @@ gtk_font_dialog_choose_font_finish (GtkFontDialog  *self,
  * @parent: (nullable): the parent `GtkWindow`
  * @initial_value: (nullable): the font to select initially
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
  * This function initiates a font selection operation by
  * presenting a dialog to the user for selecting a font and
@@ -882,10 +872,6 @@ gtk_font_dialog_choose_font_finish (GtkFontDialog  *self,
  *
  * Font features affect how the font is rendered, for example
  * enabling glyph variants or ligatures.
- *
- * The @callback will be called when the dialog is dismissed.
- * It should call [method@Gtk.FontDialog.choose_font_and_features_finish]
- * to obtain the result.
  *
  * Since: 4.10
  */
@@ -926,9 +912,9 @@ gtk_font_dialog_choose_font_and_features (GtkFontDialog        *self,
  * gtk_font_dialog_choose_font_and_features_finish:
  * @self: a `GtkFontDialog`
  * @result: a `GAsyncResult`
- * @font_desc: (out caller-allocates): return location for font description
- * @font_features: (out caller-allocates): return location for font features
- * @language: (out caller-allocates): return location for the language
+ * @font_desc: (out): return location for font description
+ * @font_features: (out): return location for font features
+ * @language: (out): return location for the language
  * @error: return location for a [enum@Gtk.DialogError] error
  *
  * Finishes the [method@Gtk.FontDialog.choose_font_and_features]

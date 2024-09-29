@@ -47,7 +47,8 @@
  * Cursors by themselves are not very interesting: they must be bound to a
  * window for users to see them. This is done with [method@Gdk.Surface.set_cursor]
  * or [method@Gdk.Surface.set_device_cursor]. Applications will typically
- * use higher-level GTK functions such as [method@Gtk.Widget.set_cursor] instead.
+ * use higher-level GTK functions such as [gtk_widget_set_cursor()](../gtk4/method.Widget.set_cursor.html)
+ * instead.
  *
  * Cursors are not bound to a given [class@Gdk.Display], so they can be shared.
  * However, the appearance of cursors may vary when used on different
@@ -155,6 +156,9 @@ gdk_cursor_finalize (GObject *object)
   g_clear_object (&cursor->texture);
   g_clear_object (&cursor->fallback);
 
+  if (cursor->destroy)
+    cursor->destroy (cursor->data);
+
   G_OBJECT_CLASS (gdk_cursor_parent_class)->finalize (object);
 }
 
@@ -168,7 +172,7 @@ gdk_cursor_class_init (GdkCursorClass *cursor_class)
   object_class->finalize = gdk_cursor_finalize;
 
   /**
-   * GdkCursor:fallback: (attributes org.gtk.Property.get=gdk_cursor_get_fallback)
+   * GdkCursor:fallback:
    *
    * Cursor to fall back to if this cursor cannot be displayed.
    */
@@ -180,7 +184,7 @@ gdk_cursor_class_init (GdkCursorClass *cursor_class)
                                                         G_PARAM_STATIC_STRINGS));
 
   /**
-   * GdkCursor:hotspot-x: (attributes org.gtk.Property.get=gdk_cursor_get_hotspot_x)
+   * GdkCursor:hotspot-x:
    *
    * X position of the cursor hotspot in the cursor image.
    */
@@ -192,7 +196,7 @@ gdk_cursor_class_init (GdkCursorClass *cursor_class)
                                                      G_PARAM_STATIC_STRINGS));
 
   /**
-   * GdkCursor:hotspot-y: (attributes org.gtk.Property.get=gdk_cursor_get_hotspot_y)
+   * GdkCursor:hotspot-y:
    *
    * Y position of the cursor hotspot in the cursor image.
    */
@@ -204,7 +208,7 @@ gdk_cursor_class_init (GdkCursorClass *cursor_class)
                                                      G_PARAM_STATIC_STRINGS));
 
   /**
-   * GdkCursor:name: (attributes org.gtk.Property.get=gdk_cursor_get_name)
+   * GdkCursor:name:
    *
    * Name of this this cursor.
    *
@@ -252,6 +256,11 @@ gdk_cursor_hash (gconstpointer pointer)
     hash ^= g_str_hash (cursor->name);
   else if (cursor->texture)
     hash ^= g_direct_hash (cursor->texture);
+  else if (cursor->callback)
+    {
+      hash ^= g_direct_hash (cursor->callback);
+      hash ^= g_direct_hash (cursor->data);
+    }
 
   hash ^= (cursor->hotspot_x << 8) | cursor->hotspot_y;
 
@@ -278,6 +287,10 @@ gdk_cursor_equal (gconstpointer a,
 
   if (ca->hotspot_x != cb->hotspot_x ||
       ca->hotspot_y != cb->hotspot_y)
+    return FALSE;
+
+  if (ca->callback != cb->callback ||
+      ca->data != cb->data)
     return FALSE;
 
   return TRUE;
@@ -355,7 +368,46 @@ gdk_cursor_new_from_texture (GdkTexture *texture,
 }
 
 /**
- * gdk_cursor_get_fallback: (attributes org.gtk.Method.get_property=fallback)
+ * gdk_cursor_new_from_callback:
+ * @callback: the `GdkCursorGetTextureCallback`
+ * @data: data to pass to @callback
+ * @destroy: destroy notify for @data
+ * @fallback: (nullable): the `GdkCursor` to fall back to when
+ *   this one cannot be supported
+ *
+ * Creates a new callback-based cursor object.
+ *
+ * Cursors of this kind produce textures for the cursor
+ * image on demand, when the @callback is called.
+ *
+ * Returns: (nullable): a new `GdkCursor`
+ *
+ * Since: 4.16
+ */
+GdkCursor *
+gdk_cursor_new_from_callback (GdkCursorGetTextureCallback  callback,
+                              gpointer                     data,
+                              GDestroyNotify               destroy,
+                              GdkCursor                   *fallback)
+{
+  GdkCursor *cursor;
+
+  g_return_val_if_fail (callback != NULL, NULL);
+  g_return_val_if_fail (fallback == NULL || GDK_IS_CURSOR (fallback), NULL);
+
+  cursor = g_object_new (GDK_TYPE_CURSOR,
+                         "fallback", fallback,
+                         NULL);
+
+  cursor->callback = callback;
+  cursor->data = data;
+  cursor->destroy = destroy;
+
+  return cursor;
+}
+
+/**
+ * gdk_cursor_get_fallback:
  * @cursor: a `GdkCursor`
  *
  * Returns the fallback for this @cursor.
@@ -378,7 +430,7 @@ gdk_cursor_get_fallback (GdkCursor *cursor)
 }
 
 /**
- * gdk_cursor_get_name: (attributes org.gtk.Method.get_property=name)
+ * gdk_cursor_get_name:
  * @cursor: a `GdkCursor`
  *
  * Returns the name of the cursor.
@@ -416,7 +468,7 @@ gdk_cursor_get_texture (GdkCursor *cursor)
 }
 
 /**
- * gdk_cursor_get_hotspot_x: (attributes org.gtk.Method.get_property=hotspot-x)
+ * gdk_cursor_get_hotspot_x:
  * @cursor: a `GdkCursor`
  *
  * Returns the horizontal offset of the hotspot.
@@ -438,7 +490,7 @@ gdk_cursor_get_hotspot_x (GdkCursor *cursor)
 }
 
 /**
- * gdk_cursor_get_hotspot_y: (attributes org.gtk.Method.get_property=hotspot-y)
+ * gdk_cursor_get_hotspot_y:
  * @cursor: a `GdkCursor`
  *
  * Returns the vertical offset of the hotspot.
@@ -457,4 +509,23 @@ gdk_cursor_get_hotspot_y (GdkCursor *cursor)
   g_return_val_if_fail (GDK_IS_CURSOR (cursor), 0);
 
   return cursor->hotspot_y;
+}
+
+GdkTexture *
+gdk_cursor_get_texture_for_size (GdkCursor *cursor,
+                                 int        cursor_size,
+                                 double     scale,
+                                 int       *width,
+                                 int       *height,
+                                 int       *hotspot_x,
+                                 int       *hotspot_y)
+{
+  if (cursor->callback == NULL)
+    return NULL;
+
+  return cursor->callback (cursor,
+                           cursor_size, scale,
+                           width, height,
+                           hotspot_x, hotspot_y,
+                           cursor->data);
 }

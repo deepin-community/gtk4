@@ -107,14 +107,12 @@ gdk_wayland_primary_claim_remote (GdkWaylandPrimary                     *cb,
 
   gdk_wayland_primary_discard_offer (cb);
 
-#ifdef G_ENABLE_DEBUG
   if (GDK_DISPLAY_DEBUG_CHECK (gdk_clipboard_get_display (GDK_CLIPBOARD (cb)), CLIPBOARD))
     {
       char *s = gdk_content_formats_to_string (formats);
       gdk_debug_message ("%p: remote primary claim for %s", cb, s);
       g_free (s);
     }
-#endif
 
   cb->offer_formats = formats;
   cb->offer = offer;
@@ -229,6 +227,12 @@ gdk_wayland_primary_data_source_send (void                                   *da
                      source, mime_type, fd);
 
   mime_type = gdk_intern_mime_type (mime_type);
+  if (!mime_type)
+    {
+      close (fd);
+      return;
+    }
+
   stream = g_unix_output_stream_new (fd, TRUE);
 
   gdk_clipboard_write_async (GDK_CLIPBOARD (cb),
@@ -270,14 +274,12 @@ gdk_wayland_primary_claim (GdkClipboard       *clipboard,
 {
   GdkWaylandPrimary *cb = GDK_WAYLAND_PRIMARY (clipboard);
 
-#ifdef G_ENABLE_DEBUG
   if (GDK_DISPLAY_DEBUG_CHECK (gdk_clipboard_get_display (clipboard), CLIPBOARD))
     {
       char *s = gdk_content_formats_to_string (formats);
       gdk_debug_message ("%p: claim primary (%s) for %s", cb, local ? "local" : "remote", s);
       g_free (s);
     }
-#endif
   if (local)
     {
       GdkWaylandDisplay *wdisplay = GDK_WAYLAND_DISPLAY (gdk_clipboard_get_display (clipboard));
@@ -328,19 +330,18 @@ gdk_wayland_primary_read_async (GdkClipboard        *clipboard,
   g_task_set_priority (task, io_priority);
   g_task_set_source_tag (task, gdk_wayland_primary_read_async);
 
-#ifdef G_ENABLE_DEBUG
   if (GDK_DISPLAY_DEBUG_CHECK (gdk_clipboard_get_display (clipboard), CLIPBOARD))
     {
       char *s = gdk_content_formats_to_string (formats);
       gdk_debug_message ("%p: read for %s", cb, s);
       g_free (s);
     }
-#endif
   mime_type = gdk_content_formats_match_mime_type (formats, cb->offer_formats);
   if (mime_type == NULL)
     {
       g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
                                _("No compatible transfer format found"));
+      g_object_unref (task);
       return;
     }
   /* offer formats should be empty if we have no offer */
@@ -348,9 +349,10 @@ gdk_wayland_primary_read_async (GdkClipboard        *clipboard,
 
   g_task_set_task_data (task, (gpointer) mime_type, NULL);
 
-  if (!g_unix_open_pipe (pipe_fd, FD_CLOEXEC, &error))
+  if (!g_unix_open_pipe (pipe_fd, O_CLOEXEC, &error))
     {
       g_task_return_error (task, error);
+      g_object_unref (task);
       return;
     }
 
@@ -358,6 +360,7 @@ gdk_wayland_primary_read_async (GdkClipboard        *clipboard,
   stream = g_unix_input_stream_new (pipe_fd[0], TRUE);
   close (pipe_fd[1]);
   g_task_return_pointer (task, stream, g_object_unref);
+  g_object_unref (task);
 }
 
 static GInputStream *

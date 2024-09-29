@@ -1,5 +1,5 @@
 project('gtk', 'c',
-        version: '4.12.3',
+        version: '4.16.2',
         default_options: [
           'buildtype=debugoptimized',
           'warning_level=1',
@@ -13,18 +13,20 @@ project('gtk', 'c',
 # keep these numbers in sync with wrap files where there exist
 glib_req           = '>= 2.76.0'
 introspection_req  = '>= 1.76.0' # keep this in sync with glib
-pango_req          = '>= 1.50.0' # keep this in sync with .gitlab-ci/test-msys.sh
+pango_req          = '>= 1.52.0' # keep this in sync with .gitlab-ci/test-msys.sh
 harfbuzz_req       = '>= 2.6.0'
 fribidi_req        = '>= 1.0.6'
-cairo_req          = '>= 1.14.0'
+cairo_req          = '>= 1.18.0'
 gdk_pixbuf_req     = '>= 2.30.0'
-wayland_proto_req  = '>= 1.31'
+wayland_proto_req  = '>= 1.36'
 wayland_req        = '>= 1.21.0'
 graphene_req       = '>= 1.10.0'
 epoxy_req          = '>= 1.4'
 cloudproviders_req = '>= 0.3.1'
 xkbcommon_req      = '>= 0.2.0'
 sysprof_req        = '>= 3.38.0'
+vulkan_req         = '>= 1.3'
+gstreamer_req      = '>= 1.24.0'
 
 fs = import('fs')
 gnome = import('gnome')
@@ -57,6 +59,11 @@ gtk_interface_age = gtk_minor_version.is_odd() ? 0 : gtk_micro_version
 add_project_arguments('-DGTK_VERSION="@0@"'.format(meson.project_version()), language: 'c')
 
 add_project_arguments('-D_GNU_SOURCE', language: 'c')
+
+if host_machine.system() == 'windows'
+  add_project_arguments(['-DUNICODE',
+                         '-D_UNICODE'], language: 'c')
+endif
 
 # Use debug/optimization flags to determine whether to enable debug or disable
 # cast checks
@@ -100,6 +107,7 @@ wayland_enabled  = get_option('wayland-backend')
 broadway_enabled = get_option('broadway-backend')
 macos_enabled    = get_option('macos-backend')
 win32_enabled    = get_option('win32-backend')
+vulkan_enabled   = get_option('vulkan')
 
 os_unix   = false
 os_linux  = false
@@ -121,6 +129,7 @@ os_unix = not os_win32
 
 if os_darwin
   wayland_enabled = false
+  vulkan_enabled = false
 else
   macos_enabled = false
 endif
@@ -165,17 +174,17 @@ check_headers = [
   'memory.h',
   'stdint.h',
   'stdlib.h',
-  'strings.h',
   'string.h',
+  'strings.h',
   'sys/mman.h',
   'sys/param.h',
   'sys/stat.h',
   'sys/sysinfo.h',
+  'sys/sysmacros.h',
   'sys/systeminfo.h',
   'sys/time.h',
   'sys/types.h',
   'unistd.h',
-  'gio/gdesktopappinfo.h'
 ]
 
 foreach h : check_headers
@@ -198,6 +207,7 @@ check_functions = [
   'posix_fallocate',
   'sincos',
   'sincosf',
+  'memmem',
 ]
 
 foreach func : check_functions
@@ -205,6 +215,7 @@ foreach func : check_functions
                      args: '-D_GNU_SOURCE',
                      prefix:
                        '#include <stdlib.h>\n' +
+                       '#include <string.h>\n' +
                        '#include <unistd.h>\n' +
                        '#include <sys/mman.h>\n' +
                        '#include <fcntl.h>\n' +
@@ -248,15 +259,23 @@ endif
 
 # Compiler flags
 if cc.get_id() == 'msvc'
-  # Compiler options taken from msvc_recommended_pragmas.h
-  # in GLib, based on _Win32_Programming_ by Rector and Newcomer
+  required_cflags = []
+  required_debug_cflags = '-Zc:preprocessor'
   test_cflags = [
-    '-FImsvc_recommended_pragmas.h',
+    '-FI@0@/build-aux/msvc/msvc_recommended_pragmas.h'.format(meson.project_source_root()),
     '-D_USE_MATH_DEFINES',
-    '-utf-8',
-    '-Zc:preprocessor'
+    required_debug_cflags
   ]
-  add_project_arguments(cc.get_supported_arguments(test_cflags), language: 'c')
+  msvc_supported_cflags = cc.get_supported_arguments(test_cflags)
+  if debug
+    required_cflags += required_debug_cflags
+  endif
+  foreach f : required_cflags
+    if not msvc_supported_cflags.contains(f)
+      error('@0@ required for this build'.format(f))
+    endif
+  endforeach
+  add_project_arguments(msvc_supported_cflags, language: 'c')
 
   add_languages('cpp')
   cxx = meson.get_compiler('cpp')
@@ -381,6 +400,7 @@ fribidi_dep    = dependency('fribidi', version: fribidi_req,
                             default_options: ['docs=false'])
 harfbuzz_dep   = dependency('harfbuzz', version: harfbuzz_req,
                             default_options: ['coretext=enabled'])
+hb_subset_dep  = dependency('harfbuzz-subset', version: harfbuzz_req)
 
 # Require PangoFT2 if on X11 or wayland
 pangoft_dep    = dependency('pangoft2', version: pango_req,
@@ -391,21 +411,27 @@ if win32_enabled
   pangowin32_dep = dependency('pangowin32')
 endif
 
-pangocairo_dep = dependency('pangocairo', version: pango_req)
-pixbuf_dep     = dependency('gdk-pixbuf-2.0', version: gdk_pixbuf_req,
-                            default_options: ['png=enabled', 'jpeg=enabled', 'builtin_loaders=png,jpeg', 'man=false'])
-png_dep        = dependency('libpng', 'png')
-tiff_dep       = dependency('libtiff-4', 'tiff')
-jpeg_dep       = dependency('libjpeg', 'jpeg')
+pangocairo_dep    = dependency('pangocairo', version: pango_req)
+pixbuf_dep        = dependency('gdk-pixbuf-2.0', version: gdk_pixbuf_req,
+                               default_options: ['png=enabled', 'jpeg=enabled', 'builtin_loaders=png,jpeg', 'man=false'])
+png_dep           = dependency('libpng', 'png')
+tiff_dep          = dependency('libtiff-4', 'tiff')
+jpeg_dep          = dependency('libjpeg', 'jpeg')
 
-epoxy_dep      = dependency('epoxy', version: epoxy_req)
-xkbdep         = dependency('xkbcommon', version: xkbcommon_req, required: wayland_enabled)
-graphene_dep   = dependency('graphene-gobject-1.0', version: graphene_req,
-                            default_options: ['tests=false', 'gobject_types=true'])
-iso_codes_dep  = dependency('iso-codes', required: false)
-gi_dep         = dependency('gobject-introspection-1.0', version: introspection_req,
-                            required: get_option('introspection').enabled() and
-                                      get_option('build-tests'))
+epoxy_dep         = dependency('epoxy', version: epoxy_req)
+xkbdep            = dependency('xkbcommon', version: xkbcommon_req, required: wayland_enabled)
+graphene_dep      = dependency('graphene-gobject-1.0', version: graphene_req,
+                               default_options: ['tests=false', 'gobject_types=true'])
+iso_codes_dep     = dependency('iso-codes', required: false)
+gi_dep            = dependency('gobject-introspection-1.0', version: introspection_req,
+                               required: get_option('introspection').enabled() and
+                                         get_option('build-tests'))
+gstplayer_dep     = dependency('gstreamer-player-1.0', version: gstreamer_req,
+                               required: get_option('media-gstreamer'))
+gstgl_dep         = dependency('gstreamer-gl-1.0', version: gstreamer_req,
+                               required: get_option('media-gstreamer'))
+gstallocators_dep = dependency('gstreamer-allocators-1.0', version: gstreamer_req,
+                               required: get_option('media-gstreamer'))
 
 fontconfig_dep = [] # only used in x11 backend
 
@@ -478,8 +504,6 @@ if wayland_enabled
                               default_options: ['documentation=false'])
   wlprotocolsdep = dependency('wayland-protocols', version: wayland_proto_req)
   wlegldep       = dependency('wayland-egl')
-
-  wlproto_dir = wlprotocolsdep.get_variable('pkgdatadir')
 
   wayland_pkgs = [
     'wayland-client @0@'.format(wayland_req),
@@ -605,15 +629,25 @@ endif
 # Uses meson's custom vulkan dependency searching. Set the VULKAN_SDK env var
 # to use a custom path for the Vulkan SDK. Bugs that are found with it should
 # be reported upstream and fixed.
-vulkan_dep = dependency('vulkan', required: get_option('vulkan'))
-glslc = find_program('glslc', required: get_option('vulkan'))
-if vulkan_dep.found()
+vulkan_dep = dependency('vulkan',
+                        version: vulkan_req,
+                        required: vulkan_enabled)
+glslc = find_program('glslc', required: vulkan_enabled)
+if vulkan_dep.found() and glslc.found()
   have_vulkan = true
   vulkan_pkg_found = vulkan_dep.type_name() == 'pkgconfig'
 else
   have_vulkan = false
   vulkan_pkg_found = false
 endif
+
+libdrm_dep = dependency('libdrm', required: os_linux)
+# We only care about drm_fourcc.h for all the fourccs,
+# but not about linking to libdrm
+libdrm_dep = libdrm_dep.partial_dependency(includes: true, compile_args: true)
+cdata.set('HAVE_DRM_FOURCC_H', libdrm_dep.found())
+
+cdata.set('HAVE_DMABUF', cc.has_header('linux/dma-buf.h'))
 
 cloudproviders_dep = dependency('cloudproviders',
   required: get_option('cloudproviders'),
@@ -639,23 +673,9 @@ if not get_option('sysprof').disabled()
     ],
   )
   cdata.set('HAVE_SYSPROF', libsysprof_capture_dep.found())
-  libsysprof_dep = dependency('sysprof-4',
-    required: false,
-    default_options: [
-      'agent=false',
-      'examples=false',
-      'gtk=false',
-      'tests=false',
-      'tools=false',
-      'libsysprof=true',
-      'sysprofd=none',
-      'help=false',
-    ],
-  )
   profiler_enabled = true
 else
   libsysprof_capture_dep = disabler()
-  libsysprof_dep = disabler()
   profiler_enabled = false
 endif
 
@@ -772,6 +792,27 @@ project_build_root = meson.current_build_dir()
 
 gen_visibility_macros = find_program('build-aux/meson/gen-visibility-macros.py')
 
+gen_profile_conf = find_program('build-aux/meson/gen-profile-conf.py')
+
+profile = get_option('profile')
+if profile == 'auto'
+  if gtk_minor_version.is_even()
+    profile = 'default'
+  else
+    profile = 'devel'
+  endif
+endif
+
+profile_conf_h = declare_dependency(
+  sources: custom_target('profile-conf',
+    command: [gen_profile_conf, meson.project_source_root(), profile],
+    capture: true,
+    output: 'profile_conf.h',
+    build_by_default: true,
+    build_always_stale: true,
+  )
+)
+
 subdir('gdk/version')
 subdir('gtk/css')
 subdir('gdk')
@@ -849,6 +890,18 @@ foreach backend: enabled_backends
     name: 'GTK',
     description: 'GTK Graphical UI Library',
     requires: ['gtk4', get_variable('@0@_public_deps'.format(backend), [])],
+  )
+  meson.override_dependency(pkg, libgtk_dep)
+endforeach
+
+foreach a11y_backend: gtk_a11y_backends
+  pkg = 'gtk4-@0@'.format(a11y_backend)
+  pkg_config.generate(
+    filebase: pkg,
+    unescaped_variables: common_pc_variables,
+    name: 'GTK',
+    description: gtk_a11y_backend_info[a11y_backend]['description'],
+    requires: ['gtk4', get_variable('@0@_public_deps'.format(a11y_backend), [])],
   )
   meson.override_dependency(pkg, libgtk_dep)
 endforeach

@@ -37,8 +37,6 @@
  * right away.
  *
  * The operation is started with the [method@Gtk.UriLauncher.launch] function.
- * This API follows the GIO async pattern, and the result can be obtained by
- * calling [method@Gtk.UriLauncher.launch_finish].
  *
  * To launch a file, use [class@Gtk.FileLauncher].
  *
@@ -129,7 +127,7 @@ gtk_uri_launcher_class_init (GtkUriLauncherClass *class)
   object_class->set_property = gtk_uri_launcher_set_property;
 
   /**
-   * GtkUriLauncher:uri: (attributes org.gtk.Property.get=gtk_uri_launcher_get_uri org.gtk.Property.set=gtk_uri_launcher_set_uri)
+   * GtkUriLauncher:uri:
    *
    * The uri to launch.
    *
@@ -263,16 +261,13 @@ G_GNUC_END_IGNORE_DEPRECATIONS
  * @self: a `GtkUriLauncher`
  * @parent: (nullable): the parent `GtkWindow`
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
  * Launch an application to open the uri.
  *
  * This may present an app chooser dialog to the user.
- *
- * The @callback will be called when the operation is completed.
- * It should call [method@Gtk.UriLauncher.launch_finish] to obtain
- * the result.
  *
  * Since: 4.10
  */
@@ -297,6 +292,7 @@ gtk_uri_launcher_launch (GtkUriLauncher      *self,
       g_task_return_new_error (task,
                                GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_FAILED,
                                "No uri to launch");
+      g_object_unref (task);
       return;
     }
 
@@ -306,6 +302,7 @@ gtk_uri_launcher_launch (GtkUriLauncher      *self,
                                GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_FAILED,
                                "%s is not a valid uri: %s", self->uri, error->message);
       g_error_free (error);
+      g_object_unref (task);
       return;
     }
 
@@ -314,9 +311,11 @@ gtk_uri_launcher_launch (GtkUriLauncher      *self,
     gtk_openuri_portal_open_uri_async (self->uri, parent, cancellable, open_done, task);
   else
 #endif
+    {
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-    gtk_show_uri_full (parent, self->uri, GDK_CURRENT_TIME, cancellable, show_uri_done, task);
+      gtk_show_uri_full (parent, self->uri, GDK_CURRENT_TIME, cancellable, show_uri_done, task);
 G_GNUC_END_IGNORE_DEPRECATIONS
+    }
 }
 
 /**

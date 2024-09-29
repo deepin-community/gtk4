@@ -1,25 +1,23 @@
 #include <gtk/gtk.h>
 
-#include "gsk/gl/gskglrenderer.h"
-#ifdef GDK_RENDERING_VULKAN
-#include "gsk/vulkan/gskvulkanrenderer.h"
-#endif
-
 #include <epoxy/gl.h>
+
+#include "gsk/gl/fp16private.h"
+#include "testsuite/gdk/gdktestutils.h"
 
 #define N 10
 
 static GdkGLContext *gl_context = NULL;
 static GskRenderer *gl_renderer = NULL;
+static GskRenderer *ngl_renderer = NULL;
 static GskRenderer *vulkan_renderer = NULL;
-
-typedef struct _TextureBuilder TextureBuilder;
 
 typedef enum {
   TEXTURE_METHOD_LOCAL,
   TEXTURE_METHOD_GL,
   TEXTURE_METHOD_GL_RELEASED,
   TEXTURE_METHOD_GL_NATIVE,
+  TEXTURE_METHOD_NGL,
   TEXTURE_METHOD_VULKAN,
   TEXTURE_METHOD_PNG,
   TEXTURE_METHOD_PNG_PIXBUF,
@@ -28,420 +26,6 @@ typedef enum {
 
   N_TEXTURE_METHODS
 } TextureMethod;
-
-typedef enum {
-  CHANNEL_UINT_8,
-  CHANNEL_UINT_16,
-  CHANNEL_FLOAT_16,
-  CHANNEL_FLOAT_32,
-} ChannelType;
-
-struct _TextureBuilder
-{
-  GdkMemoryFormat format;
-  int width;
-  int height;
-
-  guchar *pixels;
-  gsize stride;
-  gsize offset;
-};
-
-static inline guint
-as_uint (const float x)
-{
-  return *(guint*)&x;
-}
-
-static inline float
-as_float (const guint x)
-{
-  return *(float*)&x;
-}
-
-// IEEE-754 16-bit floating-point format (without infinity): 1-5-10
-//
-static inline float
-half_to_float (const guint16 x)
-{
-  const guint e = (x&0x7C00)>>10; // exponent
-  const guint m = (x&0x03FF)<<13; // mantissa
-  const guint v = as_uint((float)m)>>23;
-  return as_float((x&0x8000)<<16 | (e!=0)*((e+112)<<23|m) | ((e==0)&(m!=0))*((v-37)<<23|((m<<(150-v))&0x007FE000)));
-}
-
-static inline guint16
-float_to_half (const float x)
-{
-  const guint b = *(guint*)&x+0x00001000; // round-to-nearest-even
-  const guint e = (b&0x7F800000)>>23; // exponent
-  const guint m = b&0x007FFFFF; // mantissa
-  return (b&0x80000000)>>16 | (e>112)*((((e-112)<<10)&0x7C00)|m>>13) | ((e<113)&(e>101))*((((0x007FF000+m)>>(125-e))+1)>>1) | (e>143)*0x7FFF; // sign : normalized : denormalized : saturate
-}
-
-static gsize
-gdk_memory_format_bytes_per_pixel (GdkMemoryFormat format)
-{
-  switch (format)
-    {
-    case GDK_MEMORY_G8:
-    case GDK_MEMORY_A8:
-      return 1;
-
-    case GDK_MEMORY_G8A8_PREMULTIPLIED:
-    case GDK_MEMORY_G8A8:
-    case GDK_MEMORY_G16:
-    case GDK_MEMORY_A16:
-    case GDK_MEMORY_A16_FLOAT:
-      return 2;
-
-    case GDK_MEMORY_R8G8B8:
-    case GDK_MEMORY_B8G8R8:
-      return 3;
-
-    case GDK_MEMORY_B8G8R8A8_PREMULTIPLIED:
-    case GDK_MEMORY_A8R8G8B8_PREMULTIPLIED:
-    case GDK_MEMORY_R8G8B8A8_PREMULTIPLIED:
-    case GDK_MEMORY_B8G8R8A8:
-    case GDK_MEMORY_A8R8G8B8:
-    case GDK_MEMORY_R8G8B8A8:
-    case GDK_MEMORY_A8B8G8R8:
-    case GDK_MEMORY_G16A16_PREMULTIPLIED:
-    case GDK_MEMORY_G16A16:
-    case GDK_MEMORY_A32_FLOAT:
-      return 4;
-
-    case GDK_MEMORY_R16G16B16:
-    case GDK_MEMORY_R16G16B16_FLOAT:
-      return 6;
-
-    case GDK_MEMORY_R16G16B16A16_PREMULTIPLIED:
-    case GDK_MEMORY_R16G16B16A16:
-    case GDK_MEMORY_R16G16B16A16_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_R16G16B16A16_FLOAT:
-      return 8;
-
-    case GDK_MEMORY_R32G32B32_FLOAT:
-      return 12;
-
-    case GDK_MEMORY_R32G32B32A32_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_R32G32B32A32_FLOAT:
-      return 16;
-
-    case GDK_MEMORY_N_FORMATS:
-    default:
-      g_assert_not_reached ();
-      return 4;
-    }
-}
-
-static ChannelType
-gdk_memory_format_get_channel_type (GdkMemoryFormat format)
-{
-  switch (format)
-    {
-    case GDK_MEMORY_R8G8B8:
-    case GDK_MEMORY_B8G8R8:
-    case GDK_MEMORY_B8G8R8A8_PREMULTIPLIED:
-    case GDK_MEMORY_A8R8G8B8_PREMULTIPLIED:
-    case GDK_MEMORY_R8G8B8A8_PREMULTIPLIED:
-    case GDK_MEMORY_B8G8R8A8:
-    case GDK_MEMORY_A8R8G8B8:
-    case GDK_MEMORY_R8G8B8A8:
-    case GDK_MEMORY_A8B8G8R8:
-    case GDK_MEMORY_G8:
-    case GDK_MEMORY_G8A8:
-    case GDK_MEMORY_G8A8_PREMULTIPLIED:
-    case GDK_MEMORY_A8:
-      return CHANNEL_UINT_8;
-
-    case GDK_MEMORY_R16G16B16:
-    case GDK_MEMORY_R16G16B16A16_PREMULTIPLIED:
-    case GDK_MEMORY_R16G16B16A16:
-    case GDK_MEMORY_G16:
-    case GDK_MEMORY_G16A16:
-    case GDK_MEMORY_G16A16_PREMULTIPLIED:
-    case GDK_MEMORY_A16:
-      return CHANNEL_UINT_16;
-
-    case GDK_MEMORY_R16G16B16_FLOAT:
-    case GDK_MEMORY_R16G16B16A16_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_R16G16B16A16_FLOAT:
-    case GDK_MEMORY_A16_FLOAT:
-      return CHANNEL_FLOAT_16;
-
-    case GDK_MEMORY_R32G32B32_FLOAT:
-    case GDK_MEMORY_R32G32B32A32_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_R32G32B32A32_FLOAT:
-    case GDK_MEMORY_A32_FLOAT:
-      return CHANNEL_FLOAT_32;
-
-    case GDK_MEMORY_N_FORMATS:
-    default:
-      g_assert_not_reached ();
-      return CHANNEL_UINT_8;
-    }
-}
-
-/* return the number of color channels, ignoring alpha */
-static guint
-gdk_memory_format_n_colors (GdkMemoryFormat format)
-{
-  switch (format)
-    {
-    case GDK_MEMORY_R8G8B8:
-    case GDK_MEMORY_B8G8R8:
-    case GDK_MEMORY_R16G16B16:
-    case GDK_MEMORY_R16G16B16_FLOAT:
-    case GDK_MEMORY_R32G32B32_FLOAT:
-    case GDK_MEMORY_B8G8R8A8_PREMULTIPLIED:
-    case GDK_MEMORY_A8R8G8B8_PREMULTIPLIED:
-    case GDK_MEMORY_R8G8B8A8_PREMULTIPLIED:
-    case GDK_MEMORY_B8G8R8A8:
-    case GDK_MEMORY_A8R8G8B8:
-    case GDK_MEMORY_R8G8B8A8:
-    case GDK_MEMORY_A8B8G8R8:
-    case GDK_MEMORY_R16G16B16A16_PREMULTIPLIED:
-    case GDK_MEMORY_R16G16B16A16:
-    case GDK_MEMORY_R16G16B16A16_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_R16G16B16A16_FLOAT:
-    case GDK_MEMORY_R32G32B32A32_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_R32G32B32A32_FLOAT:
-      return 3;
-
-    case GDK_MEMORY_G8:
-    case GDK_MEMORY_G16:
-    case GDK_MEMORY_G8A8_PREMULTIPLIED:
-    case GDK_MEMORY_G8A8:
-    case GDK_MEMORY_G16A16_PREMULTIPLIED:
-    case GDK_MEMORY_G16A16:
-      return 1;
-
-    case GDK_MEMORY_A8:
-    case GDK_MEMORY_A16:
-    case GDK_MEMORY_A16_FLOAT:
-    case GDK_MEMORY_A32_FLOAT:
-      return 0;
-
-    case GDK_MEMORY_N_FORMATS:
-    default:
-      g_assert_not_reached ();
-      return TRUE;
-    }
-}
-
-static gboolean
-gdk_memory_format_has_alpha (GdkMemoryFormat format)
-{
-  switch (format)
-    {
-    case GDK_MEMORY_R8G8B8:
-    case GDK_MEMORY_B8G8R8:
-    case GDK_MEMORY_R16G16B16:
-    case GDK_MEMORY_R16G16B16_FLOAT:
-    case GDK_MEMORY_R32G32B32_FLOAT:
-    case GDK_MEMORY_G8:
-    case GDK_MEMORY_G16:
-      return FALSE;
-
-    case GDK_MEMORY_B8G8R8A8_PREMULTIPLIED:
-    case GDK_MEMORY_A8R8G8B8_PREMULTIPLIED:
-    case GDK_MEMORY_R8G8B8A8_PREMULTIPLIED:
-    case GDK_MEMORY_B8G8R8A8:
-    case GDK_MEMORY_A8R8G8B8:
-    case GDK_MEMORY_R8G8B8A8:
-    case GDK_MEMORY_A8B8G8R8:
-    case GDK_MEMORY_R16G16B16A16_PREMULTIPLIED:
-    case GDK_MEMORY_R16G16B16A16:
-    case GDK_MEMORY_R16G16B16A16_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_R16G16B16A16_FLOAT:
-    case GDK_MEMORY_R32G32B32A32_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_R32G32B32A32_FLOAT:
-    case GDK_MEMORY_G8A8_PREMULTIPLIED:
-    case GDK_MEMORY_G8A8:
-    case GDK_MEMORY_G16A16_PREMULTIPLIED:
-    case GDK_MEMORY_G16A16:
-    case GDK_MEMORY_A8:
-    case GDK_MEMORY_A16:
-    case GDK_MEMORY_A16_FLOAT:
-    case GDK_MEMORY_A32_FLOAT:
-      return TRUE;
-
-    case GDK_MEMORY_N_FORMATS:
-    default:
-      g_assert_not_reached ();
-      return TRUE;
-    }
-}
-
-static gboolean
-gdk_memory_format_is_premultiplied (GdkMemoryFormat format)
-{
-  switch (format)
-    {
-    case GDK_MEMORY_B8G8R8A8_PREMULTIPLIED:
-    case GDK_MEMORY_A8R8G8B8_PREMULTIPLIED:
-    case GDK_MEMORY_R8G8B8A8_PREMULTIPLIED:
-    case GDK_MEMORY_R16G16B16A16_PREMULTIPLIED:
-    case GDK_MEMORY_R16G16B16A16_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_R32G32B32A32_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_G8A8_PREMULTIPLIED:
-    case GDK_MEMORY_G16A16_PREMULTIPLIED:
-    case GDK_MEMORY_A8:
-    case GDK_MEMORY_A16:
-    case GDK_MEMORY_A16_FLOAT:
-    case GDK_MEMORY_A32_FLOAT:
-      return TRUE;
-
-    case GDK_MEMORY_R8G8B8:
-    case GDK_MEMORY_B8G8R8:
-    case GDK_MEMORY_R16G16B16:
-    case GDK_MEMORY_R16G16B16_FLOAT:
-    case GDK_MEMORY_R32G32B32_FLOAT:
-    case GDK_MEMORY_B8G8R8A8:
-    case GDK_MEMORY_A8R8G8B8:
-    case GDK_MEMORY_R8G8B8A8:
-    case GDK_MEMORY_A8B8G8R8:
-    case GDK_MEMORY_R16G16B16A16:
-    case GDK_MEMORY_R16G16B16A16_FLOAT:
-    case GDK_MEMORY_R32G32B32A32_FLOAT:
-    case GDK_MEMORY_G8:
-    case GDK_MEMORY_G8A8:
-    case GDK_MEMORY_G16:
-    case GDK_MEMORY_G16A16:
-      return FALSE;
-
-    case GDK_MEMORY_N_FORMATS:
-    default:
-      g_assert_not_reached ();
-      return FALSE;
-    }
-}
-
-static gboolean
-gdk_memory_format_is_deep (GdkMemoryFormat format)
-{
-  switch (format)
-    {
-    case GDK_MEMORY_B8G8R8A8_PREMULTIPLIED:
-    case GDK_MEMORY_A8R8G8B8_PREMULTIPLIED:
-    case GDK_MEMORY_R8G8B8A8_PREMULTIPLIED:
-    case GDK_MEMORY_G8A8_PREMULTIPLIED:
-    case GDK_MEMORY_R8G8B8:
-    case GDK_MEMORY_B8G8R8:
-    case GDK_MEMORY_B8G8R8A8:
-    case GDK_MEMORY_A8R8G8B8:
-    case GDK_MEMORY_R8G8B8A8:
-    case GDK_MEMORY_A8B8G8R8:
-    case GDK_MEMORY_G8:
-    case GDK_MEMORY_G8A8:
-    case GDK_MEMORY_A8:
-      return FALSE;
-
-    case GDK_MEMORY_R16G16B16A16_PREMULTIPLIED:
-    case GDK_MEMORY_R16G16B16A16_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_R32G32B32A32_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_G16A16_PREMULTIPLIED:
-    case GDK_MEMORY_R16G16B16:
-    case GDK_MEMORY_R16G16B16_FLOAT:
-    case GDK_MEMORY_R32G32B32_FLOAT:
-    case GDK_MEMORY_R16G16B16A16:
-    case GDK_MEMORY_R16G16B16A16_FLOAT:
-    case GDK_MEMORY_R32G32B32A32_FLOAT:
-    case GDK_MEMORY_G16:
-    case GDK_MEMORY_G16A16:
-    case GDK_MEMORY_A16:
-    case GDK_MEMORY_A16_FLOAT:
-    case GDK_MEMORY_A32_FLOAT:
-      return TRUE;
-
-    case GDK_MEMORY_N_FORMATS:
-    default:
-      g_assert_not_reached ();
-      return FALSE;
-    }
-}
-
-static gboolean
-gdk_memory_format_pixel_equal (GdkMemoryFormat  format,
-                               gboolean         accurate,
-                               const guchar    *pixel1,
-                               const guchar    *pixel2)
-{
-  switch (format)
-    {
-    case GDK_MEMORY_B8G8R8A8_PREMULTIPLIED:
-    case GDK_MEMORY_A8R8G8B8_PREMULTIPLIED:
-    case GDK_MEMORY_R8G8B8A8_PREMULTIPLIED:
-    case GDK_MEMORY_R8G8B8:
-    case GDK_MEMORY_B8G8R8:
-    case GDK_MEMORY_B8G8R8A8:
-    case GDK_MEMORY_A8R8G8B8:
-    case GDK_MEMORY_R8G8B8A8:
-    case GDK_MEMORY_A8B8G8R8:
-    case GDK_MEMORY_A8:
-    case GDK_MEMORY_G8:
-    case GDK_MEMORY_G8A8:
-    case GDK_MEMORY_G8A8_PREMULTIPLIED:
-      return memcmp (pixel1, pixel2, gdk_memory_format_bytes_per_pixel (format)) == 0;
-
-    case GDK_MEMORY_R16G16B16:
-    case GDK_MEMORY_R16G16B16A16:
-    case GDK_MEMORY_R16G16B16A16_PREMULTIPLIED:
-    case GDK_MEMORY_G16:
-    case GDK_MEMORY_G16A16:
-    case GDK_MEMORY_G16A16_PREMULTIPLIED:
-    case GDK_MEMORY_A16:
-      {
-        const guint16 *u1 = (const guint16 *) pixel1;
-        const guint16 *u2 = (const guint16 *) pixel2;
-        guint i;
-        for (i = 0; i < gdk_memory_format_bytes_per_pixel (format) / sizeof (guint16); i++)
-          {
-            if (!G_APPROX_VALUE (u1[i], u2[i], accurate ? 1 : 256))
-              return FALSE;
-          }
-      }
-      return TRUE;
-
-    case GDK_MEMORY_R16G16B16_FLOAT:
-    case GDK_MEMORY_R16G16B16A16_FLOAT:
-    case GDK_MEMORY_R16G16B16A16_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_A16_FLOAT:
-      {
-        guint i;
-        for (i = 0; i < gdk_memory_format_bytes_per_pixel (format) / sizeof (guint16); i++)
-          {
-            float f1 = half_to_float (((guint16 *) pixel1)[i]);
-            float f2 = half_to_float (((guint16 *) pixel2)[i]);
-            if (!G_APPROX_VALUE (f1, f2, accurate ? 1./65535 : 1./255))
-              return FALSE;
-          }
-      }
-      return TRUE;
-
-    case GDK_MEMORY_R32G32B32_FLOAT:
-    case GDK_MEMORY_R32G32B32A32_FLOAT:
-    case GDK_MEMORY_R32G32B32A32_FLOAT_PREMULTIPLIED:
-    case GDK_MEMORY_A32_FLOAT:
-      {
-        const float *f1 = (const float *) pixel1;
-        const float *f2 = (const float *) pixel2;
-        guint i;
-        for (i = 0; i < gdk_memory_format_bytes_per_pixel (format) / sizeof (float); i++)
-          {
-            if (!G_APPROX_VALUE (f1[i], f2[i], accurate ? 1./65535 : 1./255))
-              return FALSE;
-          }
-      }
-      return TRUE;
-
-    case GDK_MEMORY_N_FORMATS:
-    default:
-      g_assert_not_reached ();
-      return FALSE;
-    }
-}
 
 static gpointer
 encode (GdkMemoryFormat format,
@@ -483,349 +67,6 @@ decode_two_formats (gconstpointer    data,
   *format1 = value;
 }
 
-static void
-texture_builder_init (TextureBuilder  *builder,
-                      GdkMemoryFormat  format,
-                      int              width,
-                      int              height)
-{
-  gsize extra_stride;
-
-  builder->format = format;
-  builder->width = width;
-  builder->height = height;
-
-  extra_stride = g_test_rand_bit() ? g_test_rand_int_range (0, 16) : 0;
-  builder->offset = g_test_rand_bit() ? g_test_rand_int_range (0, 128) : 0;
-  builder->stride = width * gdk_memory_format_bytes_per_pixel (format) + extra_stride;
-  builder->pixels = g_malloc0 (builder->offset + builder->stride * height);
-}
-
-static GdkTexture *
-texture_builder_finish (TextureBuilder *builder)
-{
-  GBytes *bytes;
-  GdkTexture *texture;
-
-  bytes = g_bytes_new_with_free_func (builder->pixels + builder->offset,
-                                      builder->height * builder->stride,
-                                      g_free,
-                                      builder->pixels);
-  texture = gdk_memory_texture_new (builder->width,
-                                    builder->height,
-                                    builder->format,
-                                    bytes,
-                                    builder->stride);
-  g_bytes_unref (bytes);
-
-  return texture;
-}
-
-static inline void
-set_pixel_u8 (guchar          *data,
-              int              r,
-              int              g,
-              int              b,
-              int              a,
-              gboolean         premultiply,
-              const GdkRGBA   *color)
-{
-  if (a >= 0)
-    data[a] = CLAMP (color->alpha * 255.f + 0.5f, 0.f, 255.f);
-  if (premultiply)
-    {
-      data[r] = CLAMP (color->red * color->alpha * 255.f + 0.5f, 0.f, 255.f);
-      data[g] = CLAMP (color->green * color->alpha * 255.f + 0.5f, 0.f, 255.f);
-      data[b] = CLAMP (color->blue * color->alpha * 255.f + 0.5f, 0.f, 255.f);
-    }
-  else
-    {
-      data[r] = CLAMP (color->red * 255.f + 0.5f, 0.f, 255.f);
-      data[g] = CLAMP (color->green * 255.f + 0.5f, 0.f, 255.f);
-      data[b] = CLAMP (color->blue * 255.f + 0.5f, 0.f, 255.f);
-    }
-}
-
-static float
-color_gray (const GdkRGBA *color)
-{
-  return 1/3.f * (color->red + color->green + color->blue);
-}
-
-static void
-texture_builder_set_pixel (TextureBuilder  *builder,
-                           int              x,
-                           int              y,
-                           const GdkRGBA   *color)
-{
-  guchar *data;
-
-  g_assert_cmpint (x, >=, 0);
-  g_assert_cmpint (x, <, builder->width);
-  g_assert_cmpint (y, >=, 0);
-  g_assert_cmpint (y, <, builder->height);
-
-  data = builder->pixels
-         + builder->offset
-         + y * builder->stride
-         + x * gdk_memory_format_bytes_per_pixel (builder->format);
-
-  switch (builder->format)
-  {
-    case GDK_MEMORY_B8G8R8A8_PREMULTIPLIED:
-      set_pixel_u8 (data, 2, 1, 0, 3, TRUE, color);
-      break;
-    case GDK_MEMORY_A8R8G8B8_PREMULTIPLIED:
-      set_pixel_u8 (data, 1, 2, 3, 0, TRUE, color);
-      break;
-    case GDK_MEMORY_R8G8B8A8_PREMULTIPLIED:
-      set_pixel_u8 (data, 0, 1, 2, 3, TRUE, color);
-      break;
-    case GDK_MEMORY_B8G8R8A8:
-      set_pixel_u8 (data, 2, 1, 0, 3, FALSE, color);
-      break;
-    case GDK_MEMORY_A8R8G8B8:
-      set_pixel_u8 (data, 1, 2, 3, 0, FALSE, color);
-      break;
-    case GDK_MEMORY_R8G8B8A8:
-      set_pixel_u8 (data, 0, 1, 2, 3, FALSE, color);
-      break;
-    case GDK_MEMORY_A8B8G8R8:
-      set_pixel_u8 (data, 3, 2, 1, 0, FALSE, color);
-      break;
-    case GDK_MEMORY_R8G8B8:
-      set_pixel_u8 (data, 0, 1, 2, -1, TRUE, color);
-      break;
-    case GDK_MEMORY_B8G8R8:
-      set_pixel_u8 (data, 2, 1, 0, -1, TRUE, color);
-      break;
-    case GDK_MEMORY_R16G16B16:
-      {
-        guint16 pixels[3] = {
-          CLAMP (color->red * color->alpha * 65535.f + 0.5f, 0, 65535.f),
-          CLAMP (color->green * color->alpha * 65535.f + 0.5f, 0, 65535.f),
-          CLAMP (color->blue * color->alpha * 65535.f + 0.5f, 0, 65535.f),
-        };
-        memcpy (data, pixels, 3 * sizeof (guint16));
-      }
-      break;
-    case GDK_MEMORY_R16G16B16A16_PREMULTIPLIED:
-      {
-        guint16 pixels[4] = {
-          CLAMP (color->red * color->alpha * 65535.f + 0.5f, 0, 65535.f),
-          CLAMP (color->green * color->alpha * 65535.f + 0.5f, 0, 65535.f),
-          CLAMP (color->blue * color->alpha * 65535.f + 0.5f, 0, 65535.f),
-          CLAMP (color->alpha * 65535.f + 0.5f, 0, 65535.f),
-        };
-        memcpy (data, pixels, 4 * sizeof (guint16));
-      }
-      break;
-    case GDK_MEMORY_R16G16B16A16:
-      {
-        guint16 pixels[4] = {
-          CLAMP (color->red * 65535.f + 0.5f, 0, 65535.f),
-          CLAMP (color->green * 65535.f + 0.5f, 0, 65535.f),
-          CLAMP (color->blue * 65535.f + 0.5f, 0, 65535.f),
-          CLAMP (color->alpha * 65535.f + 0.5f, 0, 65535.f),
-        };
-        memcpy (data, pixels, 4 * sizeof (guint16));
-      }
-      break;
-    case GDK_MEMORY_R16G16B16_FLOAT:
-      {
-        guint16 pixels[3] = {
-          float_to_half (color->red * color->alpha),
-          float_to_half (color->green * color->alpha),
-          float_to_half (color->blue * color->alpha)
-        };
-        memcpy (data, pixels, 3 * sizeof (guint16));
-      }
-      break;
-    case GDK_MEMORY_R16G16B16A16_FLOAT_PREMULTIPLIED:
-      {
-        guint16 pixels[4] = {
-          float_to_half (color->red * color->alpha),
-          float_to_half (color->green * color->alpha),
-          float_to_half (color->blue * color->alpha),
-          float_to_half (color->alpha)
-        };
-        memcpy (data, pixels, 4 * sizeof (guint16));
-      }
-      break;
-    case GDK_MEMORY_R16G16B16A16_FLOAT:
-      {
-        guint16 pixels[4] = {
-          float_to_half (color->red),
-          float_to_half (color->green),
-          float_to_half (color->blue),
-          float_to_half (color->alpha)
-        };
-        memcpy (data, pixels, 4 * sizeof (guint16));
-      }
-      break;
-    case GDK_MEMORY_R32G32B32_FLOAT:
-      {
-        float pixels[3] = {
-          color->red * color->alpha,
-          color->green * color->alpha,
-          color->blue * color->alpha
-        };
-        memcpy (data, pixels, 3 * sizeof (float));
-      }
-      break;
-    case GDK_MEMORY_R32G32B32A32_FLOAT_PREMULTIPLIED:
-      {
-        float pixels[4] = {
-          color->red * color->alpha,
-          color->green * color->alpha,
-          color->blue * color->alpha,
-          color->alpha
-        };
-        memcpy (data, pixels, 4 * sizeof (float));
-      }
-      break;
-    case GDK_MEMORY_R32G32B32A32_FLOAT:
-      {
-        float pixels[4] = {
-          color->red,
-          color->green,
-          color->blue,
-          color->alpha
-        };
-        memcpy (data, pixels, 4 * sizeof (float));
-      }
-      break;
-    case GDK_MEMORY_G8A8_PREMULTIPLIED:
-      {
-        data[0] = CLAMP (color_gray (color) * color->alpha * 255.f + 0.5f, 0.f, 255.f);
-        data[1] = CLAMP (color->alpha * 255.f + 0.5f, 0.f, 255.f);
-      }
-      break;
-    case GDK_MEMORY_G8A8:
-      {
-        data[0] = CLAMP (color_gray (color) * 255.f + 0.5f, 0.f, 255.f);
-        data[1] = CLAMP (color->alpha * 255.f + 0.5f, 0.f, 255.f);
-      }
-      break;
-    case GDK_MEMORY_G8:
-      {
-        *data = CLAMP (color_gray (color) * color->alpha * 255.f + 0.5f, 0.f, 255.f);
-      }
-      break;
-    case GDK_MEMORY_G16A16_PREMULTIPLIED:
-      {
-        guint16 pixels[2] = {
-          CLAMP (color_gray (color) * color->alpha * 65535.f + 0.5f, 0.f, 65535.f),
-          CLAMP (color->alpha * 65535.f + 0.5f, 0.f, 65535.f),
-        };
-        memcpy (data, pixels, 2 * sizeof (guint16));
-      }
-      break;
-    case GDK_MEMORY_G16A16:
-      {
-        guint16 pixels[2] = {
-          CLAMP (color_gray (color) * 65535.f + 0.5f, 0.f, 65535.f),
-          CLAMP (color->alpha * 65535.f + 0.5f, 0.f, 65535.f),
-        };
-        memcpy (data, pixels, 2 * sizeof (guint16));
-      }
-      break;
-    case GDK_MEMORY_G16:
-      {
-        guint16 pixel = CLAMP (color_gray (color) * color->alpha * 65535.f + 0.5f, 0.f, 65535.f);
-        memcpy (data, &pixel,  sizeof (guint16));
-      }
-      break;
-    case GDK_MEMORY_A8:
-      {
-        *data = CLAMP (color->alpha * 255.f + 0.5f, 0.f, 255.f);
-      }
-      break;
-    case GDK_MEMORY_A16:
-      {
-        guint16 pixel = CLAMP (color->alpha * 65535.f, 0.f, 65535.f);
-        memcpy (data, &pixel,  sizeof (guint16));
-      }
-      break;
-    case GDK_MEMORY_A16_FLOAT:
-      {
-        guint16 pixel = float_to_half (color->alpha);
-        memcpy (data, &pixel, sizeof (guint16));
-      }
-      break;
-    case GDK_MEMORY_A32_FLOAT:
-      {
-        memcpy (data, &color->alpha, sizeof (float));
-      }
-      break;
-    case GDK_MEMORY_N_FORMATS:
-    default:
-      g_assert_not_reached ();
-      break;
-  }
-}
-
-static void
-texture_builder_fill (TextureBuilder  *builder,
-                      const GdkRGBA   *color)
-{
-  int x, y;
-  for (y = 0; y < builder->height; y++)
-    for (x = 0; x < builder->width; x++)
-      texture_builder_set_pixel (builder, x, y, color);
-}
-
-static void
-compare_textures (GdkTexture *texture1,
-                  GdkTexture *texture2,
-                  gboolean    accurate_compare)
-{
-  GdkTextureDownloader *downloader1, *downloader2;
-  GBytes *bytes1, *bytes2;
-  gsize stride1, stride2, bpp;
-  const guchar *data1, *data2;
-  int width, height, x, y;
-  GdkMemoryFormat format;
-
-  g_assert_cmpint (gdk_texture_get_width (texture1), ==, gdk_texture_get_width (texture2));
-  g_assert_cmpint (gdk_texture_get_height (texture1), ==, gdk_texture_get_height (texture2));
-  g_assert_cmpint (gdk_texture_get_format (texture1), ==, gdk_texture_get_format (texture2));
-
-  format = gdk_texture_get_format (texture1);
-  bpp = gdk_memory_format_bytes_per_pixel (format);
-  width = gdk_texture_get_width (texture1);
-  height = gdk_texture_get_height (texture1);
-
-  downloader1 = gdk_texture_downloader_new (texture1);
-  gdk_texture_downloader_set_format (downloader1, format);
-  bytes1 = gdk_texture_downloader_download_bytes (downloader1, &stride1);
-  g_assert_cmpint (stride1, >=, bpp * width);
-  g_assert_nonnull (bytes1);
-  gdk_texture_downloader_free (downloader1);
-
-  downloader2 = gdk_texture_downloader_new (texture2);
-  gdk_texture_downloader_set_format (downloader2, format);
-  bytes2 = gdk_texture_downloader_download_bytes (downloader2, &stride2);
-  g_assert_cmpint (stride2, >=, bpp * width);
-  g_assert_nonnull (bytes2);
-  gdk_texture_downloader_free (downloader2);
-
-  data1 = g_bytes_get_data (bytes1, NULL);
-  data2 = g_bytes_get_data (bytes2, NULL);
-  for (y = 0; y < height; y++)
-    {
-      for (x = 0; x < width; x++)
-        {
-          g_assert_true (gdk_memory_format_pixel_equal (format, accurate_compare, data1 + bpp * x, data2 + bpp * x));
-        }
-      data1 += stride1;
-      data2 += stride2;
-    }
-
-  g_bytes_unref (bytes2);
-  g_bytes_unref (bytes1);
-}
-
 static GdkTexture *
 upload_to_renderer (GdkTexture  *texture,
                     GskRenderer *renderer)
@@ -850,6 +91,38 @@ upload_to_renderer (GdkTexture  *texture,
   g_object_unref (texture);
 
   return result;
+}
+
+static gboolean
+gl_native_should_skip_format (GdkMemoryFormat format)
+{
+  int major, minor;
+
+  if (gl_context == NULL)
+    {
+      g_test_skip ("OpenGL is not supported");
+      return TRUE;
+    }
+
+  if (!gdk_gl_context_get_use_es (gl_context))
+    return FALSE;
+
+  gdk_gl_context_get_version (gl_context, &major, &minor);
+
+  if (major < 3)
+    {
+      g_test_skip ("GLES < 3.0 is not supported");
+      return TRUE;
+    }
+
+  if (gdk_memory_format_is_deep (format) &&
+      (major < 3 || (major == 3 && minor < 1)))
+    {
+      g_test_skip ("GLES < 3.1 can't handle 16bit non-RGBA formats");
+      return TRUE;
+    }
+
+  return FALSE;
 }
 
 static void
@@ -885,7 +158,7 @@ upload_to_gl_native (GdkTexture *texture)
     { GDK_MEMORY_A16, 2, GL_R16, GL_RED, GL_UNSIGNED_SHORT, { GL_ONE, GL_ONE, GL_ONE, GL_RED } },
   };
 
-  if (gl_context == NULL)
+  if (gl_native_should_skip_format (gdk_texture_get_format (texture)))
     return texture;
 
   gdk_gl_context_make_current (gl_context);
@@ -971,6 +244,10 @@ create_texture (GdkMemoryFormat  format,
 
     case TEXTURE_METHOD_GL_NATIVE:
       texture = upload_to_gl_native (texture);
+      break;
+
+    case TEXTURE_METHOD_NGL:
+      texture = upload_to_renderer (texture, ngl_renderer);
       break;
 
     case TEXTURE_METHOD_VULKAN:
@@ -1060,6 +337,7 @@ texture_method_is_accurate (TextureMethod method)
     case TEXTURE_METHOD_GL:
     case TEXTURE_METHOD_GL_RELEASED:
     case TEXTURE_METHOD_GL_NATIVE:
+    case TEXTURE_METHOD_NGL:
     case TEXTURE_METHOD_VULKAN:
     case TEXTURE_METHOD_PNG:
     case TEXTURE_METHOD_PNG_PIXBUF:
@@ -1162,6 +440,14 @@ should_skip_download_test (GdkMemoryFormat format,
     case TEXTURE_METHOD_TIFF:
       return FALSE;
 
+    case TEXTURE_METHOD_NGL:
+      if (ngl_renderer == NULL)
+        {
+          g_test_skip ("NGL renderer is not supported");
+          return TRUE;
+        }
+      return FALSE;
+
     case TEXTURE_METHOD_GL:
     case TEXTURE_METHOD_GL_RELEASED:
       if (gl_renderer == NULL)
@@ -1169,33 +455,10 @@ should_skip_download_test (GdkMemoryFormat format,
           g_test_skip ("OpenGL renderer is not supported");
           return TRUE;
         }
-      G_GNUC_FALLTHROUGH;
+      return FALSE;
 
     case TEXTURE_METHOD_GL_NATIVE:
-      {
-        int major, minor;
-
-        if (gl_context == NULL)
-          {
-            g_test_skip ("OpenGL is not supported");
-            return TRUE;
-          }
-
-        gdk_gl_context_get_version (gl_context, &major, &minor);
-
-        if ((method == TEXTURE_METHOD_GL ||
-             method == TEXTURE_METHOD_GL_RELEASED ||
-             method == TEXTURE_METHOD_GL_NATIVE) &&
-            gdk_gl_context_get_use_es (gl_context) &&
-            (major < 3 || (major == 3 && minor < 1)) &&
-            gdk_memory_format_is_deep (format))
-          {
-            g_test_skip ("GLES < 3.1 can't handle 16bit non-RGBA formats");
-            return TRUE;
-          }
-
-        return FALSE;
-      }
+      return gl_native_should_skip_format (format);
 
     case TEXTURE_METHOD_VULKAN:
       if (vulkan_renderer == NULL)
@@ -1242,8 +505,9 @@ test_download (gconstpointer data,
       if (color.alpha == 0.f &&
           !gdk_memory_format_is_premultiplied (format) &&
           gdk_memory_format_has_alpha (format) &&
-          (method ==  TEXTURE_METHOD_GL || method == TEXTURE_METHOD_GL_RELEASED ||
-           method == TEXTURE_METHOD_GL_NATIVE || method == TEXTURE_METHOD_VULKAN))
+          (method == TEXTURE_METHOD_GL || method == TEXTURE_METHOD_GL_RELEASED ||
+           method == TEXTURE_METHOD_GL_NATIVE || method == TEXTURE_METHOD_VULKAN ||
+           method == TEXTURE_METHOD_NGL))
         color = (GdkRGBA) { 0, 0, 0, 0 };
 
       expected = create_texture (format, TEXTURE_METHOD_LOCAL, width, height, &color);
@@ -1277,7 +541,7 @@ test_download_random (gconstpointer data)
       width = g_test_rand_int_range (1, 40) * g_test_rand_int_range (1, 40);
       height = g_test_rand_int_range (1, 40) * g_test_rand_int_range (1, 40);
     }
-  while (width * height >= 1024 * 1024);
+  while (width * height >= 32 * 1024);
 
   test_download (data, width, height, 1);
 }
@@ -1372,7 +636,18 @@ add_test (const char    *name,
     {
       for (method = 0; method < N_TEXTURE_METHODS; method++)
         {
-          const char *method_names[N_TEXTURE_METHODS] = { "local", "gl", "gl-released", "gl-native", "vulkan", "png", "png-pixbuf", "tiff", "tiff-pixbuf" };
+          const char *method_names[N_TEXTURE_METHODS] = {
+            [TEXTURE_METHOD_LOCAL] = "local",
+            [TEXTURE_METHOD_GL] = "gl",
+            [TEXTURE_METHOD_GL_RELEASED] = "gl-released",
+            [TEXTURE_METHOD_GL_NATIVE] = "gl-native",
+            [TEXTURE_METHOD_NGL] = "ngl",
+            [TEXTURE_METHOD_VULKAN] = "vulkan",
+            [TEXTURE_METHOD_PNG] = "png",
+            [TEXTURE_METHOD_PNG_PIXBUF] = "png-pixbuf",
+            [TEXTURE_METHOD_TIFF] = "tiff",
+            [TEXTURE_METHOD_TIFF_PIXBUF] = "tiff-pixbuf"
+          };
           char *test_name = g_strdup_printf ("%s/%s/%s",
                                              name,
                                              g_enum_get_value (enum_class, format)->value_nick,
@@ -1409,6 +684,7 @@ add_conversion_test (const char    *name,
 int
 main (int argc, char *argv[])
 {
+  GdkDisplay *display;
   int result;
 
   gtk_test_init (&argc, &argv, NULL);
@@ -1418,25 +694,31 @@ main (int argc, char *argv[])
   add_conversion_test ("/memorytexture/conversion_1x1", test_conversion_1x1);
   add_conversion_test ("/memorytexture/conversion_random", test_conversion_random);
 
-  gl_context = gdk_display_create_gl_context (gdk_display_get_default (), NULL);
+  display = gdk_display_get_default ();
+
+  gl_context = gdk_display_create_gl_context (display, NULL);
   if (gl_context == NULL || !gdk_gl_context_realize (gl_context, NULL))
     {
       g_clear_object (&gl_context);
     }
 
   gl_renderer = gsk_gl_renderer_new ();
-  if (!gsk_renderer_realize (gl_renderer, NULL, NULL))
+  if (!gsk_renderer_realize_for_display (gl_renderer, display, NULL))
     {
       g_clear_object (&gl_renderer);
     }
 
-#ifdef GDK_RENDERING_VULKAN
+  ngl_renderer = gsk_ngl_renderer_new ();
+  if (!gsk_renderer_realize_for_display (ngl_renderer, display, NULL))
+    {
+      g_clear_object (&ngl_renderer);
+    }
+
   vulkan_renderer = gsk_vulkan_renderer_new ();
-  if (!gsk_renderer_realize (vulkan_renderer, NULL, NULL))
+  if (!gsk_renderer_realize_for_display (vulkan_renderer, display, NULL))
     {
       g_clear_object (&vulkan_renderer);
     }
-#endif
 
   result = g_test_run ();
 
@@ -1447,6 +729,11 @@ main (int argc, char *argv[])
       g_clear_object (&vulkan_renderer);
     }
 #endif
+  if (ngl_renderer)
+    {
+      gsk_renderer_unrealize (ngl_renderer);
+      g_clear_object (&ngl_renderer);
+    }
   if (gl_renderer)
     {
       gsk_renderer_unrealize (gl_renderer);

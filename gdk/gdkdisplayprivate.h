@@ -18,13 +18,16 @@
 #pragma once
 
 #include "gdkdisplay.h"
-#include "gdksurface.h"
+
 #include "gdkcursor.h"
-#include "gdkmonitor.h"
 #include "gdkdebugprivate.h"
-#include "gdksurfaceprivate.h"
-#include "gdkkeysprivate.h"
 #include "gdkdeviceprivate.h"
+#include "gdkdmabufdownloaderprivate.h"
+#include "gdkdmabufprivate.h"
+#include "gdkkeysprivate.h"
+#include "gdkmemoryformatprivate.h"
+#include "gdkmonitor.h"
+#include "gdksurfaceprivate.h"
 
 #ifdef GDK_RENDERING_VULKAN
 #include <vulkan/vulkan.h>
@@ -38,6 +41,15 @@ G_BEGIN_DECLS
 
 
 typedef struct _GdkDisplayClass GdkDisplayClass;
+
+typedef enum {
+  GDK_VULKAN_FEATURE_DMABUF                     = 1 << 0,
+  GDK_VULKAN_FEATURE_YCBCR                      = 1 << 1,
+  GDK_VULKAN_FEATURE_SEMAPHORE_EXPORT           = 1 << 2,
+  GDK_VULKAN_FEATURE_SEMAPHORE_IMPORT           = 1 << 3,
+  GDK_VULKAN_FEATURE_INCREMENTAL_PRESENT        = 1 << 4,
+  GDK_VULKAN_FEATURE_SWAPCHAIN_MAINTENANCE      = 1 << 5,
+} GdkVulkanFeatures;
 
 /* Tracks information about the device grab on this display */
 typedef struct
@@ -105,6 +117,8 @@ struct _GdkDisplay
   char *vk_pipeline_cache_etag;
   guint vk_save_pipeline_cache_source;
   GHashTable *vk_shader_modules;
+  GdkDmabufFormats *vk_dmabuf_formats;
+  GdkVulkanFeatures vulkan_features;
 
   guint vulkan_refcount;
 #endif /* GDK_RENDERING_VULKAN */
@@ -113,6 +127,17 @@ struct _GdkDisplay
   guint have_egl_buffer_age : 1;
   guint have_egl_no_config_context : 1;
   guint have_egl_pixel_format_float : 1;
+  guint have_egl_dma_buf_import : 1;
+  guint have_egl_dma_buf_export : 1;
+  guint have_egl_gl_colorspace : 1;
+
+  GdkDmabufFormats *dmabuf_formats;
+  GdkDmabufDownloader *egl_downloader;
+  GdkDmabufDownloader *vk_downloader;
+
+   /* Cached data the EGL dmabuf downloader */
+  GdkDmabufFormats *egl_dmabuf_formats;
+  GdkDmabufFormats *egl_external_formats;
 };
 
 struct _GdkDisplayClass
@@ -207,7 +232,12 @@ gulong              _gdk_display_get_next_serial      (GdkDisplay       *display
 void                _gdk_display_pause_events         (GdkDisplay       *display);
 void                _gdk_display_unpause_events       (GdkDisplay       *display);
 
+void                gdk_display_init_dmabuf           (GdkDisplay       *self);
+
+gboolean            gdk_display_has_vulkan_feature    (GdkDisplay       *self,
+                                                       GdkVulkanFeatures feature);
 GdkVulkanContext *  gdk_display_create_vulkan_context (GdkDisplay       *self,
+                                                       GdkSurface       *surface,
                                                        GError          **error);
 
 GdkGLContext *      gdk_display_get_gl_context        (GdkDisplay       *display);
@@ -218,9 +248,8 @@ gboolean            gdk_display_init_egl              (GdkDisplay       *display
                                                        gboolean          allow_any,
                                                        GError          **error);
 gpointer            gdk_display_get_egl_display       (GdkDisplay       *display);
-gpointer            gdk_display_get_egl_config        (GdkDisplay       *display);
-gpointer            gdk_display_get_egl_config_high_depth
-                                                      (GdkDisplay       *display);
+gpointer            gdk_display_get_egl_config        (GdkDisplay       *display,
+                                                       GdkMemoryDepth    depth);
 
 void                gdk_display_set_rgba              (GdkDisplay       *display,
                                                        gboolean          rgba);
@@ -228,6 +257,8 @@ void                gdk_display_set_composited        (GdkDisplay       *display
                                                        gboolean          composited);
 void                gdk_display_set_input_shapes      (GdkDisplay       *display,
                                                        gboolean          input_shapes);
+void                gdk_display_set_shadow_width      (GdkDisplay       *display,
+                                                       gboolean          shadow_width);
 
 void                gdk_display_add_seat              (GdkDisplay       *display,
                                                        GdkSeat          *seat);

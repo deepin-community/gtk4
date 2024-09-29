@@ -66,6 +66,28 @@
  * the model of the treelistrow, to hide the expander for rows without children,
  * even if the row is expandable.
  *
+ * ## Shortcuts and Gestures
+ *
+ * `GtkTreeExpander` supports the following keyboard shortcuts:
+ *
+ * - <kbd>+</kbd> or <kbd>*</kbd> expands the expander.
+ * - <kbd>-</kbd> or <kbd>/</kbd> collapses the expander.
+ * - Left and right arrow keys, when combined with <kbd>Shift</kbd> or
+ *   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>, will expand or collapse, depending on
+ *   the locale's text direction.
+ * - <kbd>Ctrl</kbd>+<kbd>␣</kbd> toggles the expander state.
+ *
+ * The row can also expand on drag gestures.
+ *
+ * ## Actions
+ *
+ * `GtkTreeExpander` defines a set of built-in actions:
+ *
+ * - `listitem.expand` expands the expander if it can be expanded.
+ * - `listitem.collapse` collapses the expander.
+ * - `listitem.toggle-expand` tries to expand the expander if it was collapsed
+ *   or collapses it if it was expanded.
+ *
  * ## CSS nodes
  *
  * ```
@@ -531,7 +553,7 @@ gtk_tree_expander_class_init (GtkTreeExpanderClass *klass)
   gobject_class->set_property = gtk_tree_expander_set_property;
 
   /**
-   * GtkTreeExpander:child: (attributes org.gtk.Property.get=gtk_tree_expander_get_child org.gtk.Property.set=gtk_tree_expander_set_child)
+   * GtkTreeExpander:child:
    *
    * The child widget with the actual contents.
    */
@@ -541,7 +563,7 @@ gtk_tree_expander_class_init (GtkTreeExpanderClass *klass)
                          G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkTreeExpander:hide-expander: (attributes org.gtk.Property.get=gtk_tree_expander_get_hide_expander org.gtk.Property.set=gtk_tree_expander_set_hide_expander)
+   * GtkTreeExpander:hide-expander:
    *
    * Whether the expander icon should be hidden in a GtkTreeListRow.
    * Note that this property simply hides the icon.  The actions and keybinding
@@ -558,7 +580,7 @@ gtk_tree_expander_class_init (GtkTreeExpanderClass *klass)
                             G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkTreeExpander:indent-for-depth: (attributes org.gtk.Property.get=gtk_tree_expander_get_indent_for_depth org.gtk.Property.set=gtk_tree_expander_set_indent_for_depth)
+   * GtkTreeExpander:indent-for-depth:
    *
    * TreeExpander indents the child according to its depth.
    *
@@ -570,7 +592,7 @@ gtk_tree_expander_class_init (GtkTreeExpanderClass *klass)
                             G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkTreeExpander:indent-for-icon: (attributes org.gtk.Property.get=gtk_tree_expander_get_indent_for_icon org.gtk.Property.set=gtk_tree_expander_set_indent_for_icon)
+   * GtkTreeExpander:indent-for-icon:
    *
    * TreeExpander indents the child by the width of an expander-icon if it is not expandable.
    *
@@ -582,7 +604,7 @@ gtk_tree_expander_class_init (GtkTreeExpanderClass *klass)
                             G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkTreeExpander:item: (attributes org.gtk.Property.get=gtk_tree_expander_get_item)
+   * GtkTreeExpander:item:
    *
    * The item held by this expander's row.
    */
@@ -592,7 +614,7 @@ gtk_tree_expander_class_init (GtkTreeExpanderClass *klass)
                            G_PARAM_READABLE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkTreeExpander:list-row: (attributes org.gtk.Property.get=gtk_tree_expander_get_list_row org.gtk.Property.set=gtk_tree_expander_set_list_row)
+   * GtkTreeExpander:list-row:
    *
    * The list row to track for expander state.
    */
@@ -757,7 +779,7 @@ gtk_tree_expander_new (void)
 }
 
 /**
- * gtk_tree_expander_get_child: (attributes org.gtk.Method.get_property=child)
+ * gtk_tree_expander_get_child:
  * @self: a `GtkTreeExpander`
  *
  * Gets the child widget displayed by @self.
@@ -773,7 +795,7 @@ gtk_tree_expander_get_child (GtkTreeExpander *self)
 }
 
 /**
- * gtk_tree_expander_set_child: (attributes org.gtk.Method.set_property=child)
+ * gtk_tree_expander_set_child:
  * @self: a `GtkTreeExpander`
  * @child: (nullable): a `GtkWidget`
  *
@@ -809,7 +831,7 @@ gtk_tree_expander_set_child (GtkTreeExpander *self,
 }
 
 /**
- * gtk_tree_expander_get_item: (attributes org.gtk.Method.get_property=item)
+ * gtk_tree_expander_get_item:
  * @self: a `GtkTreeExpander`
  *
  * Forwards the item set on the `GtkTreeListRow` that @self is managing.
@@ -834,7 +856,7 @@ gtk_tree_expander_get_item (GtkTreeExpander *self)
 }
 
 /**
- * gtk_tree_expander_get_list_row: (attributes org.gtk.Method.get_property=list-row)
+ * gtk_tree_expander_get_list_row:
  * @self: a `GtkTreeExpander`
  *
  * Gets the list row managed by @self.
@@ -850,7 +872,7 @@ gtk_tree_expander_get_list_row (GtkTreeExpander *self)
 }
 
 /**
- * gtk_tree_expander_set_list_row: (attributes org.gtk.Method.set_property=list-row)
+ * gtk_tree_expander_set_list_row:
  * @self: a `GtkTreeExpander` widget
  * @list_row: (nullable): a `GtkTreeListRow`
  *
@@ -888,7 +910,7 @@ gtk_tree_expander_set_list_row (GtkTreeExpander *self,
 }
 
 /**
- * gtk_tree_expander_get_indent_for_depth: (attributes org.gtk.Method.get_property=indent-for-depth)
+ * gtk_tree_expander_get_indent_for_depth:
  * @self: a `GtkTreeExpander`
  *
  * TreeExpander indents each level of depth with an additional indent.
@@ -906,7 +928,7 @@ gtk_tree_expander_get_indent_for_depth (GtkTreeExpander *self)
 }
 
 /**
- * gtk_tree_expander_set_indent_for_depth: (attributes org.gtk.Method.set_property=indent-for-depth)
+ * gtk_tree_expander_set_indent_for_depth:
  * @self: a `GtkTreeExpander` widget
  * @indent_for_depth: TRUE if the child should be indented. Otherwise FALSE.
  *
@@ -931,7 +953,7 @@ gtk_tree_expander_set_indent_for_depth (GtkTreeExpander *self,
 }
 
 /**
- * gtk_tree_expander_get_indent_for_icon: (attributes org.gtk.Method.get_property=indent-for-icon)
+ * gtk_tree_expander_get_indent_for_icon:
  * @self: a `GtkTreeExpander`
  *
  * TreeExpander indents the child by the width of an expander-icon if it is not expandable.
@@ -949,7 +971,7 @@ gtk_tree_expander_get_indent_for_icon (GtkTreeExpander *self)
 }
 
 /**
- * gtk_tree_expander_set_indent_for_icon: (attributes org.gtk.Method.set_property=indent-for-icon)
+ * gtk_tree_expander_set_indent_for_icon:
  * @self: a `GtkTreeExpander` widget
  * @indent_for_icon: TRUE if the child should be indented without expander. Otherwise FALSE.
  *
@@ -974,7 +996,7 @@ gtk_tree_expander_set_indent_for_icon (GtkTreeExpander *self,
 }
 
 /**
- * gtk_tree_expander_get_hide_expander: (attributes org.gtk.Method.get_property=hide-expander)
+ * gtk_tree_expander_get_hide_expander:
  * @self: a `GtkTreeExpander`
  *
  * Gets whether the TreeExpander should be hidden in a GtkTreeListRow.
@@ -992,7 +1014,7 @@ gtk_tree_expander_get_hide_expander (GtkTreeExpander *self)
 }
 
 /**
- * gtk_tree_expander_set_hide_expander: (attributes org.gtk.Method.set_property=hide-expander)
+ * gtk_tree_expander_set_hide_expander:
  * @self: a `GtkTreeExpander` widget
  * @hide_expander: TRUE if the expander should be hidden. Otherwise FALSE.
  *

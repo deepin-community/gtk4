@@ -4,7 +4,7 @@
 #include "iconbrowserapp.h"
 #include "iconbrowserwin.h"
 
-#include "demo_conf.h"
+#include "profile_conf.h"
 
 struct _IconBrowserApp
 {
@@ -138,6 +138,8 @@ icon_browser_app_activate (GApplication *app)
 
   if (g_strcmp0 (PROFILE, "devel") == 0)
     gtk_widget_add_css_class (GTK_WIDGET (win), "devel");
+
+  gtk_window_set_icon_name (GTK_WINDOW (win), "org.gtk.IconBrowser4");
 
   gtk_window_present (GTK_WINDOW (win));
 }

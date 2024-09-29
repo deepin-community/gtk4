@@ -30,6 +30,7 @@
 #include "gdksurfaceprivate.h"
 #include "gdkpopupprivate.h"
 #include "gdktoplevelprivate.h"
+#include "gdkcolorstateprivate.h"
 #include "gdkdragsurfaceprivate.h"
 #include "gdkdeviceprivate.h"
 #include "gdkdevice-xi2-private.h"
@@ -2655,6 +2656,7 @@ gdk_x11_surface_get_geometry (GdkSurface *surface,
 {
   GdkX11Surface *impl;
   Window root;
+  Window child;
   int tx;
   int ty;
   guint twidth;
@@ -2669,7 +2671,11 @@ gdk_x11_surface_get_geometry (GdkSurface *surface,
       XGetGeometry (GDK_SURFACE_XDISPLAY (surface),
 		    GDK_SURFACE_XID (surface),
 		    &root, &tx, &ty, &twidth, &theight, &tborder_width, &tdepth);
-      
+
+      XTranslateCoordinates (GDK_SURFACE_XDISPLAY (surface),
+                             GDK_SURFACE_XID (surface),
+                             root, 0, 0, &tx, &ty, &child);
+
       if (x)
 	*x = tx / impl->surface_scale;
       if (y)
@@ -3131,7 +3137,7 @@ gdk_surface_update_icon (GdkSurface *surface,
 
       toplevel->icon_pixmap = gdk_x11_surface_create_pixmap_surface (surface, width, height);
 
-      cairo_surface = gdk_texture_download_surface (best_icon);
+      cairo_surface = gdk_texture_download_surface (best_icon, GDK_COLOR_STATE_SRGB);
 
       cr = cairo_create (toplevel->icon_pixmap);
       cairo_set_operator (cr, CAIRO_OPERATOR_SOURCE);

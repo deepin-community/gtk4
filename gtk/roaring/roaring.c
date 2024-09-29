@@ -9724,7 +9724,7 @@ roaring_bitmap_t *roaring_bitmap_lazy_xor(const roaring_bitmap_t *x1,
                 container_lazy_xor(c1, container_type_1, c2, container_type_2,
                                    &container_result_type);
 
-            if (container_nonzero_cardinality(c, container_result_type)) {
+            if (c && container_nonzero_cardinality(c, container_result_type)) {
                 ra_append(&answer->high_low_container, s1, c,
                           container_result_type);
             } else {
@@ -10513,7 +10513,8 @@ bool ra_overwrite(const roaring_array_t *source, roaring_array_t *dest,
         }
     }
     dest->size = source->size;
-    memcpy(dest->keys, source->keys, dest->size * sizeof(uint16_t));
+    if (dest->size > 0)
+      memcpy(dest->keys, source->keys, dest->size * sizeof(uint16_t));
     // we go through the containers, turning them into shared containers...
     if (copy_on_write) {
         for (int32_t i = 0; i < dest->size; ++i) {
@@ -10526,8 +10527,9 @@ bool ra_overwrite(const roaring_array_t *source, roaring_array_t *dest,
         memcpy(dest->typecodes, source->typecodes,
                dest->size * sizeof(uint8_t));
     } else {
-        memcpy(dest->typecodes, source->typecodes,
-               dest->size * sizeof(uint8_t));
+        if (dest->size > 0)
+          memcpy(dest->typecodes, source->typecodes,
+                 dest->size * sizeof(uint8_t));
         for (int32_t i = 0; i < dest->size; i++) {
             dest->containers[i] =
                 container_clone(source->containers[i], source->typecodes[i]);

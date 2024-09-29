@@ -108,8 +108,8 @@
  *
  * ## See Also
  *
- * [HowDoI: Using GtkApplication](https://wiki.gnome.org/HowDoI/GtkApplication),
- * [Getting Started with GTK: Basics](getting_started.html#basics)
+ * - [Using GtkApplication](https://developer.gnome.org/documentation/tutorials/application.html)
+ * - [Getting Started with GTK: Basics](getting_started.html#basics)
  */
 
 enum {
@@ -228,7 +228,11 @@ gtk_application_load_resources (GtkApplication *application)
     path = g_strconcat (base_path, optional_slash, "gtk/help-overlay.ui", NULL);
     if (g_resources_get_info (path, G_RESOURCE_LOOKUP_FLAGS_NONE, NULL, NULL, NULL))
       {
+#ifdef __APPLE__
+        const char * const accels[] = { "<Meta>question", NULL };
+#else
         const char * const accels[] = { "<Control>question", NULL };
+#endif
 
         priv->help_overlay_path = path;
         gtk_application_set_accels_for_action (application, "win.show-help-overlay", accels);
@@ -257,14 +261,14 @@ gtk_application_startup (GApplication *g_application)
 
   before2 = GDK_PROFILER_CURRENT_TIME;
   gtk_init ();
-  gdk_profiler_end_mark (before2, "gtk init", NULL);
+  gdk_profiler_end_mark (before2, "gtk_init", NULL);
 
   priv->impl = gtk_application_impl_new (application, gdk_display_get_default ());
   gtk_application_impl_startup (priv->impl, priv->register_session);
 
   gtk_application_load_resources (application);
 
-  gdk_profiler_end_mark (before, "gtk application startup", NULL);
+  gdk_profiler_end_mark (before, "Application startup", NULL);
 }
 
 static void
@@ -612,7 +616,7 @@ gtk_application_class_init (GtkApplicationClass *class)
                           G_PARAM_READABLE|G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkApplication:menubar: (attributes org.gtk.Property.get=gtk_application_get_menubar org.gtk.Property.set=gtk_application_set_menubar)
+   * GtkApplication:menubar:
    *
    * The `GMenuModel` to be used for the application's menu bar.
    */
@@ -622,7 +626,7 @@ gtk_application_class_init (GtkApplicationClass *class)
                          G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkApplication:active-window: (attributes org.gtk.Property.get=gtk_application_get_active_window)
+   * GtkApplication:active-window:
    *
    * The currently focused window of the application.
    */
@@ -801,7 +805,7 @@ gtk_application_get_window_by_id (GtkApplication *application,
 }
 
 /**
- * gtk_application_get_active_window: (attributes org.gtk.Method.get_property=active-window)
+ * gtk_application_get_active_window:
  * @application: a `GtkApplication`
  *
  * Gets the “active” window for the application.
@@ -834,7 +838,7 @@ gtk_application_update_accels (GtkApplication *application)
 }
 
 /**
- * gtk_application_set_menubar: (attributes org.gtk.Method.set_property=menubar)
+ * gtk_application_set_menubar:
  * @application: a `GtkApplication`
  * @menubar: (nullable): a `GMenuModel`
  *
@@ -877,7 +881,7 @@ gtk_application_set_menubar (GtkApplication *application,
 }
 
 /**
- * gtk_application_get_menubar: (attributes org.gtk.Method.get_property=menubar)
+ * gtk_application_get_menubar:
  * @application: a `GtkApplication`
  *
  * Returns the menu model that has been set with
@@ -990,10 +994,12 @@ GtkActionMuxer *
 gtk_application_get_parent_muxer_for_window (GtkWindow *window)
 {
   GtkApplication *application = gtk_window_get_application (window);
-  GtkApplicationPrivate *priv = gtk_application_get_instance_private (application);
+  GtkApplicationPrivate *priv;
 
   if (!application)
     return NULL;
+
+  priv = gtk_application_get_instance_private (application);
 
   return priv->muxer;
 }

@@ -41,10 +41,6 @@ G_BEGIN_DECLS
  * @GTK_ALIGN_START: snap to left or top side, leaving space on right or bottom
  * @GTK_ALIGN_END: snap to right or bottom side, leaving space on left or top
  * @GTK_ALIGN_CENTER: center natural width of widget inside the allocation
- * @GTK_ALIGN_BASELINE: align the widget according to the baseline.
- *   See [class@Gtk.Widget]. Deprecated: 4.12: Use `GTK_ALIGN_BASELINE_FILL` instead
- * @GTK_ALIGN_BASELINE_FILL: a different name for `GTK_ALIGN_BASELINE`. Since 4.12
- * @GTK_ALIGN_BASELINE_CENTER: stretch to fill all space, but align the baseline. Since 4.12
  *
  * Controls how a widget deals with extra space in a single dimension.
  *
@@ -59,9 +55,30 @@ G_BEGIN_DECLS
  * are interpreted relative to text direction.
  *
  * Baseline support is optional for containers and widgets, and is only available
- * for vertical alignment. `GTK_ALIGN_BASELINE_CENTER and `GTK_ALIGN_BASELINE_FILL`
+ * for vertical alignment. `GTK_ALIGN_BASELINE_CENTER` and `GTK_ALIGN_BASELINE_FILL`
  * are treated similar to `GTK_ALIGN_CENTER` and `GTK_ALIGN_FILL`, except that it
  * positions the widget to line up the baselines, where that is supported.
+ */
+/**
+ * GTK_ALIGN_BASELINE:
+ *
+ * align the widget according to the baseline.
+ *
+ * Deprecated: 4.12: Use `GTK_ALIGN_BASELINE_FILL` instead
+ */
+/**
+ * GTK_ALIGN_BASELINE_FILL:
+ *
+ * a different name for `GTK_ALIGN_BASELINE`.
+ *
+ * Since: 4.12
+ */
+/**
+ * GTK_ALIGN_BASELINE_CENTER:
+ *
+ * stretch to fill all space, but align the baseline.
+ *
+ * Since: 4.12
  */
 typedef enum
 {
@@ -664,7 +681,7 @@ typedef enum {
 GtkOrdering     gtk_ordering_from_cmpfunc       (int cmpfunc_result);
 #else
 /**
- * gtk_ordering_from_cmpfunc:
+ * gtk_ordering_from_cmpfunc: (skip)
  * @cmpfunc_result: Result of a comparison function
  *
  * Converts the result of a `GCompareFunc` like strcmp() to a
@@ -1356,17 +1373,71 @@ typedef enum {
  * @GTK_ACCESSIBLE_ROLE_WIDGET: Abstract role for interactive components of a
  *   graphical user interface
  * @GTK_ACCESSIBLE_ROLE_WINDOW: Abstract role for windows.
- * @GTK_ACCESSIBLE_ROLE_TOGGLE_BUTTON: A type of push button
- *   which stays pressed until depressed by a second activation.
- *   Since: 4.10
- * @GTK_ACCESSIBLE_ROLE_APPLICATION: A toplevel element of a graphical user interface.
- *   This is the role that GTK uses by default for windows.
- *   Since: 4.12
  *
  * The accessible role for a [iface@Accessible] implementation.
  *
  * Abstract roles are only used as part of the ontology; application
  * developers must not use abstract roles in their code.
+ */
+
+/**
+ * GTK_ACCESSIBLE_ROLE_TOGGLE_BUTTON:
+ *
+ * A type of push button which stays pressed until depressed by a second
+ * activation.
+ *
+ * Since: 4.10
+ */
+
+/**
+ * GTK_ACCESSIBLE_ROLE_APPLICATION:
+ *
+ * A toplevel element of a graphical user interface.
+ *
+ * This is the role that GTK uses by default for windows.
+ *
+ * Since: 4.12
+ */
+
+/**
+ * GTK_ACCESSIBLE_ROLE_PARAGRAPH:
+ *
+ * A paragraph of content.
+ *
+ * Since: 4.14
+ */
+
+/**
+ * GTK_ACCESSIBLE_ROLE_BLOCK_QUOTE:
+ *
+ * A section of content that is quoted from another source.
+ *
+ * Since: 4.14
+ */
+
+/**
+ * GTK_ACCESSIBLE_ROLE_ARTICLE:
+ *
+ * A section of a page that consists of a composition that forms an independent
+ * part of a document, page, or site.
+ *
+ * Since: 4.14
+ */
+
+/**
+ * GTK_ACCESSIBLE_ROLE_COMMENT:
+ *
+ * A comment contains content expressing reaction to other content.
+ *
+ * Since: 4.14
+ */
+
+/**
+ * GTK_ACCESSIBLE_ROLE_TERMINAL:
+ *
+ * A virtual terminal.
+ *
+ * Since: 4.14
  */
 typedef enum {
   GTK_ACCESSIBLE_ROLE_ALERT,
@@ -1448,7 +1519,12 @@ typedef enum {
   GTK_ACCESSIBLE_ROLE_WIDGET,
   GTK_ACCESSIBLE_ROLE_WINDOW,
   GTK_ACCESSIBLE_ROLE_TOGGLE_BUTTON GDK_AVAILABLE_ENUMERATOR_IN_4_10,
-  GTK_ACCESSIBLE_ROLE_APPLICATION GDK_AVAILABLE_ENUMERATOR_IN_4_12
+  GTK_ACCESSIBLE_ROLE_APPLICATION GDK_AVAILABLE_ENUMERATOR_IN_4_12,
+  GTK_ACCESSIBLE_ROLE_PARAGRAPH GDK_AVAILABLE_ENUMERATOR_IN_4_14,
+  GTK_ACCESSIBLE_ROLE_BLOCK_QUOTE GDK_AVAILABLE_ENUMERATOR_IN_4_14,
+  GTK_ACCESSIBLE_ROLE_ARTICLE GDK_AVAILABLE_ENUMERATOR_IN_4_14,
+  GTK_ACCESSIBLE_ROLE_COMMENT GDK_AVAILABLE_ENUMERATOR_IN_4_14,
+  GTK_ACCESSIBLE_ROLE_TERMINAL GDK_AVAILABLE_ENUMERATOR_IN_4_14
 } GtkAccessibleRole;
 
 /**
@@ -1474,12 +1550,17 @@ typedef enum {
  *   enumeration
  * @GTK_ACCESSIBLE_STATE_SELECTED: A “selected” state; set when a widget
  *   is selected. Value type: boolean or undefined
- * @GTK_ACCESSIBLE_STATE_VISITED: Indicates that a widget with the
- *   GTK_ACCESSIBLE_ROLE_LINK has been visited. Value type: boolean.
- *   Since: 4.12
  *
  * The possible accessible states of a [iface@Accessible].
  */
+/**
+  * GTK_ACCESSIBLE_STATE_VISITED:
+  *
+  * Indicates that a widget with the GTK_ACCESSIBLE_ROLE_LINK has been visited.
+  * Value type: boolean.
+  *
+  * Since: 4.12
+  */
 typedef enum {
   GTK_ACCESSIBLE_STATE_BUSY,
   GTK_ACCESSIBLE_STATE_CHECKED,
@@ -1551,6 +1632,15 @@ typedef enum {
  *
  * The possible accessible properties of a [iface@Accessible].
  */
+
+/**
+ * GTK_ACCESSIBLE_PROPERTY_HELP_TEXT:
+ *
+ * Defines a string value that provides a description of non-standard keyboard
+ * interactions of the current element. Value type: string
+ *
+ * Since: 4.16
+ */
 typedef enum {
   GTK_ACCESSIBLE_PROPERTY_AUTOCOMPLETE,
   GTK_ACCESSIBLE_PROPERTY_DESCRIPTION,
@@ -1570,7 +1660,8 @@ typedef enum {
   GTK_ACCESSIBLE_PROPERTY_VALUE_MAX,
   GTK_ACCESSIBLE_PROPERTY_VALUE_MIN,
   GTK_ACCESSIBLE_PROPERTY_VALUE_NOW,
-  GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT
+  GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT,
+  GTK_ACCESSIBLE_PROPERTY_HELP_TEXT
 } GtkAccessibleProperty;
 
 /**
@@ -1593,8 +1684,8 @@ typedef enum {
  *    that describes the object. Value type: reference
  * @GTK_ACCESSIBLE_RELATION_DETAILS: Identifies the element (or elements) that
  *    provide additional information related to the object. Value type: reference
- * @GTK_ACCESSIBLE_RELATION_ERROR_MESSAGE: Identifies the element that provides
- *    an error message for an object. Value type: reference
+ * @GTK_ACCESSIBLE_RELATION_ERROR_MESSAGE: Identifies the element (or elements) that
+ *    provide an error message for an object. Value type: reference
  * @GTK_ACCESSIBLE_RELATION_FLOW_TO: Identifies the next element (or elements)
  *    in an alternate reading order of content which, at the user's discretion,
  *    allows assistive technology to override the general default of reading in
@@ -1728,5 +1819,88 @@ typedef enum { /*< prefix=GTK_ACCESSIBLE_SORT >*/
   GTK_ACCESSIBLE_SORT_OTHER
 } GtkAccessibleSort;
 
-G_END_DECLS
+/**
+ * GtkAccessibleAnnouncementPriority:
+ * @GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_LOW: The announcement is low priority,
+ *   and might be read only on the user's request.
+ * @GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_MEDIUM: The announcement is of medium
+ *   priority, and is usually spoken at the next opportunity, such as at the
+ *   end of speaking the current sentence or when the user pauses typing.
+ * @GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_HIGH: The announcement is of high
+ *   priority, and is usually spoken immediately. Because an interruption
+ *   might disorient users or cause them to not complete their current task,
+ *   authors SHOULD NOT use high priority announcements unless the
+ *   interruption is imperative. An example would be a notification about a
+ *   critical battery power level.
+ *
+ * The priority of an accessibility announcement.
+ *
+ * Since: 4.14
+ */
+typedef enum {
+  GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_LOW,
+  GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_MEDIUM,
+  GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_HIGH
+} GtkAccessibleAnnouncementPriority;
 
+/**
+ * GtkPopoverMenuFlags:
+ * @GTK_POPOVER_MENU_NESTED: Submenus are presented as traditional, nested
+ *   popovers.
+ *
+ * Flags that affect how [class@Gtk.PopoverMenu] widgets built from
+ * a [class@Gio.MenuModel] are created and displayed.
+ */
+/**
+ * GTK_POPOVER_MENU_SLIDING:
+ *
+ * Submenus are presented as sliding submenus that replace the main menu.
+ *
+ * Since: 4.14
+ */
+typedef enum { /*< prefix=GTK_POPOVER_MENU >*/
+  GTK_POPOVER_MENU_SLIDING = 0,
+  GTK_POPOVER_MENU_NESTED = 1 << 0
+} GtkPopoverMenuFlags;
+
+/**
+ * GtkFontRendering:
+ * @GTK_FONT_RENDERING_AUTOMATIC: Set up font rendering automatically,
+ *   taking factors like screen resolution and scale into account
+ * @GTK_FONT_RENDERING_MANUAL: Follow low-level font-related settings
+ *   when configuring font rendering
+ *
+ * Values for the [property@Gtk.Settings:gtk-font-rendering] setting
+ * that influence how GTK renders fonts.
+ *
+ * Since: 4.16
+ */
+typedef enum {
+  GTK_FONT_RENDERING_AUTOMATIC,
+  GTK_FONT_RENDERING_MANUAL,
+} GtkFontRendering;
+
+/**
+ * GtkTextBufferNotifyFlags:
+ * @GTK_TEXT_BUFFER_NOTIFY_BEFORE_INSERT: Be notified before text
+ *   is inserted into the underlying buffer.
+ * @GTK_TEXT_BUFFER_NOTIFY_AFTER_INSERT: Be notified after text
+ *   has been inserted into the underlying buffer.
+ * @GTK_TEXT_BUFFER_NOTIFY_BEFORE_DELETE: Be notified before text
+ *   is deleted from the underlying buffer.
+ * @GTK_TEXT_BUFFER_NOTIFY_AFTER_DELETE: Be notified after text
+ *   has been deleted from the underlying buffer.
+ *
+ * Values for [callback@Gtk.TextBufferCommitNotify] to denote the
+ * point of the notification.
+ *
+ * Since: 4.16
+ */
+typedef enum {
+  GTK_TEXT_BUFFER_NOTIFY_BEFORE_INSERT = 1 << 0,
+  GTK_TEXT_BUFFER_NOTIFY_AFTER_INSERT  = 1 << 1,
+  GTK_TEXT_BUFFER_NOTIFY_BEFORE_DELETE = 1 << 2,
+  GTK_TEXT_BUFFER_NOTIFY_AFTER_DELETE  = 1 << 3,
+} GtkTextBufferNotifyFlags;
+
+G_END_DECLS

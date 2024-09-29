@@ -24,6 +24,7 @@
 
 #include "gtkaccessibleprivate.h"
 #include "gtkaccessibleattributesetprivate.h"
+#include "gtkaccessibletext.h"
 
 G_BEGIN_DECLS
 
@@ -46,7 +47,8 @@ typedef enum {
   GTK_ACCESSIBLE_PROPERTY_CHANGE_VALUE_MAX        = 1 << GTK_ACCESSIBLE_PROPERTY_VALUE_MAX,
   GTK_ACCESSIBLE_PROPERTY_CHANGE_VALUE_MIN        = 1 << GTK_ACCESSIBLE_PROPERTY_VALUE_MIN,
   GTK_ACCESSIBLE_PROPERTY_CHANGE_VALUE_NOW        = 1 << GTK_ACCESSIBLE_PROPERTY_VALUE_NOW,
-  GTK_ACCESSIBLE_PROPERTY_CHANGE_VALUE_TEXT       = 1 << GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT
+  GTK_ACCESSIBLE_PROPERTY_CHANGE_VALUE_TEXT       = 1 << GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT,
+  GTK_ACCESSIBLE_PROPERTY_CHANGE_HELP_TEXT        = 1 << GTK_ACCESSIBLE_PROPERTY_HELP_TEXT,
 } GtkAccessiblePropertyChange;
 
 typedef enum {
@@ -127,6 +129,18 @@ struct _GtkATContextClass
 
   void (* realize)       (GtkATContext *self);
   void (* unrealize)     (GtkATContext *self);
+
+  void (* announce)      (GtkATContext *self,
+                          const char   *message,
+                          GtkAccessibleAnnouncementPriority priority);
+
+  /* Text interface */
+  void (* update_caret_position) (GtkATContext *self);
+  void (* update_selection_bound) (GtkATContext *self);
+  void (* update_text_contents) (GtkATContext *self,
+                                 GtkAccessibleTextContentChange change,
+                                 unsigned int start,
+                                 unsigned int end);
 };
 
 GtkATContext *          gtk_at_context_clone                    (GtkATContext          *self,
@@ -192,5 +206,18 @@ gtk_at_context_get_next_accessible_sibling (GtkATContext *self);
 void
 gtk_at_context_set_next_accessible_sibling (GtkATContext *self,
                                             GtkAccessible *sibling);
+
+void gtk_at_context_announce (GtkATContext                     *self,
+                              const char                       *message,
+                              GtkAccessibleAnnouncementPriority priority);
+void
+gtk_at_context_update_caret_position (GtkATContext *self);
+void
+gtk_at_context_update_selection_bound (GtkATContext *self);
+void
+gtk_at_context_update_text_contents (GtkATContext *self,
+                                     GtkAccessibleTextContentChange change,
+                                     unsigned int start,
+                                     unsigned int end);
 
 G_END_DECLS

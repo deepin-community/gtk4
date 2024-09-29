@@ -26,12 +26,21 @@ variables:
   BACKEND_FLAGS: "-Dx11-backend=true -Dwayland-backend=true -Dbroadway-backend=true"
   FEATURE_FLAGS: "-Dvulkan=enabled -Dcloudproviders=enabled -Dbuild-testsuite=true -Dintrospection=enabled"
   MESON_TEST_TIMEOUT_MULTIPLIER: 3
-  FEDORA_IMAGE: "registry.gitlab.gnome.org/gnome/gtk/fedora:v48"
+  MESON_TEST_MAX_PROCESSES: 8
+  FEDORA_IMAGE: "registry.gitlab.gnome.org/gnome/gtk/fedora:v52"
 
 workflow:
   rules:
-    - if: $CI_COMMIT_TAG
+    # run merge request pipelines
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # do not run branch pipelines if corresponding merge requests exist...
+    # (this avoids duplicate pipelines)
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    # ...but otherwise run branch pipelines
     - if: $CI_COMMIT_BRANCH
+    # run tag pipelines
+    - if: $CI_COMMIT_TAG
 
 default:
   retry:
@@ -58,7 +67,8 @@ style-check-diff:
       junit:
         - "${CI_PROJECT_DIR}/_build/report-x11.xml"
         - "${CI_PROJECT_DIR}/_build/report-wayland.xml"
-        - "${CI_PROJECT_DIR}/_build/report-wayland_gles.xml"
+        - "${CI_PROJECT_DIR}/_build/report-wayland_gl.xml"
+        - "${CI_PROJECT_DIR}/_build/report-wayland_gles2.xml"
         - "${CI_PROJECT_DIR}/_build/report-broadway.xml"
     name: "gtk-${CI_COMMIT_REF_NAME}"
     paths:
@@ -69,6 +79,7 @@ style-check-diff:
       - "${CI_PROJECT_DIR}/_build/testsuite/reftests/output/*/*.node"
       - "${CI_PROJECT_DIR}/_build/testsuite/tools/output/*/*"
       - "${CI_PROJECT_DIR}/_build/testsuite/gsk/compare/*/*/*.png"
+      - "${CI_PROJECT_DIR}/_build/testsuite/gsk/compare/*/*/*.node"
       - "${CI_PROJECT_DIR}/_build/testsuite/css/output/*/*.syscap"
       - "${CI_PROJECT_DIR}/_build/testsuite/headless/*/*.log"
       - "${CI_PROJECT_DIR}/_build_hello/meson-logs"
@@ -95,8 +106,9 @@ fedora-x86_64:
             ${FEATURE_FLAGS}
             _build
     - meson compile -C _build
-    - .gitlab-ci/run-tests.sh _build wayland
-    - .gitlab-ci/run-tests.sh _build wayland_gles
+    - .gitlab-ci/run-tests.sh _build x11 gtk
+    # only repeat test runs that are likely affected by test setups
+    - .gitlab-ci/run-tests.sh _build wayland_gl gtk:gdk,gtk:gsk-gl
 
 release-build:
   extends: .build-fedora-default
@@ -106,10 +118,11 @@ release-build:
     EXTRA_MESON_FLAGS: "--buildtype=release"
   script:
     - .gitlab-ci/show-info-linux.sh
-    - export PATH="$HOME/.local/bin:$PATH"
+    - mkdir _install
+    - export PATH="$HOME/.local/bin:${CI_PROJECT_DIR}/_install/bin:$PATH"
+    - .gitlab-ci/install-meson-project.sh --prefix ${CI_PROJECT_DIR}/_install https://gitlab.gnome.org/jadahl/catch.git main
     - meson subprojects download
     - meson subprojects update --reset
-    - mkdir _install
     - meson setup
             --prefix=${CI_PROJECT_DIR}/_install
             ${COMMON_MESON_FLAGS}
@@ -121,7 +134,9 @@ release-build:
     - meson install -C _build
     - PKG_CONFIG_PATH=${CI_PROJECT_DIR}/_install/lib64/pkgconfig:${CI_PROJECT_DIR}/_install/share/pkgconfig meson setup _build_hello examples/hello
     - LD_LIBRARY_PATH=${CI_PROJECT_DIR}/_install/lib64 meson compile -C _build_hello
-    - .gitlab-ci/run-tests.sh _build x11
+    - .gitlab-ci/run-tests.sh _build wayland gtk
+    # only repeat test runs that are likely affected by test setups
+    - .gitlab-ci/run-tests.sh _build wayland_gles2 gtk:gdk,gtk:gsk-gl
 
 fedora-clang:
   extends: .build-fedora-default
@@ -198,34 +213,53 @@ msys2-mingw64:
       - "${CI_PROJECT_DIR}/_build/gtkdll.tar.gz"
 
 macos:
-  # Sadly, this fails regularly, and its failure is never enlightening
-  allow_failure: true
   rules:
-    - if: $CI_PROJECT_NAMESPACE == "GNOME"
+    # Do not run in forks as the runner is not available there.
+    # (except for dehesselle who maintains the runner)
+    - if: $CI_PROJECT_NAMESPACE != "GNOME" && $CI_PROJECT_NAMESPACE != "dehesselle"
+      when: never
+    - if: $RUNNER == "macosintel"
+      variables:
+        SDKROOT: /opt/sdks/MacOSX10.13.4.sdk
+        NINJA_PKG: $CI_API_V4_URL/projects/30745/packages/generic/ninja_macos/v1.11.1.1+9/ninja-1.11.1.1-cp38-cp38-macosx_11_0_x86_64.whl
+      when: manual
+      allow_failure: true
+    - if: $RUNNER == "macosarm"
+      variables:
+        SDKROOT: /opt/sdks/MacOSX11.3.sdk
+        NINJA_PKG: ninja==1.11.1.1
   stage: build
+  parallel:
+    matrix:
+      - RUNNER: [ "macosintel", "macosarm" ]
   tags:
-    - macos
+    - ${RUNNER}
   needs: []
+  variables:
+    EXTRA_MESON_FLAGS: ""
+    BACKEND_FLAGS: "-Dx11-backend=false -Dbroadway-backend=true"
+    FEATURE_FLAGS: "-Dmedia-gstreamer=disabled -Dintrospection=enabled -Dgobject-introspection:werror=false"
+    TMPDIR: /Users/Shared/work/tmp
+    PIP_CACHE_DIR: /Users/Shared/build/cache
+    PIPENV_CACHE_DIR: $PIP_CACHE_DIR
+    PYTHONPYCACHEPREFIX: $PIP_CACHE_DIR
   before_script:
-    - bash .gitlab-ci/show-info-osx.sh
-    - pip3 install --user meson~=1.0
-    - pip3 install --user ninja
-    - export PATH=/Users/gitlabrunner/Library/Python/3.7/bin:$PATH
-    - export MESON_FORCE_BACKTRACE=1
+    - .gitlab-ci/show-info-macos.sh
+    - python3 -m venv .venv
+    # Building the introspection feature requires pkg-config and bison.
+    - curl -L $CI_API_V4_URL/projects/30437/packages/generic/pkgconfig/v0.29.2+10/pkg-config-0.29.2+10_$(uname -m).tar.xz | tar -C .venv -xJ
+    - curl -L $CI_API_V4_URL/projects/30438/packages/generic/bison/v3.8.2+3/bison-3.8.2+3_$(uname -m).tar.xz | tar -C .venv -xJ
+    - source .venv/bin/activate
+    - pip3 install meson==1.3.2 $NINJA_PKG
+    # We're not setting up ccache here on purpose as it accelerates the build
+    # so much that it triggers race conditions in the gobject-introspection
+    # subproject.
   script:
-    - meson setup ${COMMON_MESON_FLAGS}
-            -Dx11-backend=false
-            -Dbroadway-backend=true
-            -Dmacos-backend=true
-            -Dmedia-gstreamer=disabled
-            -Dintrospection=disabled
-            -Dcpp_std=c++11
-            -Dpixman:tests=disabled
-            -Dlibjpeg-turbo:simd=disabled
-            -Dbuild-demos=false
-            -Dbuild-tests=false
-            -Dbuild-examples=false
-            -Dbuild-testsuite=false
+    - meson setup
+            ${COMMON_MESON_FLAGS}
+            ${EXTRA_MESON_FLAGS}
+            ${BACKEND_FLAGS}
+            ${FEATURE_FLAGS}
             _build
     - meson compile -C _build
   artifacts:
@@ -381,11 +415,12 @@ static-scan:
 # Run tests with the address sanitizer. We need to turn off introspection
 # and f16c, since they are incompatible with asan
 asan-build:
-  image: $FEDORA_IMAGE
+  extends: .build-fedora-default
   tags: [ asan ]
   stage: analysis
   needs: []
   variables:
+    MESON_TEST_MAX_PROCESSES: 4
   script:
     - export PATH="$HOME/.local/bin:$PATH"
     - CC=clang meson setup
@@ -399,13 +434,7 @@ asan-build:
             -Df16c=disabled
             _build
     - ninja -C _build
-    - .gitlab-ci/run-tests.sh _build wayland
-    - .gitlab-ci/run-tests.sh _build wayland_gles
-    - .gitlab-ci/run-tests.sh _build x11
-  artifacts:
-    when: always
-    paths:
-      - "${CI_PROJECT_DIR}/_build/meson-logs"
+    - .gitlab-ci/run-tests.sh _build wayland gtk
 
 reference:
   image: $FEDORA_IMAGE
@@ -419,10 +448,10 @@ reference:
             --force-fallback-for=gdk-pixbuf,pango
             -Dintrospection=enabled
             -Ddocumentation=true
-            -Dgtk_doc=true
+            -Dman-pages=true
             -Dgdk-pixbuf:gtk_doc=true
-            -Dpango:gtk_doc=true
-            -Dbuild-demos=false
+            -Dpango:documentation=true
+            -Dbuild-demos=true
             -Dbuild-examples=false
             -Dbuild-tests=false
             -Dbuild-testsuite=false
@@ -434,6 +463,7 @@ reference:
     - mv _build/docs/reference/gdk/gdk4-wayland/ _reference/gdk4-wayland/
     - mv _build/docs/reference/gsk/gsk4/ _reference/gsk4/
     - mv _build/docs/reference/gtk/gtk4/ _reference/gtk4/
+    - mv _build/docs/reference/gtk/*.html _reference/gtk4/
     - mv _build/subprojects/pango/docs/Pango/ _reference/Pango/
     - mv _build/subprojects/pango/docs/PangoCairo/ _reference/PangoCairo/
     - mv _build/subprojects/pango/docs/PangoFc/ _reference/PangoFc/
@@ -455,3 +485,4 @@ publish-docs:
     - "curl -X POST -F token=${PAGES_TRIGGER_TOKEN} -F ref=docs-gtk-org https://gitlab.gnome.org/api/v4/projects/665/trigger/pipeline"
   rules:
     - if: $CI_COMMIT_REF_NAME == "main"
+

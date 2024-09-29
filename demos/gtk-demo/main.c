@@ -20,11 +20,12 @@
 #include "config.h"
 #include <gtk/gtk.h>
 #include <glib/gstdio.h>
+#include <glib/gi18n.h>
 
 #include "demos.h"
 #include "fontify.h"
 
-#include "demo_conf.h"
+#include "profile_conf.h"
 
 static GtkWidget *info_view;
 static GtkWidget *source_view;
@@ -827,12 +828,24 @@ demo_search_changed_cb (GtkSearchEntry *entry,
   gtk_filter_changed (filter, GTK_FILTER_CHANGE_DIFFERENT);
 }
 
+static gboolean
+demo_can_run (GtkWidget  *window,
+              const char *name)
+{
+  if (name != NULL && strcmp (name, "gltransition") == 0)
+    return GSK_IS_GL_RENDERER (gtk_native_get_renderer (GTK_NATIVE (window)));
+
+  return TRUE;
+}
+
 static GListModel *
-create_demo_model (void)
+create_demo_model (GtkWidget *window)
 {
   GListStore *store = g_list_store_new (GTK_TYPE_DEMO);
   DemoData *demo = gtk_demos;
   GtkDemo *d;
+
+  gtk_widget_realize (window);
 
   d = GTK_DEMO (g_object_new (GTK_TYPE_DEMO, NULL));
   d->name = "main";
@@ -845,16 +858,20 @@ create_demo_model (void)
 
   while (demo->title)
     {
-      d = GTK_DEMO (g_object_new (GTK_TYPE_DEMO, NULL));
-      DemoData *children = demo->children;
+       DemoData *children = demo->children;
 
-      d->name = demo->name;
-      d->title = demo->title;
-      d->keywords = demo->keywords;
-      d->filename = demo->filename;
-      d->func = demo->func;
+      if (demo_can_run (window, demo->name))
+        {
+          d = GTK_DEMO (g_object_new (GTK_TYPE_DEMO, NULL));
 
-      g_list_store_append (store, d);
+          d->name = demo->name;
+          d->title = demo->title;
+          d->keywords = demo->keywords;
+          d->filename = demo->filename;
+          d->func = demo->func;
+
+          g_list_store_append (store, d);
+        }
 
       if (children)
         {
@@ -862,15 +879,19 @@ create_demo_model (void)
 
           while (children->title)
             {
-              GtkDemo *child = GTK_DEMO (g_object_new (GTK_TYPE_DEMO, NULL));
+              if (demo_can_run (window, children->name))
+                {
+                  GtkDemo *child = GTK_DEMO (g_object_new (GTK_TYPE_DEMO, NULL));
 
-              child->name = children->name;
-              child->title = children->title;
-              child->keywords = children->keywords;
-              child->filename = children->filename;
-              child->func = children->func;
+                  child->name = children->name;
+                  child->title = children->title;
+                  child->keywords = children->keywords;
+                  child->filename = children->filename;
+                  child->func = children->func;
 
-              g_list_store_append (G_LIST_STORE (d->children_model), child);
+                  g_list_store_append (G_LIST_STORE (d->children_model), child);
+                }
+
               children++;
             }
         }
@@ -900,6 +921,34 @@ clear_search (GtkSearchBar *bar)
     {
       GtkWidget *entry = gtk_search_bar_get_child (GTK_SEARCH_BAR (bar));
       gtk_editable_set_text (GTK_EDITABLE (entry), "");
+    }
+}
+
+static void
+search_results_update (GObject    *filter_model,
+                       GParamSpec *pspec,
+                       GtkEntry   *entry)
+{
+  gsize n_items = g_list_model_get_n_items (G_LIST_MODEL (filter_model));
+
+  if (strlen (gtk_editable_get_text (GTK_EDITABLE (entry))) > 0)
+    {
+      char *text;
+
+      if (n_items > 0)
+        text = g_strdup_printf (ngettext ("%ld search result", "%ld search results", (long) n_items), (long) n_items);
+      else
+        text = g_strdup (_("No search results"));
+
+      gtk_accessible_update_property (GTK_ACCESSIBLE (entry),
+                                      GTK_ACCESSIBLE_PROPERTY_DESCRIPTION, text,
+                                      -1);
+
+      g_free (text);
+    }
+  else
+    {
+      gtk_accessible_reset_property (GTK_ACCESSIBLE (entry), GTK_ACCESSIBLE_PROPERTY_DESCRIPTION);
     }
 }
 
@@ -936,7 +985,7 @@ activate (GApplication *app)
   search_bar = GTK_WIDGET (gtk_builder_get_object (builder, "searchbar"));
   g_signal_connect (search_bar, "notify::search-mode-enabled", G_CALLBACK (clear_search), NULL);
 
-  listmodel = create_demo_model ();
+  listmodel = create_demo_model (window);
   treemodel = gtk_tree_list_model_new (G_LIST_MODEL (listmodel),
                                        FALSE,
                                        TRUE,
@@ -950,6 +999,7 @@ activate (GApplication *app)
 
   search_entry = GTK_WIDGET (gtk_builder_get_object (builder, "search-entry"));
   g_signal_connect (search_entry, "search-changed", G_CALLBACK (demo_search_changed_cb), filter);
+  g_signal_connect (filter_model, "notify::n-items", G_CALLBACK (search_results_update), search_entry);
 
   selection = gtk_single_selection_new (G_LIST_MODEL (filter_model));
   g_signal_connect (selection, "notify::selected-item", G_CALLBACK (selection_cb), NULL);
@@ -1017,6 +1067,8 @@ command_line (GApplication            *app,
     }
 
   window = gtk_application_get_windows (GTK_APPLICATION (app))->data;
+
+  gtk_window_set_icon_name (GTK_WINDOW (window), "org.gtk.Demo4");
 
   if (name == NULL)
     goto out;

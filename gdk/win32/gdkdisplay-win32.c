@@ -480,7 +480,7 @@ register_display_change_notification (GdkDisplay *display)
   WNDCLASS wclass = { 0, };
   ATOM klass;
 
-  wclass.lpszClassName = "GdkDisplayChange";
+  wclass.lpszClassName = L"GdkDisplayChange";
   wclass.lpfnWndProc = display_change_window_procedure;
   wclass.hInstance = this_module ();
   wclass.style = CS_OWNDC;
@@ -548,6 +548,9 @@ _gdk_win32_display_open (const char *display_name)
 
   g_signal_emit_by_name (_gdk_display, "opened");
 
+  /* Precalculate keymap, see #6203 */
+  (void) _gdk_win32_display_get_keymap (_gdk_display);
+
   GDK_NOTE (MISC, g_print ("... _gdk_display now set up\n"));
 
   return _gdk_display;
@@ -558,63 +561,69 @@ G_DEFINE_TYPE (GdkWin32Display, gdk_win32_display, GDK_TYPE_DISPLAY)
 static const char *
 gdk_win32_display_get_name (GdkDisplay *display)
 {
-  HDESK hdesk = GetThreadDesktop (GetCurrentThreadId ());
-  char dummy;
-  char *desktop_name;
-  HWINSTA hwinsta = GetProcessWindowStation ();
-  char *window_station_name;
-  DWORD n;
-  DWORD session_id;
-  char *display_name;
   static const char *display_name_cache = NULL;
-  typedef BOOL (WINAPI *PFN_ProcessIdToSessionId) (DWORD, DWORD *);
-  PFN_ProcessIdToSessionId processIdToSessionId;
 
   g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
 
-  if (display_name_cache != NULL)
-    return display_name_cache;
-
-  n = 0;
-  GetUserObjectInformation (hdesk, UOI_NAME, &dummy, 0, &n);
-  if (n == 0)
-    desktop_name = "Default";
-  else
+  if (g_once_init_enter (&display_name_cache))
     {
-      n++;
-      desktop_name = g_alloca (n + 1);
-      memset (desktop_name, 0, n + 1);
+      HDESK hdesk = GetThreadDesktop (GetCurrentThreadId ());
+      char dummy;
+      char dummy_dword[11];
+      wchar_t *desktop_name;
+      HWINSTA hwinsta = GetProcessWindowStation ();
+      wchar_t *window_station_name;
+      DWORD n;
+      DWORD session_id;
+      wchar_t *display_name_w;
+      char *display_name;
+      size_t wchar_size;
+      size_t display_name_len = 0;
 
-      if (!GetUserObjectInformation (hdesk, UOI_NAME, desktop_name, n, &n))
-	desktop_name = "Default";
+      n = 0;
+      GetUserObjectInformation (hdesk, UOI_NAME, &dummy, 0, &n);
+      wchar_size = sizeof (wchar_t);
+      if (n == 0)
+        desktop_name = L"Default";
+      else
+        {
+          n++;
+          desktop_name = g_alloca ((n + 1) * wchar_size);
+          memset (desktop_name, 0, (n + 1) * wchar_size);
+
+          if (!GetUserObjectInformation (hdesk, UOI_NAME, desktop_name, n, &n))
+          desktop_name = L"Default";
+        }
+
+      n = 0;
+      GetUserObjectInformation (hwinsta, UOI_NAME, &dummy, 0, &n);
+      if (n == 0)
+        window_station_name = L"WinSta0";
+      else
+        {
+          n++;
+          window_station_name = g_alloca ((n + 1) * wchar_size);
+          memset (window_station_name, 0, (n + 1) * wchar_size);
+
+          if (!GetUserObjectInformation (hwinsta, UOI_NAME, window_station_name, n, &n))
+            window_station_name = L"WinSta0";
+        }
+
+      if (!ProcessIdToSessionId (GetCurrentProcessId (), &session_id))
+        session_id = 0;
+
+      /* display_name is in the form of "%ld\\%s\\%s" */
+      display_name_len = strlen (itoa (session_id, dummy_dword, 10)) + 1 + wcslen (window_station_name) + 1 + wcslen (desktop_name);
+      display_name_w = g_alloca ((display_name_len + 1) * wchar_size);
+      memset (display_name_w, 0, (display_name_len + 1) * wchar_size);
+      swprintf_s (display_name_w, display_name_len + 1, L"%ld\\%s\\%s", session_id, window_station_name, desktop_name);
+
+      display_name = g_utf16_to_utf8 (display_name_w, -1, NULL, NULL, NULL);
+
+      GDK_NOTE (MISC, g_print ("gdk_win32_display_get_name: %s\n", display_name));
+
+      g_once_init_leave (&display_name_cache, display_name);
     }
-
-  n = 0;
-  GetUserObjectInformation (hwinsta, UOI_NAME, &dummy, 0, &n);
-  if (n == 0)
-    window_station_name = "WinSta0";
-  else
-    {
-      n++;
-      window_station_name = g_alloca (n + 1);
-      memset (window_station_name, 0, n + 1);
-
-      if (!GetUserObjectInformation (hwinsta, UOI_NAME, window_station_name, n, &n))
-	window_station_name = "WinSta0";
-    }
-
-  processIdToSessionId = (PFN_ProcessIdToSessionId) GetProcAddress (GetModuleHandle ("kernel32.dll"), "ProcessIdToSessionId");
-  if (!processIdToSessionId || !processIdToSessionId (GetCurrentProcessId (), &session_id))
-    session_id = 0;
-
-  display_name = g_strdup_printf ("%ld\\%s\\%s",
-				  session_id,
-				  window_station_name,
-				  desktop_name);
-
-  GDK_NOTE (MISC, g_print ("gdk_win32_display_get_name: %s\n", display_name));
-
-  display_name_cache = display_name;
 
   return display_name_cache;
 }
@@ -1061,6 +1070,7 @@ gdk_win32_display_check_composited (GdkWin32Display *display)
     }
 
   gdk_display_set_composited (GDK_DISPLAY (display), composited);
+  gdk_display_set_shadow_width (GDK_DISPLAY (display), composited);
 }
 
 static void
@@ -1170,6 +1180,9 @@ gdk_win32_display_get_setting (GdkDisplay  *display,
                                const char *name,
                                GValue      *value)
 {
+  if (gdk_display_get_debug_flags (display) & GDK_DEBUG_DEFAULT_SETTINGS)
+    return FALSE;
+
   return _gdk_win32_get_setting (name, value);
 }
 
@@ -1195,7 +1208,7 @@ gdk_win32_display_init_gl (GdkDisplay  *display,
    * Disable defaulting to EGL as EGL is used more as a compatibility layer
    * on Windows rather than being a native citizen on Windows
    */
-  if (gdk_display_get_debug_flags (display) & (GDK_DEBUG_GL_EGL|GDK_DEBUG_GL_GLES))
+  if (!gdk_has_feature (GDK_FEATURE_WGL) || !gdk_has_feature (GDK_FEATURE_GL_API))
     {
       init_gl_hdc = GetDC (display_win32->hwnd);
 

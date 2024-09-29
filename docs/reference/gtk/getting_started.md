@@ -41,7 +41,7 @@ activate (GtkApplication* app,
   window = gtk_application_window_new (app);
   gtk_window_set_title (GTK_WINDOW (window), "Window");
   gtk_window_set_default_size (GTK_WINDOW (window), 200, 200);
-  gtk_widget_show (window);
+  gtk_window_present (GTK_WINDOW (window));
 }
 
 int
@@ -183,7 +183,7 @@ activate (GtkApplication *app,
 
   gtk_box_append (GTK_BOX (box), button);
 
-  gtk_widget_show (window);
+  gtk_window_present (GTK_WINDOW (window));
 }
 
 int
@@ -244,9 +244,6 @@ GTK window is destroyed. In contrast if a normal `g_signal_connect()` were used
 to connect the "clicked" signal with [method@Gtk.Window.destroy], then the function
 would be called on `button` (which would not go well, since the function expects
 a `GtkWindow` as argument).
-
-More information about creating buttons can be found
-[here](https://wiki.gnome.org/HowDoI/Buttons).
 
 The rest of the code in `example-1.c` is identical to `example-0.c`. The next
 section will elaborate further on how to add several [class@Gtk.Widget]s to your
@@ -331,8 +328,7 @@ activate (GtkApplication *app,
    */
   gtk_grid_attach (GTK_GRID (grid), button, 0, 1, 2, 1);
 
-  gtk_widget_show (window);
-
+  gtk_window_present (GTK_WINDOW (window));
 }
 
 int
@@ -554,7 +550,7 @@ activate (GtkApplication *app,
 
   g_signal_connect (press, "pressed", G_CALLBACK (pressed), drawing_area);
 
-  gtk_widget_show (window);
+  gtk_window_present (GTK_WINDOW (window));
 }
 
 int
@@ -631,7 +627,7 @@ activate (GtkApplication *app,
   button = gtk_builder_get_object (builder, "quit");
   g_signal_connect_swapped (button, "clicked", G_CALLBACK (quit_cb), window);
 
-  gtk_widget_show (GTK_WIDGET (window));
+  gtk_widget_set_visible (GTK_WIDGET (window), TRUE);
 
   /* We do not need the builder any more */
   g_object_unref (builder);

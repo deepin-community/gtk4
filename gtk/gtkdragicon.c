@@ -47,7 +47,7 @@
  * and is destroyed when the drag ends.
  *
  * To set up a drag icon and associate it with an ongoing drag operation,
- * use [func@Gtk.DragIcon.get_for_drag] to get the icon for a drag. You can
+ * use [ctor@Gtk.DragIcon.get_for_drag] to get the icon for a drag. You can
  * then use it like any other widget and use [method@Gtk.DragIcon.set_child]
  * to set whatever widget should be used for the drag icon.
  *
@@ -379,7 +379,7 @@ gtk_drag_icon_class_init (GtkDragIconClass *klass)
   widget_class->hide = gtk_drag_icon_hide;
 
   /**
-   * GtkDragIcon:child: (attributes org.gtk.Property.get=gtk_drag_icon_get_child org.gtk.Property.set=gtk_drag_icon_set_child)
+   * GtkDragIcon:child:
    *
    * The widget to display as drag icon.
    */
@@ -400,7 +400,7 @@ gtk_drag_icon_init (GtkDragIcon *self)
 }
 
 /**
- * gtk_drag_icon_get_for_drag:
+ * gtk_drag_icon_get_for_drag: (constructor)
  * @drag: a `GdkDrag`
  *
  * Gets the `GtkDragIcon` in use with @drag.
@@ -469,7 +469,7 @@ gtk_drag_icon_set_from_paintable (GdkDrag      *drag,
 }
 
 /**
- * gtk_drag_icon_set_child: (attributes org.gtk.Method.set_property=child)
+ * gtk_drag_icon_set_child:
  * @self: a `GtkDragIcon`
  * @child: (nullable): a `GtkWidget`
  *
@@ -500,7 +500,7 @@ gtk_drag_icon_set_child (GtkDragIcon *self,
 }
 
 /**
- * gtk_drag_icon_get_child: (attributes org.gtk.Method.get_property=child)
+ * gtk_drag_icon_get_child:
  * @self: a `GtkDragIcon`
  *
  * Gets the widget currently used as drag icon.

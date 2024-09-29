@@ -68,6 +68,9 @@ struct _GtkTextBufferPrivate
 
   GtkTextHistory *history;
 
+  GArray *commit_funcs;
+  guint last_commit_handler;
+
   guint user_action_count;
 
   /* Whether the buffer has been modified since last save */
@@ -75,6 +78,7 @@ struct _GtkTextBufferPrivate
   guint has_selection : 1;
   guint can_undo : 1;
   guint can_redo : 1;
+  guint in_commit_notify : 1;
 };
 
 typedef struct _ClipboardRequest ClipboardRequest;
@@ -86,6 +90,15 @@ struct _ClipboardRequest
   guint default_editable : 1;
   guint replace_selection : 1;
 };
+
+typedef struct _CommitFunc
+{
+  GtkTextBufferCommitNotify callback;
+  gpointer user_data;
+  GDestroyNotify user_data_destroy;
+  GtkTextBufferNotifyFlags flags;
+  guint handler_id;
+} CommitFunc;
 
 enum {
   INSERT_TEXT,
@@ -151,6 +164,10 @@ static void gtk_text_buffer_real_mark_set              (GtkTextBuffer     *buffe
                                                         GtkTextMark       *mark);
 static void gtk_text_buffer_real_undo                  (GtkTextBuffer     *buffer);
 static void gtk_text_buffer_real_redo                  (GtkTextBuffer     *buffer);
+static void gtk_text_buffer_commit_notify              (GtkTextBuffer     *buffer,
+                                                        GtkTextBufferNotifyFlags flags,
+                                                        guint              position,
+                                                        guint              length);
 
 static GtkTextBTree* get_btree (GtkTextBuffer *buffer);
 static void          free_log_attr_cache (GtkTextLogAttrCache *cache);
@@ -456,7 +473,7 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
 
   /* Construct */
   /**
-   * GtkTextBuffer:tag-table: (attributes org.gtk.Property.get=gtk_text_buffer_get_tag_table)
+   * GtkTextBuffer:tag-table:
    *
    * The GtkTextTagTable for the buffer.
    */
@@ -468,7 +485,7 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
   /* Normal properties */
 
   /**
-   * GtkTextBuffer:text: (attributes org.gtk.Property.set=gtk_text_buffer_set_text)
+   * GtkTextBuffer:text:
    *
    * The text content of the buffer.
    *
@@ -491,7 +508,7 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                             GTK_PARAM_READABLE);
 
   /**
-   * GtkTextBuffer:can-undo: (attributes org.gtk.Property.get=gtk_text_buffer_get_can_undo)
+   * GtkTextBuffer:can-undo:
    *
    * Denotes that the buffer can undo the last applied action.
    */
@@ -501,7 +518,7 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                           GTK_PARAM_READABLE);
 
   /**
-   * GtkTextBuffer:can-redo: (attributes org.gtk.Property.get=gtk_text_buffer_get_can_redo)
+   * GtkTextBuffer:can-redo:
    *
    * Denotes that the buffer can reapply the last undone action.
    */
@@ -511,7 +528,7 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                           GTK_PARAM_READABLE);
 
   /**
-   * GtkTextBuffer:enable-undo: (attributes org.gtk.Property.get=gtk_text_buffer_get_enable_undo org.gtk.Property.set=gtk_text_buffer_set_enable_undo)
+   * GtkTextBuffer:enable-undo:
    *
    * Denotes if support for undoing and redoing changes to the buffer is allowed.
    */
@@ -1081,6 +1098,8 @@ gtk_text_buffer_finalize (GObject *object)
 
   remove_all_selection_clipboards (buffer);
 
+  g_clear_pointer (&buffer->priv->commit_funcs, g_array_unref);
+
   g_clear_object (&buffer->priv->history);
 
   if (priv->tag_table)
@@ -1123,7 +1142,7 @@ _gtk_text_buffer_get_btree (GtkTextBuffer *buffer)
 }
 
 /**
- * gtk_text_buffer_get_tag_table: (attributes org.gtk.Method.get_property=tag-table)
+ * gtk_text_buffer_get_tag_table:
  * @buffer: a `GtkTextBuffer`
  *
  * Get the `GtkTextTagTable` associated with this buffer.
@@ -1139,7 +1158,7 @@ gtk_text_buffer_get_tag_table (GtkTextBuffer *buffer)
 }
 
 /**
- * gtk_text_buffer_set_text: (attributes org.gtk.Method.set_property=text)
+ * gtk_text_buffer_set_text:
  * @buffer: a `GtkTextBuffer`
  * @text: UTF-8 text to insert
  * @len: length of @text in bytes
@@ -1198,7 +1217,29 @@ gtk_text_buffer_real_insert_text (GtkTextBuffer *buffer,
                                   text,
                                   len);
 
-  _gtk_text_btree_insert (iter, text, len);
+  if (buffer->priv->commit_funcs == NULL)
+    {
+      _gtk_text_btree_insert (iter, text, len);
+    }
+  else
+    {
+      guint position;
+      guint n_chars;
+
+      if (len < 0)
+        len = strlen (text);
+
+      position = gtk_text_iter_get_offset (iter);
+      n_chars = g_utf8_strlen (text, len);
+
+      gtk_text_buffer_commit_notify (buffer,
+                                     GTK_TEXT_BUFFER_NOTIFY_BEFORE_INSERT,
+                                     position, n_chars);
+      _gtk_text_btree_insert (iter, text, len);
+      gtk_text_buffer_commit_notify (buffer,
+                                     GTK_TEXT_BUFFER_NOTIFY_AFTER_INSERT,
+                                     position, n_chars);
+    }
 
   g_signal_emit (buffer, signals[CHANGED], 0);
   g_object_notify_by_pspec (G_OBJECT (buffer), text_buffer_props[PROP_CURSOR_POSITION]);
@@ -1211,6 +1252,7 @@ gtk_text_buffer_emit_insert (GtkTextBuffer *buffer,
                              int            len)
 {
   g_return_if_fail (GTK_IS_TEXT_BUFFER (buffer));
+  g_return_if_fail (buffer->priv->in_commit_notify == FALSE);
   g_return_if_fail (iter != NULL);
   g_return_if_fail (text != NULL);
 
@@ -1955,7 +1997,36 @@ gtk_text_buffer_real_delete_range (GtkTextBuffer *buffer,
       g_free (text);
     }
 
-  _gtk_text_btree_delete (start, end);
+
+
+  if (buffer->priv->commit_funcs == NULL)
+    {
+      _gtk_text_btree_delete (start, end);
+    }
+  else
+    {
+      guint off1 = gtk_text_iter_get_offset (start);
+      guint off2 = gtk_text_iter_get_offset (end);
+
+      if (off2 < off1)
+        {
+          guint tmp = off1;
+          off1 = off2;
+          off2 = tmp;
+        }
+
+      buffer->priv->in_commit_notify = TRUE;
+
+      gtk_text_buffer_commit_notify (buffer,
+                                     GTK_TEXT_BUFFER_NOTIFY_BEFORE_DELETE,
+                                     off1, off2 - off1);
+      _gtk_text_btree_delete (start, end);
+      gtk_text_buffer_commit_notify (buffer,
+                                     GTK_TEXT_BUFFER_NOTIFY_AFTER_DELETE,
+                                     off1, 0);
+
+      buffer->priv->in_commit_notify = FALSE;
+    }
 
   /* may have deleted the selection... */
   update_selection_clipboards (buffer);
@@ -1979,6 +2050,7 @@ gtk_text_buffer_emit_delete (GtkTextBuffer *buffer,
   g_return_if_fail (GTK_IS_TEXT_BUFFER (buffer));
   g_return_if_fail (start != NULL);
   g_return_if_fail (end != NULL);
+  g_return_if_fail (buffer->priv->in_commit_notify == FALSE);
 
   if (gtk_text_iter_equal (start, end))
     return;
@@ -3751,11 +3823,20 @@ gtk_text_buffer_paste_clipboard_finish (GObject      *source,
   ClipboardRequest *request_data = data;
   GtkTextBuffer *src_buffer;
   GtkTextIter start, end;
+  GtkTextMark *paste_point_override;
   const GValue *value;
 
   value = gdk_clipboard_read_value_finish (clipboard, result, NULL);
   if (value == NULL)
-    return;
+    {
+      /* Clear paste point override from empty middle-click paste */
+      paste_point_override = gtk_text_buffer_get_mark (request_data->buffer,
+                                                       "gtk_paste_point_override");
+      if (paste_point_override != NULL)
+        gtk_text_buffer_delete_mark (request_data->buffer, paste_point_override);
+
+      return;
+    }
 
   src_buffer = g_value_get_object (value);
 
@@ -4861,7 +4942,7 @@ gtk_text_buffer_real_redo (GtkTextBuffer *buffer)
 }
 
 /**
- * gtk_text_buffer_get_can_undo: (attributes org.gtk.Method.get_property=can-undo)
+ * gtk_text_buffer_get_can_undo:
  * @buffer: a `GtkTextBuffer`
  *
  * Gets whether there is an undoable action in the history.
@@ -4877,7 +4958,7 @@ gtk_text_buffer_get_can_undo (GtkTextBuffer *buffer)
 }
 
 /**
- * gtk_text_buffer_get_can_redo: (attributes org.gtk.Method.get_property=can-redo)
+ * gtk_text_buffer_get_can_redo:
  * @buffer: a `GtkTextBuffer`
  *
  * Gets whether there is a redoable action in the history.
@@ -4994,7 +5075,7 @@ gtk_text_buffer_redo (GtkTextBuffer *buffer)
 }
 
 /**
- * gtk_text_buffer_get_enable_undo: (attributes org.gtk.Method.get_property=enable-undo)
+ * gtk_text_buffer_get_enable_undo:
  * @buffer: a `GtkTextBuffer`
  *
  * Gets whether the buffer is saving modifications to the buffer
@@ -5015,7 +5096,7 @@ gtk_text_buffer_get_enable_undo (GtkTextBuffer *buffer)
 }
 
 /**
- * gtk_text_buffer_set_enable_undo: (attributes org.gtk.Method.set_property=enable-undo)
+ * gtk_text_buffer_set_enable_undo:
  * @buffer: a `GtkTextBuffer`
  * @enable_undo: %TRUE to enable undo
  *
@@ -5189,27 +5270,27 @@ gtk_wrap_mode_to_string (GtkWrapMode wrap_mode)
 }
 
 /*< private >
- * gtk_text_buffer_get_run_attributes:
+ * gtk_text_buffer_add_run_attributes:
  * @buffer: the buffer to serialize
- * @builder: the target `GVariant` builder
  * @offset: the offset into the text buffer
+ * @attributes: a hash table of serialized text attributes
  * @start_offset: (out): the start offset for the attributes run
  * @end_offset: (out): the end offset for the attributes run
  *
  * Serializes the attributes inside a text buffer at the given offset.
  *
- * All attributes are serializes as a dictionary of string keys
- * and string values, `a{ss}`.
+ * All attributes are serialized as key/value string pairs inside the
+ * provided @attributes dictionary.
  *
  * The serialization format is private to GTK and should not be
  * considered stable.
  */
 void
-gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
-                                    GVariantBuilder *builder,
-                                    int              offset,
-                                    int             *start_offset,
-                                    int             *end_offset)
+gtk_text_buffer_add_run_attributes (GtkTextBuffer *buffer,
+                                    int            offset,
+                                    GHashTable    *attributes,
+                                    int           *start_offset,
+                                    int           *end_offset)
 {
   GtkTextIter iter;
   GSList *tags, *temp_tags;
@@ -5240,7 +5321,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     "style", &style,
                     NULL);
       if (val_set)
-        g_variant_builder_add (builder, "{ss}", "style", pango_style_to_string (style));
+        g_hash_table_insert (attributes,
+                             g_strdup ("style"),
+                             g_strdup (pango_style_to_string (style)));
       temp_tags = temp_tags->next;
     }
   val_set = FALSE;
@@ -5256,7 +5339,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     "variant", &variant,
                     NULL);
       if (val_set)
-        g_variant_builder_add (builder, "{ss}", "variant", pango_variant_to_string (variant));
+        g_hash_table_insert (attributes,
+                             g_strdup ("variant"),
+                             g_strdup (pango_variant_to_string (variant)));
       temp_tags = temp_tags->next;
     }
   val_set = FALSE;
@@ -5272,7 +5357,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     "stretch", &stretch,
                     NULL);
       if (val_set)
-        g_variant_builder_add (builder, "{ss}", "stretch", pango_stretch_to_string (stretch));
+        g_hash_table_insert (attributes,
+                             g_strdup ("stretch"),
+                             g_strdup (pango_stretch_to_string (stretch)));
       temp_tags = temp_tags->next;
     }
   val_set = FALSE;
@@ -5288,7 +5375,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     "justification", &justification,
                     NULL);
       if (val_set)
-        g_variant_builder_add (builder, "{ss}", "justification", gtk_justification_to_string (justification));
+        g_hash_table_insert (attributes,
+                             g_strdup ("justification"),
+                             g_strdup (gtk_justification_to_string (justification)));
       temp_tags = temp_tags->next;
     }
   val_set = FALSE;
@@ -5303,7 +5392,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
       if (direction != GTK_TEXT_DIR_NONE)
         {
           val_set = TRUE;
-          g_variant_builder_add (builder, "{ss}", "direction", gtk_text_direction_to_string (direction));
+          g_hash_table_insert (attributes,
+                               g_strdup ("direction"),
+                               g_strdup (gtk_text_direction_to_string (direction)));
         }
       temp_tags = temp_tags->next;
     }
@@ -5320,7 +5411,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     "wrap-mode", &wrap_mode,
                     NULL);
       if (val_set)
-        g_variant_builder_add (builder, "{ss}", "wrap-mode", gtk_wrap_mode_to_string (wrap_mode));
+        g_hash_table_insert (attributes,
+                             g_strdup ("wrap-mode"),
+                             g_strdup (gtk_wrap_mode_to_string (wrap_mode)));
       temp_tags = temp_tags->next;
     }
   val_set = FALSE;
@@ -5342,8 +5435,8 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                                    (guint) rgba->green * 65535,
                                    (guint) rgba->blue * 65535);
           gdk_rgba_free (rgba);
-          g_variant_builder_add (builder, "{ss}", "fg-color", value);
-          g_free (value);
+
+          g_hash_table_insert (attributes, g_strdup ("fg-color"), value);
         }
       temp_tags = temp_tags->next;
     }
@@ -5366,8 +5459,8 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                                    (guint) rgba->green * 65535,
                                    (guint) rgba->blue * 65535);
           gdk_rgba_free (rgba);
-          g_variant_builder_add (builder, "{ss}", "bg-color", value);
-          g_free (value);
+
+          g_hash_table_insert (attributes, g_strdup ("bg-color"), value);
         }
       temp_tags = temp_tags->next;
     }
@@ -5384,8 +5477,8 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
         {
           char *value;
           g_object_get (tag, "family", &value, NULL);
-          g_variant_builder_add (builder, "{ss}", "family-name", value);
-          g_free (value);
+
+          g_hash_table_insert (attributes, g_strdup ("family-name"), value);
         }
       temp_tags = temp_tags->next;
     }
@@ -5402,8 +5495,7 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
         {
           char *value;
           g_object_get (tag, "language", &value, NULL);
-          g_variant_builder_add (builder, "{ss}", "language", value);
-          g_free (value);
+          g_hash_table_insert (attributes, g_strdup ("language"), value);
         }
       temp_tags = temp_tags->next;
     }
@@ -5422,10 +5514,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
 
       if (val_set)
         {
-          char *value;
-          value = g_strdup_printf ("%d", weight);
-          g_variant_builder_add (builder, "{ss}", "weight", value);
-          g_free (value);
+          g_hash_table_insert (attributes,
+                               g_strdup ("weight"),
+                               g_strdup_printf ("%d", weight));
         }
       temp_tags = temp_tags->next;
     }
@@ -5452,9 +5543,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
     }
   if (val_set)
     {
-      char *value = g_strdup_printf ("%g", scale);
-      g_variant_builder_add (builder, "{ss}", "scale", value);
-      g_free (value);
+      g_hash_table_insert (attributes,
+                           g_strdup ("scale"),
+                           g_strdup_printf ("%g", scale));
     }
   val_set = FALSE;
 
@@ -5470,9 +5561,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     NULL);
       if (val_set)
         {
-          char *value = g_strdup_printf ("%i", size);
-          g_variant_builder_add (builder, "{ss}", "size", value);
-          g_free (value);
+          g_hash_table_insert (attributes,
+                               g_strdup ("size"),
+                               g_strdup_printf ("%i", size));
         }
       temp_tags = temp_tags->next;
     }
@@ -5489,7 +5580,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     "strikethrough", &strikethrough,
                     NULL);
       if (val_set)
-        g_variant_builder_add (builder, "{ss}", "strikethrough", strikethrough ? "true" : "false");
+        g_hash_table_insert (attributes,
+                             g_strdup ("strikethrough"),
+                             strikethrough ? g_strdup ("true") : g_strdup ("false"));
       temp_tags = temp_tags->next;
     }
   val_set = FALSE;
@@ -5505,8 +5598,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     "underline", &underline,
                     NULL);
       if (val_set)
-        g_variant_builder_add (builder, "{ss}", "underline",
-                               pango_underline_to_string (underline));
+        g_hash_table_insert (attributes,
+                             g_strdup ("underline"),
+                             g_strdup (pango_underline_to_string (underline)));
       temp_tags = temp_tags->next;
     }
   val_set = FALSE;
@@ -5523,9 +5617,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     NULL);
       if (val_set)
         {
-          char *value = g_strdup_printf ("%i", rise);
-          g_variant_builder_add (builder, "{ss}", "rise", value);
-          g_free (value);
+          g_hash_table_insert (attributes,
+                               g_strdup ("rise"),
+                               g_strdup_printf ("%i", rise));
         }
       temp_tags = temp_tags->next;
     }
@@ -5542,7 +5636,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     "background-full-height", &bg_full_height,
                     NULL);
       if (val_set)
-        g_variant_builder_add (builder, "{ss}", "bg-full-height", bg_full_height ? "true" : "false");
+        g_hash_table_insert (attributes,
+                             g_strdup ("bg-full-height"),
+                             bg_full_height ? g_strdup ("true") : g_strdup ("false"));
       temp_tags = temp_tags->next;
     }
   val_set = FALSE;
@@ -5559,9 +5655,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     NULL);
       if (val_set)
         {
-          char *value = g_strdup_printf ("%i", pixels);
-          g_variant_builder_add (builder, "{ss}", "pixels-inside-wrap", value);
-          g_free (value);
+          g_hash_table_insert (attributes,
+                               g_strdup ("pixels-inside-wrap"),
+                               g_strdup_printf ("%i", pixels));
         }
       temp_tags = temp_tags->next;
     }
@@ -5579,9 +5675,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     NULL);
       if (val_set)
         {
-          char *value = g_strdup_printf ("%i", pixels);
-          g_variant_builder_add (builder, "{ss}", "pixels-below-lines", value);
-          g_free (value);
+          g_hash_table_insert (attributes,
+                               g_strdup ("pixels-below-lines"),
+                               g_strdup_printf ("%i", pixels));
         }
       temp_tags = temp_tags->next;
     }
@@ -5599,9 +5695,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     NULL);
       if (val_set)
         {
-          char *value = g_strdup_printf ("%i", pixels);
-          g_variant_builder_add (builder, "{ss}", "pixels-above-lines", value);
-          g_free (value);
+          g_hash_table_insert (attributes,
+                               g_strdup ("pixels-above-lines"),
+                               g_strdup_printf ("%i", pixels));
         }
       temp_tags = temp_tags->next;
     }
@@ -5618,7 +5714,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     "editable", &editable,
                     NULL);
       if (val_set)
-        g_variant_builder_add (builder, "{ss}", "editable", editable ? "true" : "false");
+        g_hash_table_insert (attributes,
+                             g_strdup ("editable"),
+                             editable ? g_strdup ("true") : g_strdup ("false"));
       temp_tags = temp_tags->next;
     }
   val_set = FALSE;
@@ -5634,12 +5732,14 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     "invisible", &invisible,
                     NULL);
       if (val_set)
-        g_variant_builder_add (builder, "{ss}", "invisible", invisible ? "true" : "false");
+        g_hash_table_insert (attributes,
+                             g_strdup ("invisible"),
+                             invisible ? g_strdup ("true") : g_strdup ("false"));
       temp_tags = temp_tags->next;
     }
   val_set = FALSE;
 
- temp_tags = tags;
+  temp_tags = tags;
   while (temp_tags && !val_set)
     {
       GtkTextTag *tag = GTK_TEXT_TAG (temp_tags->data);
@@ -5651,9 +5751,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     NULL);
       if (val_set)
         {
-          char *value = g_strdup_printf ("%i", indent);
-          g_variant_builder_add (builder, "{ss}", "indent", value);
-          g_free (value);
+          g_hash_table_insert (attributes,
+                               g_strdup ("indent"),
+                               g_strdup_printf ("%i", indent));
         }
       temp_tags = temp_tags->next;
     }
@@ -5671,9 +5771,9 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     NULL);
       if (val_set)
         {
-          char *value = g_strdup_printf ("%i", margin);
-          g_variant_builder_add (builder, "{ss}", "right-margin", value);
-          g_free (value);
+          g_hash_table_insert (attributes,
+                               g_strdup ("right-margin"),
+                               g_strdup_printf ("%i", margin));
         }
       temp_tags = temp_tags->next;
     }
@@ -5691,13 +5791,140 @@ gtk_text_buffer_get_run_attributes (GtkTextBuffer   *buffer,
                     NULL);
       if (val_set)
         {
-          char *value = g_strdup_printf ("%i", margin);
-          g_variant_builder_add (builder, "{ss}", "left-margin", value);
-          g_free (value);
+          g_hash_table_insert (attributes,
+                               g_strdup ("left-margin"),
+                               g_strdup_printf ("%i", margin));
         }
       temp_tags = temp_tags->next;
     }
   val_set = FALSE;
 
   g_slist_free (tags);
+}
+
+static void
+clear_commit_func (gpointer data)
+{
+  CommitFunc *func = data;
+
+  if (func->user_data_destroy)
+    func->user_data_destroy (func->user_data);
+}
+
+/**
+ * gtk_text_buffer_add_commit_notify:
+ * @buffer: a [type@Gtk.TextBuffer]
+ * @flags: which notifications should be dispatched to @callback
+ * @commit_notify: (scope async) (closure user_data) (destroy destroy): a
+ *   [callback@Gtk.TextBufferCommitNotify] to call for commit notifications
+ * @user_data: closure data for @commit_notify
+ * @destroy: a callback to free @user_data when @commit_notify is removed
+ *
+ * Adds a [callback@Gtk.TextBufferCommitNotify] to be called when a change
+ * is to be made to the [type@Gtk.TextBuffer].
+ *
+ * Functions are explicitly forbidden from making changes to the
+ * [type@Gtk.TextBuffer] from this callback. It is intended for tracking
+ * changes to the buffer only.
+ *
+ * It may be advantageous to use [callback@Gtk.TextBufferCommitNotify] over
+ * connecting to the [signal@Gtk.TextBuffer::insert-text] or
+ * [signal@Gtk.TextBuffer::delete-range] signals to avoid ordering issues with
+ * other signal handlers which may further modify the [type@Gtk.TextBuffer].
+ *
+ * Returns: a handler id which may be used to remove the commit notify
+ *   callback using [method@Gtk.TextBuffer.remove_commit_notify].
+ *
+ * Since: 4.16
+ */
+guint
+gtk_text_buffer_add_commit_notify (GtkTextBuffer             *buffer,
+                                   GtkTextBufferNotifyFlags   flags,
+                                   GtkTextBufferCommitNotify  commit_notify,
+                                   gpointer                   user_data,
+                                   GDestroyNotify             destroy)
+{
+  CommitFunc func;
+
+  g_return_val_if_fail (GTK_IS_TEXT_BUFFER (buffer), 0);
+  g_return_val_if_fail (buffer->priv->in_commit_notify == FALSE, 0);
+
+  func.callback = commit_notify;
+  func.user_data = user_data;
+  func.user_data_destroy = destroy;
+  func.handler_id = ++buffer->priv->last_commit_handler;
+  func.flags = flags;
+
+  if (buffer->priv->commit_funcs == NULL)
+    {
+      buffer->priv->commit_funcs = g_array_new (FALSE, FALSE, sizeof (CommitFunc));
+      g_array_set_clear_func (buffer->priv->commit_funcs, clear_commit_func);
+    }
+
+  g_array_append_val (buffer->priv->commit_funcs, func);
+
+  return func.handler_id;
+}
+
+/**
+ * gtk_text_buffer_remove_commit_notify:
+ * @buffer: a `GtkTextBuffer`
+ * @commit_notify_handler: the notify handler identifier returned from
+ *   [method@Gtk.TextBuffer.add_commit_notify].
+ *
+ * Removes the `GtkTextBufferCommitNotify` handler previously registered
+ * with [method@Gtk.TextBuffer.add_commit_notify].
+ *
+ * This may result in the `user_data_destroy` being called that was passed when registering
+ * the commit notify functions.
+ *
+ * Since: 4.16
+ */
+void
+gtk_text_buffer_remove_commit_notify (GtkTextBuffer *buffer,
+                                      guint          commit_notify_handler)
+{
+  g_return_if_fail (GTK_IS_TEXT_BUFFER (buffer));
+  g_return_if_fail (commit_notify_handler > 0);
+  g_return_if_fail (buffer->priv->in_commit_notify == FALSE);
+
+  if (buffer->priv->commit_funcs != NULL)
+    {
+      for (guint i = 0; i < buffer->priv->commit_funcs->len; i++)
+        {
+          const CommitFunc *func = &g_array_index (buffer->priv->commit_funcs, CommitFunc, i);
+
+          if (func->handler_id == commit_notify_handler)
+            {
+              g_array_remove_index (buffer->priv->commit_funcs, i);
+
+              if (buffer->priv->commit_funcs->len == 0)
+                g_clear_pointer (&buffer->priv->commit_funcs, g_array_unref);
+
+              return;
+            }
+        }
+    }
+
+  g_warning ("No such GtkTextBufferCommitNotify matching %u",
+             commit_notify_handler);
+}
+
+static void
+gtk_text_buffer_commit_notify (GtkTextBuffer            *buffer,
+                               GtkTextBufferNotifyFlags  flags,
+                               guint                     position,
+                               guint                     length)
+{
+  buffer->priv->in_commit_notify = TRUE;
+
+  for (guint i = 0; i < buffer->priv->commit_funcs->len; i++)
+    {
+      const CommitFunc *func = &g_array_index (buffer->priv->commit_funcs, CommitFunc, i);
+
+      if (func->flags & flags)
+        func->callback (buffer, flags, position, length, func->user_data);
+    }
+
+  buffer->priv->in_commit_notify = FALSE;
 }

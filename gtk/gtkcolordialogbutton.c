@@ -257,7 +257,7 @@ gtk_color_dialog_button_class_init (GtkColorDialogButtonClass *class)
   widget_class->unroot = gtk_color_dialog_button_unroot;
 
   /**
-   * GtkColorDialogButton:dialog: (attributes org.gtk.Property.get=gtk_color_dialog_button_get_dialog org.gtk.Property.set=gtk_color_dialog_button_set_dialog)
+   * GtkColorDialogButton:dialog:
    *
    * The `GtkColorDialog` that contains parameters for
    * the color chooser dialog.
@@ -270,7 +270,7 @@ gtk_color_dialog_button_class_init (GtkColorDialogButtonClass *class)
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkColorDialogButton:rgba: (attributes org.gtk.Property.get=gtk_color_dialog_button_get_rgba org.gtk.Property.set=gtk_color_dialog_button_set_rgba)
+   * GtkColorDialogButton:rgba:
    *
    * The selected color.
    *
@@ -511,7 +511,7 @@ gtk_color_dialog_button_set_dialog (GtkColorDialogButton *self,
  *
  * This function is what should be used to obtain
  * the color that was chosen by the user. To get
- * informed about changes, listen to "notify::color".
+ * informed about changes, listen to "notify::rgba".
  *
  * Returns: the color
  *

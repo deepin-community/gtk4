@@ -99,9 +99,7 @@
  * Objects are described by `<object>` elements, which can contain
  * `<property>` elements to set properties, `<signal>` elements which
  * connect signals to handlers, and `<child>` elements, which describe
- * child objects (most often widgets inside a container, but also e.g.
- * actions in an action group, or columns in a tree model). A `<child>`
- * element contains an `<object>` element which describes the child object.
+ * child objects.
  *
  * Typically, the specific kind of object represented by an `<object>`
  * element is specified by the “class” attribute. If the type has not
@@ -163,7 +161,8 @@
  * - colors (in a format understood by [method@Gdk.RGBA.parse])
  * - `GVariant` (can be specified in the format understood by
  *    [func@GLib.Variant.parse])
- * - pixbufs (can be specified as a filename of an image file to load)
+ * - pixbufs (can be specified as an object id, a resource path or a filename of an image file to load relative to the Builder file or the CWD if [method@Gtk.Builder.add_from_string] was used)
+ * - GFile (like pixbufs, can be specified as an object id, a URI or a filename of a file to load relative to the Builder file or the CWD if [method@Gtk.Builder.add_from_string] was used)
  *
  * Objects can be referred to by their name and by default refer to
  * objects declared in the local XML fragment and objects exposed via
@@ -172,6 +171,53 @@
  * doesn’t have to be constructed before it can be referred to. The
  * exception to this rule is that an object has to be constructed before
  * it can be used as the value of a construct-only property.
+ *
+ * ### Child objects
+ *
+ * Many widgets have properties for child widgets, such as
+ * [property@Gtk.Expander:child]. In this case, the preferred way to
+ * specify the child widget in a ui file is to simply set the property:
+ *
+ * ```xml
+ * <object class="GtkExpander">
+ *   <property name="child">
+ *     <object class="GtkLabel">
+ *     ...
+ *     </object>
+ *   </property>
+ * </object>
+ * ```
+ *
+ * Generic containers that can contain an arbitrary number of children,
+ * such as [class@Gtk.Box] instead use the `<child>` element. A `<child>`
+ * element contains an `<object>` element which describes the child object.
+ * Most often, child objects are widgets inside a container, but they can
+ * also be, e.g., actions in an action group, or columns in a tree model.
+ *
+ * Any object type that implements the [iface@Gtk.Buildable] interface can
+ * specify how children may be added to it. Since many objects and widgets that
+ * are included with GTK already implement the `GtkBuildable` interface,
+ * typically child objects can be added using the `<child>` element without
+ * having to be concerned about the underlying implementation.
+ *
+ * See the [`GtkWidget` documentation](class.Widget.html#gtkwidget-as-gtkbuildable)
+ * for many examples of using `GtkBuilder` with widgets, including setting
+ * child objects using the `<child>` element.
+ *
+ * A noteworthy special case to the general rule that only objects implementing
+ * `GtkBuildable` may specify how to handle the `<child>` element is that
+ * `GtkBuilder` provides special support for adding objects to a
+ * [class@Gio.ListStore] by using the `<child>` element. For instance:
+ *
+ * ```xml
+ * <object class="GListStore">
+ *   <property name="item-type">MyObject</property>
+ *   <child>
+ *     <object class="MyObject" />
+ *   </child>
+ *   ...
+ * </object>
+ * ```
  *
  * ### Property bindings
  *
@@ -207,6 +253,11 @@
  *
  * For more information, see the documentation of the
  * [method@GObject.Object.bind_property] method.
+ *
+ * Please note that another way to set up bindings between objects in .ui files
+ * is to use the `GtkExpression` methodology. See the
+ * [`GtkExpression` documentation](class.Expression.html#gtkexpression-in-ui-files)
+ * for more information.
  *
  * ### Internal children
  *
@@ -402,7 +453,7 @@ gtk_builder_class_init (GtkBuilderClass *klass)
   gobject_class->get_property = gtk_builder_get_property;
 
  /**
-  * GtkBuilder:translation-domain: (attributes org.gtk.Property.get=gtk_builder_get_translation_domain org.gtk.Property.set=gtk_builder_set_translation_domain)
+  * GtkBuilder:translation-domain:
   *
   * The translation domain used when translating property values that
   * have been marked as translatable.
@@ -416,7 +467,7 @@ gtk_builder_class_init (GtkBuilderClass *klass)
                            GTK_PARAM_READWRITE);
 
  /**
-  * GtkBuilder:current-object: (attributes org.gtk.Property.get=gtk_builder_get_current_object org.gtk.Property.set=gtk_builder_set_current_object)
+  * GtkBuilder:current-object:
   *
   * The object the builder is evaluating for.
   */
@@ -426,7 +477,7 @@ gtk_builder_class_init (GtkBuilderClass *klass)
                            GTK_PARAM_READWRITE);
 
  /**
-  * GtkBuilder:scope: (attributes org.gtk.Property.get=gtk_builder_get_scope org.gtk.Property.set=gtk_builder_set_scope)
+  * GtkBuilder:scope:
   *
   * The scope the builder is operating in
   */
@@ -462,7 +513,6 @@ gtk_builder_finalize (GObject *object)
   g_free (priv->filename);
   g_free (priv->resource_prefix);
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (BUILDER_OBJECTS))
     {
       GHashTableIter iter;
@@ -476,7 +526,6 @@ gtk_builder_finalize (GObject *object)
                        G_OBJECT_TYPE_NAME (value), (const char *)key);
         }
     }
-#endif
 
   g_hash_table_destroy (priv->objects);
   if (priv->signals)
@@ -988,14 +1037,12 @@ _gtk_builder_construct (GtkBuilder  *builder,
               const GValue *value = object_properties_get_value (&parameters, i);
 
               iface->set_buildable_property (buildable, builder, name, value);
-#ifdef G_ENABLE_DEBUG
               if (GTK_DEBUG_CHECK (BUILDER))
                 {
                   char *str = g_strdup_value_contents (value);
                   g_message ("set %s: %s = %s", info->id, name, str);
                   g_free (str);
                 }
-#endif
             }
         }
       else
@@ -1004,7 +1051,6 @@ _gtk_builder_construct (GtkBuilder  *builder,
                          parameters.names->len,
                          (const char **) parameters.names->pdata,
                          (GValue *) parameters.values->data);
-#ifdef G_ENABLE_DEBUG
           if (GTK_DEBUG_CHECK (BUILDER))
             {
               for (i = 0; i < parameters.names->len; i++)
@@ -1016,7 +1062,6 @@ _gtk_builder_construct (GtkBuilder  *builder,
                   g_free (str);
                 }
             }
-#endif
         }
     }
 
@@ -1072,14 +1117,12 @@ _gtk_builder_apply_properties (GtkBuilder  *builder,
               const char *name = object_properties_get_name (&parameters, i);
               const GValue *value = object_properties_get_value (&parameters, i);
               iface->set_buildable_property (buildable, builder, name, value);
-#ifdef G_ENABLE_DEBUG
               if (GTK_DEBUG_CHECK (BUILDER))
                 {
                   char *str = g_strdup_value_contents (value);
                   g_message ("set %s: %s = %s", info->id, name, str);
                   g_free (str);
                 }
-#endif
             }
         }
       else
@@ -1088,7 +1131,6 @@ _gtk_builder_apply_properties (GtkBuilder  *builder,
                          parameters.names->len,
                          (const char **) parameters.names->pdata,
                          (GValue *) parameters.values->data);
-#ifdef G_ENABLE_DEBUG
           if (GTK_DEBUG_CHECK (BUILDER))
             {
               for (i = 0; i < parameters.names->len; i++)
@@ -1100,7 +1142,6 @@ _gtk_builder_apply_properties (GtkBuilder  *builder,
                   g_free (str);
                 }
             }
-#endif
         }
     }
 
@@ -1856,7 +1897,7 @@ gtk_builder_get_objects (GtkBuilder *builder)
 }
 
 /**
- * gtk_builder_set_translation_domain: (attributes org.gtk.Method.set_property=translation-domain)
+ * gtk_builder_set_translation_domain:
  * @builder: a `GtkBuilder`
  * @domain: (nullable): the translation domain
  *
@@ -1879,7 +1920,7 @@ gtk_builder_set_translation_domain (GtkBuilder  *builder,
 }
 
 /**
- * gtk_builder_get_translation_domain: (attributes org.gtk.Method.get_property=translation-domain)
+ * gtk_builder_get_translation_domain:
  * @builder: a `GtkBuilder`
  *
  * Gets the translation domain of @builder.
@@ -1928,7 +1969,7 @@ gtk_builder_expose_object (GtkBuilder    *builder,
 }
 
 /**
- * gtk_builder_get_current_object: (attributes org.gtk.Method.get_property=current-object)
+ * gtk_builder_get_current_object:
  * @builder: a `GtkBuilder`
  *
  * Gets the current object set via gtk_builder_set_current_object().
@@ -1946,7 +1987,7 @@ gtk_builder_get_current_object (GtkBuilder *builder)
 }
 
 /**
- * gtk_builder_set_current_object: (attributes org.gtk.Method.set_property=current-object)
+ * gtk_builder_set_current_object:
  * @builder: a `GtkBuilder`
  * @current_object: (nullable) (transfer none): the new current object
  *
@@ -1976,7 +2017,7 @@ gtk_builder_set_current_object (GtkBuilder *builder,
 }
 
 /**
- * gtk_builder_get_scope: (attributes org.gtk.Method.get_property=scope)
+ * gtk_builder_get_scope:
  * @builder: a `GtkBuilder`
  *
  * Gets the scope in use that was set via gtk_builder_set_scope().
@@ -1994,7 +2035,7 @@ gtk_builder_get_scope (GtkBuilder *builder)
 }
 
 /**
- * gtk_builder_set_scope: (attributes org.gtk.Method.set_property=scope)
+ * gtk_builder_set_scope:
  * @builder: a `GtkBuilder`
  * @scope: (nullable) (transfer none): the scope to use
  *
@@ -2616,20 +2657,49 @@ gtk_builder_value_from_string_type (GtkBuilder   *builder,
         }
       else if (G_VALUE_HOLDS (value, G_TYPE_FILE))
         {
+          GObject *object = g_hash_table_lookup (priv->objects, string);
           GFile *file;
 
-          if (g_hash_table_contains (priv->objects, string))
+          if (object)
             {
-              g_set_error (error,
-                           GTK_BUILDER_ERROR,
-                           GTK_BUILDER_ERROR_INVALID_VALUE,
-                           "Could not create file '%s': "
-                           " '%s' is already used as object id",
-                           string, string);
-              return FALSE;
+              if (g_type_is_a (G_OBJECT_TYPE (object), G_VALUE_TYPE (value)))
+                {
+                  g_value_set_object (value, object);
+                  return TRUE;
+                }
+              else
+                {
+                  g_set_error (error,
+                               GTK_BUILDER_ERROR,
+                               GTK_BUILDER_ERROR_INVALID_VALUE,
+                               "Could not create file '%s': "
+                               " '%s' is already used as object id",
+                               string, string);
+                  return FALSE;
+                }
             }
 
-          file = g_file_new_for_uri (string);
+          if (!g_uri_is_valid (string, G_URI_FLAGS_NONE, NULL))
+            {
+              gchar *fullpath = _gtk_builder_get_absolute_filename (builder, string);
+              file = g_file_new_for_path (fullpath);
+              g_free (fullpath);
+            }
+          else if (g_str_has_prefix (string, "file://"))
+            {
+              gchar *path = g_uri_unescape_string (string + strlen ("file://"), "/");
+              gchar *fullpath = _gtk_builder_get_absolute_filename (builder, path);
+
+              file = g_file_new_for_path (fullpath);
+
+              g_free (fullpath);
+              g_free (path);
+            }
+          else
+            {
+              file = g_file_new_for_uri (string);
+            }
+
           g_value_set_object (value, file);
           g_object_unref (G_OBJECT (file));
 
@@ -2655,8 +2725,10 @@ gtk_builder_value_from_string_type (GtkBuilder   *builder,
         {
           GtkShortcutAction *action = gtk_shortcut_action_parse_builder (builder, string, error);
 
-          /* Works for success and failure (NULL) case */
-          g_value_take_object (value, action);
+          if (action)
+            g_value_take_object (value, action);
+          else
+            ret = FALSE;
         }
       else
         {
@@ -2671,7 +2743,7 @@ gtk_builder_value_from_string_type (GtkBuilder   *builder,
               g_set_error (error,
                            GTK_BUILDER_ERROR,
                            GTK_BUILDER_ERROR_INVALID_VALUE,
-                           "Object named \"%s\" is of type \"%s\" which is not compatible with expected type \%s\"",
+                           "Object named \"%s\" is of type \"%s\" which is not compatible with expected type \"%s\"",
                            string, G_OBJECT_TYPE_NAME (object), g_type_name (type));
               ret = FALSE;
             }
@@ -2911,6 +2983,13 @@ gtk_builder_get_type_from_name (GtkBuilder  *builder,
   return type;
 }
 
+/**
+ * gtk_builder_error_quark:
+ *
+ * Registers an error quark for [class@Gtk.Builder] errors.
+ *
+ * Returns: the error quark
+ **/
 GQuark
 gtk_builder_error_quark (void)
 {
