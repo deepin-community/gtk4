@@ -35,7 +35,6 @@ G_BEGIN_DECLS
 
 #define GSK_SERIALIZATION_ERROR       (gsk_serialization_error_quark ())
 
-typedef struct _GskRenderNode           GskRenderNode;
 typedef struct _GskColorStop            GskColorStop;
 typedef struct _GskShadow               GskShadow;
 
@@ -123,6 +122,10 @@ GDK_AVAILABLE_IN_ALL
 void                    gsk_render_node_get_bounds              (GskRenderNode   *node,
                                                                  graphene_rect_t *bounds);
 
+GDK_AVAILABLE_IN_4_16
+gboolean                gsk_render_node_get_opaque_rect         (GskRenderNode   *self,
+                                                                 graphene_rect_t *out_opaque) G_GNUC_WARN_UNUSED_RESULT;
+
 GDK_AVAILABLE_IN_ALL
 void                    gsk_render_node_draw                    (GskRenderNode *node,
                                                                  cairo_t       *cr);
@@ -158,6 +161,8 @@ GskRenderNode *         gsk_render_node_deserialize             (GBytes         
 #define GSK_TYPE_REPEAT_NODE                    (gsk_repeat_node_get_type())
 #define GSK_TYPE_CLIP_NODE                      (gsk_clip_node_get_type())
 #define GSK_TYPE_ROUNDED_CLIP_NODE              (gsk_rounded_clip_node_get_type())
+#define GSK_TYPE_FILL_NODE                      (gsk_fill_node_get_type())
+#define GSK_TYPE_STROKE_NODE                    (gsk_stroke_node_get_type())
 #define GSK_TYPE_SHADOW_NODE                    (gsk_shadow_node_get_type())
 #define GSK_TYPE_BLEND_NODE                     (gsk_blend_node_get_type())
 #define GSK_TYPE_CROSS_FADE_NODE                (gsk_cross_fade_node_get_type())
@@ -165,6 +170,7 @@ GskRenderNode *         gsk_render_node_deserialize             (GBytes         
 #define GSK_TYPE_BLUR_NODE                      (gsk_blur_node_get_type())
 #define GSK_TYPE_MASK_NODE                      (gsk_mask_node_get_type())
 #define GSK_TYPE_GL_SHADER_NODE                 (gsk_gl_shader_node_get_type())
+#define GSK_TYPE_SUBSURFACE_NODE                (gsk_subsurface_node_get_type())
 
 typedef struct _GskDebugNode                    GskDebugNode;
 typedef struct _GskColorNode                    GskColorNode;
@@ -186,13 +192,16 @@ typedef struct _GskColorMatrixNode              GskColorMatrixNode;
 typedef struct _GskRepeatNode                   GskRepeatNode;
 typedef struct _GskClipNode                     GskClipNode;
 typedef struct _GskRoundedClipNode              GskRoundedClipNode;
+typedef struct _GskFillNode                     GskFillNode;
+typedef struct _GskStrokeNode                   GskStrokeNode;
 typedef struct _GskShadowNode                   GskShadowNode;
 typedef struct _GskBlendNode                    GskBlendNode;
 typedef struct _GskCrossFadeNode                GskCrossFadeNode;
 typedef struct _GskTextNode                     GskTextNode;
 typedef struct _GskBlurNode                     GskBlurNode;
 typedef struct _GskMaskNode                     GskMaskNode;
-typedef struct _GskGLShaderNode                 GskGLShaderNode;
+typedef struct _GskGLShaderNode                 GskGLShaderNode GDK_DEPRECATED_TYPE_IN_4_16_FOR(GtkGLArea);
+typedef struct _GskSubsurfaceNode               GskSubsurfaceNode;
 
 GDK_AVAILABLE_IN_ALL
 GType                   gsk_debug_node_get_type                 (void) G_GNUC_CONST;
@@ -247,7 +256,7 @@ GDK_AVAILABLE_IN_ALL
 gsize                    gsk_linear_gradient_node_get_n_color_stops (const GskRenderNode      *node) G_GNUC_PURE;
 GDK_AVAILABLE_IN_ALL
 const GskColorStop *     gsk_linear_gradient_node_get_color_stops   (const GskRenderNode      *node,
-                                                                     gsize                    *n_stops) G_GNUC_PURE;
+                                                                     gsize                    *n_stops);
 
 GDK_AVAILABLE_IN_ALL
 GType                   gsk_repeating_linear_gradient_node_get_type (void) G_GNUC_CONST;
@@ -276,7 +285,7 @@ GDK_AVAILABLE_IN_ALL
 gsize                    gsk_conic_gradient_node_get_n_color_stops  (const GskRenderNode      *node) G_GNUC_PURE;
 GDK_AVAILABLE_IN_ALL
 const GskColorStop *     gsk_conic_gradient_node_get_color_stops    (const GskRenderNode      *node,
-                                                                     gsize                    *n_stops) G_GNUC_PURE;
+                                                                     gsize                    *n_stops);
 
 GDK_AVAILABLE_IN_ALL
 GType                   gsk_radial_gradient_node_get_type (void) G_GNUC_CONST;
@@ -293,7 +302,7 @@ GDK_AVAILABLE_IN_ALL
 gsize                   gsk_radial_gradient_node_get_n_color_stops (const GskRenderNode *node) G_GNUC_PURE;
 GDK_AVAILABLE_IN_ALL
 const GskColorStop *    gsk_radial_gradient_node_get_color_stops   (const GskRenderNode *node,
-                                                                    gsize               *n_stops) G_GNUC_PURE;
+                                                                    gsize               *n_stops);
 GDK_AVAILABLE_IN_ALL
 const graphene_point_t *gsk_radial_gradient_node_get_center        (const GskRenderNode *node) G_GNUC_PURE;
 GDK_AVAILABLE_IN_ALL
@@ -459,6 +468,32 @@ GskRenderNode *         gsk_rounded_clip_node_get_child         (const GskRender
 GDK_AVAILABLE_IN_ALL
 const GskRoundedRect *  gsk_rounded_clip_node_get_clip          (const GskRenderNode      *node) G_GNUC_PURE;
 
+GDK_AVAILABLE_IN_4_14
+GType                   gsk_fill_node_get_type                  (void) G_GNUC_CONST;
+GDK_AVAILABLE_IN_4_14
+GskRenderNode *         gsk_fill_node_new                       (GskRenderNode            *child,
+                                                                 GskPath                  *path,
+                                                                 GskFillRule               fill_rule);
+GDK_AVAILABLE_IN_4_14
+GskRenderNode *         gsk_fill_node_get_child                 (const GskRenderNode      *node);
+GDK_AVAILABLE_IN_4_14
+GskPath *               gsk_fill_node_get_path                  (const GskRenderNode      *node);
+GDK_AVAILABLE_IN_4_14
+GskFillRule             gsk_fill_node_get_fill_rule             (const GskRenderNode      *node);
+
+GDK_AVAILABLE_IN_4_14
+GType                   gsk_stroke_node_get_type                (void) G_GNUC_CONST;
+GDK_AVAILABLE_IN_4_14
+GskRenderNode *         gsk_stroke_node_new                     (GskRenderNode            *child,
+                                                                 GskPath                  *path,
+                                                                 const GskStroke          *stroke);
+GDK_AVAILABLE_IN_4_14
+GskRenderNode *         gsk_stroke_node_get_child               (const GskRenderNode      *node);
+GDK_AVAILABLE_IN_4_14
+GskPath *               gsk_stroke_node_get_path                (const GskRenderNode      *node);
+GDK_AVAILABLE_IN_4_14
+const GskStroke *       gsk_stroke_node_get_stroke              (const GskRenderNode      *node);
+
 GDK_AVAILABLE_IN_ALL
 GType                   gsk_shadow_node_get_type                (void) G_GNUC_CONST;
 GDK_AVAILABLE_IN_ALL
@@ -514,7 +549,7 @@ GDK_AVAILABLE_IN_ALL
 guint                   gsk_text_node_get_num_glyphs            (const GskRenderNode      *node) G_GNUC_PURE;
 GDK_AVAILABLE_IN_ALL
 const PangoGlyphInfo   *gsk_text_node_get_glyphs                (const GskRenderNode      *node,
-                                                                 guint                    *n_glyphs) G_GNUC_PURE;
+                                                                 guint                    *n_glyphs);
 GDK_AVAILABLE_IN_ALL
 const GdkRGBA *         gsk_text_node_get_color                 (const GskRenderNode      *node) G_GNUC_PURE;
 GDK_AVAILABLE_IN_ALL
@@ -543,23 +578,37 @@ GskRenderNode *        gsk_mask_node_get_mask                   (const GskRender
 GDK_AVAILABLE_IN_4_10
 GskMaskMode            gsk_mask_node_get_mask_mode              (const GskRenderNode      *node);
 
-GDK_AVAILABLE_IN_ALL
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+
+GDK_DEPRECATED_IN_4_16_FOR(GtkGLArea)
 GType                   gsk_gl_shader_node_get_type             (void) G_GNUC_CONST;
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_4_16_FOR(GtkGLArea)
 GskRenderNode *         gsk_gl_shader_node_new                  (GskGLShader              *shader,
                                                                  const graphene_rect_t    *bounds,
                                                                  GBytes                   *args,
                                                                  GskRenderNode           **children,
                                                                  guint                     n_children);
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_4_16_FOR(GtkGLArea)
 guint                   gsk_gl_shader_node_get_n_children       (const GskRenderNode      *node) G_GNUC_PURE;
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_4_16_FOR(GtkGLArea)
 GskRenderNode *         gsk_gl_shader_node_get_child            (const GskRenderNode      *node,
                                                                  guint                     idx) G_GNUC_PURE;
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_4_16_FOR(GtkGLArea)
 GBytes *                gsk_gl_shader_node_get_args             (const GskRenderNode      *node) G_GNUC_PURE;
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_4_16_FOR(GtkGLArea)
 GskGLShader *           gsk_gl_shader_node_get_shader           (const GskRenderNode      *node) G_GNUC_PURE;
+
+G_GNUC_END_IGNORE_DEPRECATIONS
+
+GDK_AVAILABLE_IN_4_14
+GType                   gsk_subsurface_node_get_type            (void) G_GNUC_CONST;
+GDK_AVAILABLE_IN_4_14
+GskRenderNode *         gsk_subsurface_node_new                 (GskRenderNode            *child,
+                                                                 gpointer                  subsurface);
+GDK_AVAILABLE_IN_4_14
+GskRenderNode *         gsk_subsurface_node_get_child           (const GskRenderNode      *node) G_GNUC_PURE;
+GDK_AVAILABLE_IN_4_14
+gpointer                gsk_subsurface_node_get_subsurface      (const GskRenderNode      *node);
 
 /**
  * GSK_VALUE_HOLDS_RENDER_NODE:

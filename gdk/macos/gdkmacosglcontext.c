@@ -21,7 +21,6 @@
 
 #include "gdkconfig.h"
 
-#include <OpenGL/gl3.h>
 #include <OpenGL/CGLIOSurface.h>
 #include <QuartzCore/QuartzCore.h>
 
@@ -243,7 +242,7 @@ gdk_macos_gl_context_allocate (GdkMacosGLContext *self)
     return;
 
   /* Alter to an opaque surface if necessary */
-  opaque = _gdk_macos_surface_is_opaque (GDK_MACOS_SURFACE (surface));
+  opaque = gdk_surface_is_opaque (surface);
   if (opaque != self->last_opaque)
     {
       self->last_opaque = !!opaque;
@@ -479,9 +478,11 @@ gdk_macos_gl_context_real_realize (GdkGLContext  *context,
 }
 
 static void
-gdk_macos_gl_context_begin_frame (GdkDrawContext *context,
-                                  GdkMemoryDepth  depth,
-                                  cairo_region_t *region)
+gdk_macos_gl_context_begin_frame (GdkDrawContext  *context,
+                                  GdkMemoryDepth   depth,
+                                  cairo_region_t  *region,
+                                  GdkColorState  **out_color_state,
+                                  GdkMemoryDepth  *out_depth)
 {
   GdkMacosGLContext *self = (GdkMacosGLContext *)context;
   GdkMacosBuffer *buffer;
@@ -499,7 +500,7 @@ gdk_macos_gl_context_begin_frame (GdkDrawContext *context,
   gdk_gl_context_make_current (GDK_GL_CONTEXT (self));
   gdk_macos_gl_context_allocate (self);
 
-  GDK_DRAW_CONTEXT_CLASS (gdk_macos_gl_context_parent_class)->begin_frame (context, prefers_high_depth, region);
+  GDK_DRAW_CONTEXT_CLASS (gdk_macos_gl_context_parent_class)->begin_frame (context, depth, region, out_color_state, out_depth);
 
   gdk_gl_context_make_current (GDK_GL_CONTEXT (self));
   CHECK_GL (NULL, glBindFramebuffer (GL_FRAMEBUFFER, self->fbo));
@@ -544,6 +545,11 @@ gdk_macos_gl_context_end_frame (GdkDrawContext *context,
   [CATransaction setDisableActions:YES];
   _gdk_macos_surface_swap_buffers (GDK_MACOS_SURFACE (surface), painted);
   [CATransaction commit];
+}
+
+static void
+gdk_macos_gl_context_empty_frame (GdkDrawContext *draw_context)
+{
 }
 
 static void
@@ -599,7 +605,7 @@ gdk_macos_gl_context_make_current (GdkGLContext *context,
        * are submitted.
        *
        * TODO: investigate if we need this because we may switch contexts
-       *       durring composition and only need it when returning to a
+       *       during composition and only need it when returning to a
        *       previous context that uses the other context.
        */
       if (current != NULL)
@@ -668,6 +674,7 @@ gdk_macos_gl_context_class_init (GdkMacosGLContextClass *klass)
 
   draw_context_class->begin_frame = gdk_macos_gl_context_begin_frame;
   draw_context_class->end_frame = gdk_macos_gl_context_end_frame;
+  draw_context_class->empty_frame = gdk_macos_gl_context_empty_frame;
   draw_context_class->surface_resized = gdk_macos_gl_context_surface_resized;
 
   gl_class->get_damage = gdk_macos_gl_context_get_damage;

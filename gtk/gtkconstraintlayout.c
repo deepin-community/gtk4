@@ -1099,7 +1099,6 @@ gtk_constraint_layout_allocate (GtkLayoutManager *manager,
                                 child_baseline);
     }
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (LAYOUT))
     {
       GHashTableIter iter;
@@ -1121,7 +1120,6 @@ gtk_constraint_layout_allocate (GtkLayoutManager *manager,
                    gtk_constraint_variable_get_value (var_height));
         }
     }
-#endif
 
   /* The allocation stay constraints are not needed any more */
   gtk_constraint_solver_remove_constraint (solver, stay_w);
@@ -1926,6 +1924,13 @@ attribute_from_name (const char *name)
   return GTK_CONSTRAINT_ATTRIBUTE_NONE;
 }
 
+/**
+ * gtk_constraint_vfl_parser_error_quark:
+ *
+ * Registers an error quark for VFL error parsing.
+ *
+ * Returns: the error quark
+ **/
 GQuark
 gtk_constraint_vfl_parser_error_quark (void)
 {

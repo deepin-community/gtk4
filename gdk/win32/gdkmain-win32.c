@@ -125,8 +125,6 @@ _gdk_other_api_failed (const char *where,
 }
 
 
-#ifdef G_ENABLE_DEBUG
-
 /*
  * Like g_strdup_printf, but to a static buffer. Return value does not
  * have to be g_free()d. The buffer is of bounded size and reused
@@ -732,7 +730,7 @@ _gdk_win32_key_to_string (LONG lParam)
   char buf[100];
   char *keyname_utf8;
 
-  if (GetKeyNameText (lParam, buf, sizeof (buf)) &&
+  if (GetKeyNameTextA (lParam, buf, sizeof (buf)) &&
       (keyname_utf8 = g_locale_to_utf8 (buf, -1, NULL, NULL, NULL)) != NULL)
     {
       char *retval = static_printf ("%s", keyname_utf8);
@@ -782,7 +780,7 @@ _gdk_win32_cf_to_string (UINT format)
       if (format >= CF_PRIVATEFIRST &&
 	  format <= CF_PRIVATELAST)
 	return static_printf ("CF_PRIVATE%d", format - CF_PRIVATEFIRST);
-      if (GetClipboardFormatName (format, buf, sizeof (buf)))
+      if (GetClipboardFormatNameA (format, buf, sizeof (buf)))
 	return static_printf ("'%s'", buf);
       else
 	return static_printf ("unk-%#lx", format);
@@ -796,5 +794,3 @@ _gdk_win32_rect_to_string (const RECT *rect)
 			(rect->right - rect->left), (rect->bottom - rect->top),
 			rect->left, rect->top);
 }
-
-#endif /* G_ENABLE_DEBUG */

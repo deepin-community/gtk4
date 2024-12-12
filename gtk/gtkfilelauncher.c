@@ -26,6 +26,10 @@
 #include "deprecated/gtkshow.h"
 #include <glib/gi18n-lib.h>
 
+#ifdef G_OS_WIN32
+#include "gtkshowwin32.h"
+#endif
+
 /**
  * GtkFileLauncher:
  *
@@ -37,8 +41,6 @@
  * right away.
  *
  * The operation is started with the [method@Gtk.FileLauncher.launch] function.
- * This API follows the GIO async pattern, and the result can be obtained by
- * calling [method@Gtk.FileLauncher.launch_finish].
  *
  * To launch uris that don't represent files, use [class@Gtk.UriLauncher].
  *
@@ -53,11 +55,13 @@ struct _GtkFileLauncher
 
   GFile *file;
   unsigned int always_ask : 1;
+  unsigned int writable   : 1;
 };
 
 enum {
   PROP_FILE = 1,
-  PROP_ALWAYS_ASK = 2,
+  PROP_ALWAYS_ASK,
+  PROP_WRITABLE,
 
   NUM_PROPERTIES
 };
@@ -99,6 +103,10 @@ gtk_file_launcher_get_property (GObject      *object,
       g_value_set_boolean (value, self->always_ask);
       break;
 
+    case PROP_WRITABLE:
+      g_value_set_boolean (value, self->writable);
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -123,6 +131,10 @@ gtk_file_launcher_set_property (GObject      *object,
       gtk_file_launcher_set_always_ask (self, g_value_get_boolean (value));
       break;
 
+    case PROP_WRITABLE:
+      gtk_file_launcher_set_writable (self, g_value_get_boolean (value));
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -139,7 +151,7 @@ gtk_file_launcher_class_init (GtkFileLauncherClass *class)
   object_class->set_property = gtk_file_launcher_set_property;
 
   /**
-   * GtkFileLauncher:file: (attributes org.gtk.Property.get=gtk_file_launcher_get_file org.gtk.Property.set=gtk_file_launcher_set_file)
+   * GtkFileLauncher:file:
    *
    * The file to launch.
    *
@@ -151,7 +163,7 @@ gtk_file_launcher_class_init (GtkFileLauncherClass *class)
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkFileLauncher:always-ask: (attributes org.gtk.Property.get=gtk_file_launcher_get_always_ask org.gtk.Property.set=gtk_file_launcher_set_always_ask)
+   * GtkFileLauncher:always-ask:
    *
    * Whether to ask the user to choose an app for opening the file. If `FALSE`,
    * the file might be opened with a default app or the previous choice.
@@ -160,6 +172,18 @@ gtk_file_launcher_class_init (GtkFileLauncherClass *class)
    */
   properties[PROP_ALWAYS_ASK] =
       g_param_spec_boolean ("always-ask", NULL, NULL,
+                            FALSE,
+                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
+
+  /**
+   * GtkFileLauncher:writable:
+   *
+   * Whether to make the file writable for the handler.
+   *
+   * Since: 4.14
+   */
+  properties[PROP_WRITABLE] =
+      g_param_spec_boolean ("writable", NULL, NULL,
                             FALSE,
                             G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
@@ -272,6 +296,47 @@ gtk_file_launcher_set_always_ask (GtkFileLauncher *self,
   g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_ALWAYS_ASK]);
 }
 
+/**
+ * gtk_file_launcher_get_writable:
+ * @self: a `GtkFileLauncher`
+ *
+ * Returns whether to make the file writable for the handler.
+ *
+ * Returns: `TRUE` if the file will be made writable
+ *
+ * Since: 4.14
+ */
+gboolean
+gtk_file_launcher_get_writable (GtkFileLauncher *self)
+{
+  g_return_val_if_fail (GTK_IS_FILE_LAUNCHER (self), FALSE);
+
+  return self->writable;
+}
+
+/**
+ * gtk_file_launcher_set_writable:
+ * @self: a `GtkFileLauncher`
+ * @writable: a `gboolean`
+ *
+ * Sets whether to make the file writable for the handler.
+ *
+ * Since: 4.14
+ */
+void
+gtk_file_launcher_set_writable (GtkFileLauncher *self,
+                                gboolean         writable)
+{
+  g_return_if_fail (GTK_IS_FILE_LAUNCHER (self));
+
+  if (self->writable == writable)
+    return;
+
+  self->writable = writable;
+
+  g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_WRITABLE]);
+}
+
 /* }}} */
 /* {{{ Async implementation */
 
@@ -371,7 +436,11 @@ show_uri_done (GObject      *source,
   GTask *task = G_TASK (data);
   GError *error = NULL;
 
+#ifndef G_OS_WIN32
   if (!gtk_show_uri_full_finish (parent, result, &error))
+#else
+  if (!gtk_show_uri_win32_finish (parent, result, &error))
+#endif
     {
       if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
         g_task_return_new_error (task, GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_CANCELLED, "Cancelled by user");
@@ -394,16 +463,13 @@ G_GNUC_END_IGNORE_DEPRECATIONS
  * @self: a `GtkFileLauncher`
  * @parent: (nullable): the parent `GtkWindow`
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
  * Launch an application to open the file.
  *
  * This may present an app chooser dialog to the user.
- *
- * The @callback will be called when the operation is completed.
- * It should call [method@Gtk.FileLauncher.launch_finish] to obtain
- * the result.
  *
  * Since: 4.10
  */
@@ -427,16 +493,24 @@ gtk_file_launcher_launch (GtkFileLauncher     *self,
       g_task_return_new_error (task,
                                GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_FAILED,
                                "No file to launch");
+      g_object_unref (task);
       return;
     }
 
 #ifndef G_OS_WIN32
   if (gtk_openuri_portal_is_available ())
     {
-      gtk_openuri_portal_open_async (self->file, FALSE, self->always_ask, parent, cancellable, open_done, task);
+      GtkOpenuriFlags flags = 0;
+
+      if (self->always_ask)
+        flags |= GTK_OPENURI_FLAGS_ASK;
+
+      if (self->writable)
+        flags |= GTK_OPENURI_FLAGS_WRITABLE;
+
+      gtk_openuri_portal_open_async (self->file, FALSE, flags, parent, cancellable, open_done, task);
     }
   else
-#endif
     {
       char *uri = g_file_get_uri (self->file);
 
@@ -446,6 +520,11 @@ G_GNUC_END_IGNORE_DEPRECATIONS
 
       g_free (uri);
     }
+#else /* G_OS_WIN32 */
+  char *path = g_file_get_path (self->file);
+  gtk_show_uri_win32 (parent, path, self->always_ask, cancellable, show_uri_done, task);
+  g_free (path);
+#endif
 }
 
 /**
@@ -479,17 +558,14 @@ gtk_file_launcher_launch_finish (GtkFileLauncher  *self,
  * @self: a `GtkFileLauncher`
  * @parent: (nullable): the parent `GtkWindow`
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
  * Launch a file manager to show the file in its parent directory.
  *
  * This is only supported native files. It will fail if @file
  * is e.g. a http:// uri.
- *
- * The @callback will be called when the operation is completed.
- * It should call [method@Gtk.FileLauncher.open_containing_folder_finish]
- * to obtain the result.
  *
  * Since: 4.10
  */
@@ -513,6 +589,7 @@ gtk_file_launcher_open_containing_folder (GtkFileLauncher     *self,
       g_task_return_new_error (task,
                                GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_FAILED,
                                "No file to open");
+      g_object_unref (task);
       return;
     }
 
@@ -521,13 +598,16 @@ gtk_file_launcher_open_containing_folder (GtkFileLauncher     *self,
       g_task_return_new_error (task,
                                GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_FAILED,
                                "Operation not supported on non-native files");
+      g_object_unref (task);
       return;
     }
 
 #ifndef G_OS_WIN32
   if (gtk_openuri_portal_is_available ())
     {
-      gtk_openuri_portal_open_async (self->file, TRUE, FALSE, parent, cancellable, open_done, task);
+      GtkOpenuriFlags flags = 0;
+
+      gtk_openuri_portal_open_async (self->file, TRUE, flags, parent, cancellable, open_done, task);
     }
   else
 #endif

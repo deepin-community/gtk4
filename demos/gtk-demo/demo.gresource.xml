@@ -116,6 +116,7 @@
     <file>w_resize_cursor.png</file>
     <file>zoom_in_cursor.png</file>
     <file>zoom_out_cursor.png</file>
+    <file>gtk-logo.svg</file>
   </gresource>
   <gresource prefix="/dnd">
     <file>dnd.css</file>
@@ -127,6 +128,7 @@
     <file>fishbowl.ui</file>
     <file>gtkfishbowl.c</file>
     <file>gtkfishbowl.h</file>
+    <file>tiger.node</file>
   </gresource>
   <gresource prefix="/frames">
     <file>frames.ui</file>
@@ -335,6 +337,11 @@
     <file>paintable_symbolic.c</file>
     <file>panes.c</file>
     <file>password_entry.c</file>
+    <file>path_fill.c</file>
+    <file>path_maze.c</file>
+    <file>path_spinner.c</file>
+    <file>path_walk.c</file>
+    <file>path_text.c</file>
     <file>peg_solitaire.c</file>
     <file>pickers.c</file>
     <file>printing.c</file>
@@ -420,6 +427,13 @@
   <gresource prefix="/fontrendering">
     <file>fontrendering.ui</file>
   </gresource>
+  <gresource prefix="/path_walk">
+    <file>path_walk.ui</file>
+    <file compressed="true">path_world.txt</file>
+  </gresource>
+  <gresource prefix="/path_text">
+    <file>path_text.ui</file>
+  </gresource>
   <gresource prefix="/org/gtk/Demo4">
     <file>icons/16x16/actions/application-exit.png</file>
     <file>icons/16x16/actions/document-new.png</file>
@@ -440,6 +454,9 @@
     <file>icons/16x16/categories/applications-other.png</file>
     <file>icons/48x48/status/starred.png</file>
     <file alias="icons/scalable/apps/org.gtk.Demo4.svg">data/scalable/apps/org.gtk.Demo4.svg</file>
+    <file>portland-rose-thumbnail.png</file>
+    <file>large-image-thumbnail.png</file>
+    <file compressed="true">large-image.png</file>
   </gresource>
   <gresource prefix="/org/gtk/Demo4/gtk">
     <file preprocess="xml-stripblanks">help-overlay.ui</file>

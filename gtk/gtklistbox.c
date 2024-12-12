@@ -69,6 +69,15 @@
  * attribute of a `<child>` element. See [method@Gtk.ListBox.set_placeholder]
  * for info.
  *
+ * # Shortcuts and Gestures
+ *
+ * The following signals have default keybindings:
+ *
+ * - [signal@Gtk.ListBox::move-cursor]
+ * - [signal@Gtk.ListBox::select-all]
+ * - [signal@Gtk.ListBox::toggle-cursor-row]
+ * - [signal@Gtk.ListBox::unselect-all]
+ *
  * # CSS nodes
  *
  * |[<!-- language="plain" -->
@@ -496,7 +505,7 @@ gtk_list_box_class_init (GtkListBoxClass *klass)
   klass->selected_rows_changed = gtk_list_box_selected_rows_changed;
 
   /**
-   * GtkListBox:selection-mode: (attributes org.gtk.Property.get=gtk_list_box_get_selection_mode org.gtk.Property.set=gtk_list_box_set_selection_mode)
+   * GtkListBox:selection-mode:
    *
    * The selection mode used by the list box.
    */
@@ -507,7 +516,7 @@ gtk_list_box_class_init (GtkListBoxClass *klass)
                        G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY);
 
     /**
-   * GtkListBox:activate-on-single-click: (attributes org.gtk.Property.get=gtk_list_box_get_activate_on_single_click org.gtk.Property.set=gtk_list_box_set_activate_on_single_click)
+   * GtkListBox:activate-on-single-click:
    *
    * Determines whether children can be activated with a single
    * click, or require a double-click.
@@ -529,7 +538,7 @@ gtk_list_box_class_init (GtkListBoxClass *klass)
 
 
   /**
-   * GtkListBox:show-separators: (attributes org.gtk.Property.get=gtk_list_box_get_show_separators org.gtk.Property.set=gtk_list_box_set_show_separators)
+   * GtkListBox:show-separators:
    *
    * Whether to show separators between rows.
    */
@@ -631,6 +640,13 @@ gtk_list_box_class_init (GtkListBoxClass *klass)
                   NULL,
                   G_TYPE_NONE, 1,
                   GTK_TYPE_LIST_BOX_ROW);
+
+  /**
+   * GtkListBox::activate-cursor-row:
+   * @box: the list box
+   *
+   * Emitted when the cursor row is activated.
+   */
   signals[ACTIVATE_CURSOR_ROW] =
     g_signal_new (I_("activate-cursor-row"),
                   GTK_TYPE_LIST_BOX,
@@ -639,6 +655,15 @@ gtk_list_box_class_init (GtkListBoxClass *klass)
                   NULL, NULL,
                   NULL,
                   G_TYPE_NONE, 0);
+
+  /**
+   * GtkListBox::toggle-cursor-row:
+   * @box: the list box
+   *
+   * Emitted when the cursor row is toggled.
+   *
+   * The default bindings for this signal is <kbd>Ctrl</kbd>+<kbd>␣</kbd>.
+   */
   signals[TOGGLE_CURSOR_ROW] =
     g_signal_new (I_("toggle-cursor-row"),
                   GTK_TYPE_LIST_BOX,
@@ -647,6 +672,26 @@ gtk_list_box_class_init (GtkListBoxClass *klass)
                   NULL, NULL,
                   NULL,
                   G_TYPE_NONE, 0);
+  /**
+   * GtkListBox::move-cursor:
+   * @box: the list box on which the signal is emitted
+   * @step: the granularity of the move, as a `GtkMovementStep`
+   * @count: the number of @step units to move
+   * @extend: whether to extend the selection
+   * @modify: whether to modify the selection
+   *
+   * Emitted when the user initiates a cursor movement.
+   *
+   * The default bindings for this signal come in two variants, the variant with
+   * the Shift modifier extends the selection, the variant without the Shift
+   * modifier does not. There are too many key combinations to list them all
+   * here.
+   *
+   * - <kbd>←</kbd>, <kbd>→</kbd>, <kbd>↑</kbd>, <kbd>↓</kbd>
+   *   move by individual children
+   * - <kbd>Home</kbd>, <kbd>End</kbd> move to the ends of the box
+   * - <kbd>PgUp</kbd>, <kbd>PgDn</kbd> move vertically by pages
+   */
   signals[MOVE_CURSOR] =
     g_signal_new (I_("move-cursor"),
                   GTK_TYPE_LIST_BOX,
@@ -696,6 +741,16 @@ gtk_list_box_class_init (GtkListBoxClass *klass)
                                        "toggle-cursor-row",
                                        NULL);
 
+#ifdef __APPLE__
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_a, GDK_META_MASK,
+                                       "select-all",
+                                       NULL);
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_a, GDK_META_MASK | GDK_SHIFT_MASK,
+                                       "unselect-all",
+                                       NULL);
+#else
   gtk_widget_class_add_binding_signal (widget_class,
                                        GDK_KEY_a, GDK_CONTROL_MASK,
                                        "select-all",
@@ -704,6 +759,7 @@ gtk_list_box_class_init (GtkListBoxClass *klass)
                                        GDK_KEY_a, GDK_CONTROL_MASK | GDK_SHIFT_MASK,
                                        "unselect-all",
                                        NULL);
+#endif
 
   gtk_widget_class_set_css_name (widget_class, I_("list"));
   gtk_widget_class_set_accessible_role (widget_class, GTK_ACCESSIBLE_ROLE_LIST);
@@ -1125,7 +1181,7 @@ gtk_list_box_parent_cb (GObject    *object,
 }
 
 /**
- * gtk_list_box_set_selection_mode: (attributes org.gtk.Method.set_property=selection-mode)
+ * gtk_list_box_set_selection_mode:
  * @box: a `GtkListBox`
  * @mode: The `GtkSelectionMode`
  *
@@ -1164,7 +1220,7 @@ gtk_list_box_set_selection_mode (GtkListBox       *box,
 }
 
 /**
- * gtk_list_box_get_selection_mode: (attributes org.gtk.Method.get_property=selection-mode)
+ * gtk_list_box_get_selection_mode:
  * @box: a `GtkListBox`
  *
  * Gets the selection mode of the listbox.
@@ -1182,8 +1238,9 @@ gtk_list_box_get_selection_mode (GtkListBox *box)
 /**
  * gtk_list_box_set_filter_func:
  * @box: a `GtkListBox`
- * @filter_func: (nullable): callback that lets you filter which rows to show
- * @user_data: (closure): user data passed to @filter_func
+ * @filter_func: (nullable) (scope notified) (closure user_data) (destroy destroy): callback
+ *   that lets you filter which rows to show
+ * @user_data: user data passed to @filter_func
  * @destroy: destroy notifier for @user_data
  *
  * By setting a filter function on the @box one can decide dynamically which
@@ -1223,8 +1280,9 @@ gtk_list_box_set_filter_func (GtkListBox           *box,
 /**
  * gtk_list_box_set_header_func:
  * @box: a `GtkListBox`
- * @update_header: (nullable): callback that lets you add row headers
- * @user_data: (closure): user data passed to @update_header
+ * @update_header: (nullable) (scope notified) (closure user_data) (destroy destroy): callback
+ *   that lets you add row headers
+ * @user_data: user data passed to @update_header
  * @destroy: destroy notifier for @user_data
  *
  * Sets a header function.
@@ -1378,8 +1436,8 @@ gtk_list_box_invalidate_headers (GtkListBox *box)
 /**
  * gtk_list_box_set_sort_func:
  * @box: a `GtkListBox`
- * @sort_func: (nullable): the sort function
- * @user_data: (closure): user data passed to @sort_func
+ * @sort_func: (nullable) (scope notified) (closure user_data) (destroy destroy): the sort function
+ * @user_data: user data passed to @sort_func
  * @destroy: destroy notifier for @user_data
  *
  * Sets a sort function.
@@ -1444,7 +1502,7 @@ gtk_list_box_got_row_changed (GtkListBox    *box,
 }
 
 /**
- * gtk_list_box_set_activate_on_single_click: (attributes org.gtk.Method.set_property=activate-on-single-click)
+ * gtk_list_box_set_activate_on_single_click:
  * @box: a `GtkListBox`
  * @single: a boolean
  *
@@ -1468,7 +1526,7 @@ gtk_list_box_set_activate_on_single_click (GtkListBox *box,
 }
 
 /**
- * gtk_list_box_get_activate_on_single_click: (attributes org.gtk.Method.get_property=activate-on-single-click)
+ * gtk_list_box_get_activate_on_single_click:
  * @box: a `GtkListBox`
  *
  * Returns whether rows activate on single clicks.
@@ -1905,6 +1963,9 @@ gtk_list_box_click_gesture_released (GtkGestureClick *gesture,
           state = gdk_event_get_modifier_state (event);
           extend = (state & GDK_SHIFT_MASK) != 0;
           modify = (state & GDK_CONTROL_MASK) != 0;
+#ifdef __APPLE__
+          modify = modify | ((state & GDK_META_MASK) != 0);
+#endif
           source = gdk_device_get_source (gdk_event_get_device (event));
 
           if (source == GDK_SOURCE_TOUCHSCREEN)
@@ -2968,7 +3029,7 @@ gtk_list_box_row_new (void)
 }
 
 /**
- * gtk_list_box_row_set_child: (attributes org.gtk.Method.set_property=child)
+ * gtk_list_box_row_set_child:
  * @row: a `GtkListBoxRow`
  * @child: (nullable): the child widget
  *
@@ -2996,7 +3057,7 @@ gtk_list_box_row_set_child (GtkListBoxRow *row,
 }
 
 /**
- * gtk_list_box_row_get_child: (attributes org.gtk.Method.get_property=child)
+ * gtk_list_box_row_get_child:
  * @row: a `GtkListBoxRow`
  *
  * Gets the child widget of @row.
@@ -3289,7 +3350,7 @@ gtk_list_box_update_row_styles (GtkListBox *box)
 }
 
 /**
- * gtk_list_box_row_set_activatable: (attributes org.gtk.Method.set_property=activatable)
+ * gtk_list_box_row_set_activatable:
  * @row: a `GtkListBoxRow`
  * @activatable: %TRUE to mark the row as activatable
  *
@@ -3313,7 +3374,7 @@ gtk_list_box_row_set_activatable (GtkListBoxRow *row,
 }
 
 /**
- * gtk_list_box_row_get_activatable: (attributes org.gtk.Method.get_property=activatable)
+ * gtk_list_box_row_get_activatable:
  * @row: a `GtkListBoxRow`
  *
  * Gets whether the row is activatable.
@@ -3329,7 +3390,7 @@ gtk_list_box_row_get_activatable (GtkListBoxRow *row)
 }
 
 /**
- * gtk_list_box_row_set_selectable: (attributes org.gtk.Method.set_property=selectable)
+ * gtk_list_box_row_set_selectable:
  * @row: a `GtkListBoxRow`
  * @selectable: %TRUE to mark the row as selectable
  *
@@ -3365,7 +3426,7 @@ gtk_list_box_row_set_selectable (GtkListBoxRow *row,
 }
 
 /**
- * gtk_list_box_row_get_selectable: (attributes org.gtk.Method.get_property=selectable)
+ * gtk_list_box_row_get_selectable:
  * @row: a `GtkListBoxRow`
  *
  * Gets whether the row can be selected.
@@ -3572,7 +3633,7 @@ gtk_list_box_row_class_init (GtkListBoxRowClass *klass)
   gtk_widget_class_set_activate_signal (widget_class, row_signals[ROW__ACTIVATE]);
 
   /**
-   * GtkListBoxRow:activatable: (attributes org.gtk.Property.get=gtk_list_box_row_get_activatable org.gtk.Property.set=gtk_list_box_row_set_activatable)
+   * GtkListBoxRow:activatable:
    *
    * Determines whether the ::row-activated
    * signal will be emitted for this row.
@@ -3583,7 +3644,7 @@ gtk_list_box_row_class_init (GtkListBoxRowClass *klass)
                           G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkListBoxRow:selectable: (attributes org.gtk.Property.get=gtk_list_box_row_get_selectable org.gtk.Property.set=gtk_list_box_row_set_selectable)
+   * GtkListBoxRow:selectable:
    *
    * Determines whether this row can be selected.
    */
@@ -3593,7 +3654,7 @@ gtk_list_box_row_class_init (GtkListBoxRowClass *klass)
                           G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkListBoxRow:child: (attributes org.gtk.Property.get=gtk_list_box_row_get_child org.gtk.Property.set=gtk_list_box_row_set_child)
+   * GtkListBoxRow:child:
    *
    * The child widget.
    */
@@ -3700,9 +3761,9 @@ gtk_list_box_check_model_compat (GtkListBox *box)
  * gtk_list_box_bind_model:
  * @box: a `GtkListBox`
  * @model: (nullable): the `GListModel` to be bound to @box
- * @create_widget_func: (nullable): a function that creates widgets for items
- *   or %NULL in case you also passed %NULL as @model
- * @user_data: (closure): user data passed to @create_widget_func
+ * @create_widget_func: (nullable) (scope notified) (closure user_data) (destroy user_data_free_func): a function
+ *   that creates widgets for items or %NULL in case you also passed %NULL as @model
+ * @user_data: user data passed to @create_widget_func
  * @user_data_free_func: function for freeing @user_data
  *
  * Binds @model to @box.
@@ -3767,7 +3828,7 @@ gtk_list_box_bind_model (GtkListBox                 *box,
 }
 
 /**
- * gtk_list_box_set_show_separators: (attributes org.gtk.Method.set_property=show-separators)
+ * gtk_list_box_set_show_separators:
  * @box: a `GtkListBox`
  * @show_separators: %TRUE to show separators
  *
@@ -3794,7 +3855,7 @@ gtk_list_box_set_show_separators (GtkListBox *box,
 }
 
 /**
- * gtk_list_box_get_show_separators: (attributes org.gtk.Method.get_property=show-separators)
+ * gtk_list_box_get_show_separators:
  * @box: a `GtkListBox`
  *
  * Returns whether the list box should show separators

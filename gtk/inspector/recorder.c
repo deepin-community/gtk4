@@ -48,7 +48,15 @@
 #include <gsk/gsktransformprivate.h>
 
 #include <glib/gi18n-lib.h>
+#include <gdk/gdkdmabufprivate.h>
+#include <gdk/gdkdmabuftextureprivate.h>
+#include <gdk/gdkgltextureprivate.h>
+#include <gdk/gdkmemorytextureprivate.h>
+#include <gdk/gdksubsurfaceprivate.h>
+#include <gdk/gdksurfaceprivate.h>
 #include <gdk/gdktextureprivate.h>
+#include <gdk/gdkrgbaprivate.h>
+#include <gdk/gdkcolorstateprivate.h>
 #include "gtk/gtkdebug.h"
 #include "gtk/gtkbuiltiniconprivate.h"
 #include "gtk/gtkrendernodepaintableprivate.h"
@@ -95,16 +103,16 @@ object_property_finalize (GObject *object)
 
   g_free (self->name);
   g_free (self->value);
-  g_object_unref (self->texture);
+  g_clear_object (&self->texture);
 
   G_OBJECT_CLASS (object_property_parent_class)->finalize (object);
 }
 
 static void
 object_property_get_property (GObject    *object,
-                                   guint       property_id,
-                                   GValue     *value,
-                                   GParamSpec *pspec)
+                              guint       property_id,
+                              GValue     *value,
+                              GParamSpec *pspec)
 {
   ObjectProperty *self = OBJECT_PROPERTY (object);
 
@@ -115,7 +123,7 @@ object_property_get_property (GObject    *object,
       break;
 
     case OBJECT_PROPERTY_PROP_VALUE:
-      g_value_set_string (value, self->value);
+      g_value_set_string (value, self->value ? self->value : "");
       break;
 
     case OBJECT_PROPERTY_PROP_TEXTURE:
@@ -204,8 +212,12 @@ struct _GtkInspectorRecorder
 
   gboolean debug_nodes;
   gboolean highlight_sequences;
+  gboolean record_events;
+  gboolean stop_after_next_frame;
 
   GdkEventSequence *selected_sequence;
+
+  GtkInspectorEventRecording *last_event_recording;
 };
 
 typedef struct _GtkInspectorRecorderClass
@@ -228,9 +240,15 @@ static GParamSpec *props[LAST_PROP] = { NULL, };
 
 G_DEFINE_TYPE (GtkInspectorRecorder, gtk_inspector_recorder, GTK_TYPE_WIDGET)
 
+typedef struct
+{
+  GskRenderNode *node;
+  const char *role;
+} RenderNode;
+
 static GListModel *
-create_render_node_list_model (GskRenderNode **nodes,
-                               guint           n_nodes)
+create_render_node_list_model (RenderNode *nodes,
+                               guint       n_nodes)
 {
   GListStore *store;
   guint i;
@@ -241,9 +259,11 @@ create_render_node_list_model (GskRenderNode **nodes,
   for (i = 0; i < n_nodes; i++)
     {
       graphene_rect_t bounds;
+      GdkPaintable *paintable;
 
-      gsk_render_node_get_bounds (nodes[i], &bounds);
-      GdkPaintable *paintable = gtk_render_node_paintable_new (nodes[i], &bounds);
+      gsk_render_node_get_bounds (nodes[i].node, &bounds);
+      paintable = gtk_render_node_paintable_new (nodes[i].node, &bounds);
+      g_object_set_data (G_OBJECT (paintable), "role", (gpointer) nodes[i].role);
       g_list_store_append (store, paintable);
       g_object_unref (paintable);
     }
@@ -278,43 +298,50 @@ create_list_model_for_render_node (GskRenderNode *node)
       return NULL;
 
     case GSK_TRANSFORM_NODE:
-      return create_render_node_list_model ((GskRenderNode *[1]) { gsk_transform_node_get_child (node) }, 1);
+      return create_render_node_list_model (&(RenderNode) { gsk_transform_node_get_child (node), NULL }, 1);
 
     case GSK_OPACITY_NODE:
-      return create_render_node_list_model ((GskRenderNode *[1]) { gsk_opacity_node_get_child (node) }, 1);
+      return create_render_node_list_model (&(RenderNode) { gsk_opacity_node_get_child (node), NULL }, 1);
 
     case GSK_COLOR_MATRIX_NODE:
-      return create_render_node_list_model ((GskRenderNode *[1]) { gsk_color_matrix_node_get_child (node) }, 1);
+      return create_render_node_list_model (&(RenderNode) { gsk_color_matrix_node_get_child (node), NULL }, 1);
 
     case GSK_BLUR_NODE:
-      return create_render_node_list_model ((GskRenderNode *[1]) { gsk_blur_node_get_child (node) }, 1);
+      return create_render_node_list_model (&(RenderNode) { gsk_blur_node_get_child (node), NULL }, 1);
 
     case GSK_REPEAT_NODE:
-      return create_render_node_list_model ((GskRenderNode *[1]) { gsk_repeat_node_get_child (node) }, 1);
+      return create_render_node_list_model (&(RenderNode) { gsk_repeat_node_get_child (node), NULL }, 1);
 
     case GSK_CLIP_NODE:
-      return create_render_node_list_model ((GskRenderNode *[1]) { gsk_clip_node_get_child (node) }, 1);
+      return create_render_node_list_model (&(RenderNode) { gsk_clip_node_get_child (node), NULL }, 1);
 
     case GSK_ROUNDED_CLIP_NODE:
-      return create_render_node_list_model ((GskRenderNode *[1]) { gsk_rounded_clip_node_get_child (node) }, 1);
+      return create_render_node_list_model (&(RenderNode) { gsk_rounded_clip_node_get_child (node), NULL }, 1);
+
+    case GSK_FILL_NODE:
+      return create_render_node_list_model (&(RenderNode) { gsk_fill_node_get_child (node), NULL }, 1);
+
+    case GSK_STROKE_NODE:
+      return create_render_node_list_model (&(RenderNode) { gsk_stroke_node_get_child (node), NULL }, 1);
 
     case GSK_SHADOW_NODE:
-      return create_render_node_list_model ((GskRenderNode *[1]) { gsk_shadow_node_get_child (node) }, 1);
+      return create_render_node_list_model (&(RenderNode) { gsk_shadow_node_get_child (node), NULL }, 1);
 
     case GSK_BLEND_NODE:
-      return create_render_node_list_model ((GskRenderNode *[2]) { gsk_blend_node_get_bottom_child (node),
-                                                                   gsk_blend_node_get_top_child (node) }, 2);
+      return create_render_node_list_model ((RenderNode[2]) { { gsk_blend_node_get_bottom_child (node), "Bottom" },
+                                                              { gsk_blend_node_get_top_child (node), "Top" } }, 2);
 
     case GSK_MASK_NODE:
-      return create_render_node_list_model ((GskRenderNode *[2]) { gsk_mask_node_get_source (node),
-                                                                   gsk_mask_node_get_mask (node) }, 2);
+      return create_render_node_list_model ((RenderNode[2]) { { gsk_mask_node_get_source (node), "Source" },
+                                                              { gsk_mask_node_get_mask (node), "Mask" } }, 2);
 
     case GSK_CROSS_FADE_NODE:
-      return create_render_node_list_model ((GskRenderNode *[2]) { gsk_cross_fade_node_get_start_child (node),
-                                                                   gsk_cross_fade_node_get_end_child (node) }, 2);
+      return create_render_node_list_model ((RenderNode[2]) { { gsk_cross_fade_node_get_start_child (node), "Start" },
+                                                              { gsk_cross_fade_node_get_end_child (node), "End" } }, 2);
 
     case GSK_GL_SHADER_NODE:
       {
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
         GListStore *store = g_list_store_new (GDK_TYPE_PAINTABLE);
 
         for (guint i = 0; i < gsk_gl_shader_node_get_n_children (node); i++)
@@ -330,6 +357,7 @@ create_list_model_for_render_node (GskRenderNode *node)
           }
 
         return G_LIST_MODEL (store);
+G_GNUC_END_IGNORE_DEPRECATIONS
       }
 
     case GSK_CONTAINER_NODE:
@@ -356,7 +384,10 @@ create_list_model_for_render_node (GskRenderNode *node)
       }
 
     case GSK_DEBUG_NODE:
-      return create_render_node_list_model ((GskRenderNode *[1]) { gsk_debug_node_get_child (node) }, 1);
+      return create_render_node_list_model (&(RenderNode) { gsk_debug_node_get_child (node), NULL }, 1);
+
+    case GSK_SUBSURFACE_NODE:
+      return create_render_node_list_model (&(RenderNode) { gsk_subsurface_node_get_child (node), NULL }, 1);
     }
 }
 
@@ -425,6 +456,10 @@ node_type_name (GskRenderNodeType type)
       return "Clip";
     case GSK_ROUNDED_CLIP_NODE:
       return "Rounded Clip";
+    case GSK_FILL_NODE:
+      return "Fill";
+    case GSK_STROKE_NODE:
+      return "Stroke";
     case GSK_SHADOW_NODE:
       return "Shadow";
     case GSK_BLEND_NODE:
@@ -439,6 +474,8 @@ node_type_name (GskRenderNodeType type)
       return "Blur";
     case GSK_GL_SHADER_NODE:
       return "GL Shader";
+    case GSK_SUBSURFACE_NODE:
+      return "Subsurface";
     }
 }
 
@@ -466,6 +503,8 @@ node_name (GskRenderNode *node)
     case GSK_REPEAT_NODE:
     case GSK_CLIP_NODE:
     case GSK_ROUNDED_CLIP_NODE:
+    case GSK_FILL_NODE:
+    case GSK_STROKE_NODE:
     case GSK_SHADOW_NODE:
     case GSK_BLEND_NODE:
     case GSK_MASK_NODE:
@@ -473,13 +512,14 @@ node_name (GskRenderNode *node)
     case GSK_TEXT_NODE:
     case GSK_BLUR_NODE:
     case GSK_GL_SHADER_NODE:
+    case GSK_SUBSURFACE_NODE:
       return g_strdup (node_type_name (gsk_render_node_get_node_type (node)));
 
     case GSK_DEBUG_NODE:
       return g_strdup (gsk_debug_node_get_message (node));
 
     case GSK_COLOR_NODE:
-      return gdk_rgba_to_string (gsk_color_node_get_color (node));
+      return gdk_color_to_string (gsk_color_node_get_color2 (node));
 
     case GSK_TEXTURE_NODE:
       {
@@ -663,12 +703,12 @@ static GskRenderNode *
 make_dot (double x, double y)
 {
   GskRenderNode *fill, *dot;
-  GdkRGBA red = (GdkRGBA){ 1, 0, 0, 1 };
+  GdkColor red = GDK_COLOR_SRGB (1, 0, 0, 1);
   graphene_rect_t rect = GRAPHENE_RECT_INIT (x - 3, y - 3, 6, 6);
   graphene_size_t corner = GRAPHENE_SIZE_INIT (3, 3);
   GskRoundedRect clip;
 
-  fill = gsk_color_node_new (&red, &rect);
+  fill = gsk_color_node_new2 (&red, &rect);
   dot = gsk_rounded_clip_node_new (fill, gsk_rounded_rect_init (&clip, &rect,
                                                                &corner, &corner, &corner, &corner));
   gsk_render_node_unref (fill);
@@ -699,7 +739,9 @@ show_event (GtkInspectorRecorder *recorder,
 }
 
 static void populate_event_properties (GListStore *store,
-                                       GdkEvent   *event);
+                                       GdkEvent   *event,
+                                       EventTrace *traces,
+                                       gsize       n_traces);
 
 static void
 recording_selected (GtkSingleSelection   *selection,
@@ -729,10 +771,13 @@ recording_selected (GtkSingleSelection   *selection,
   else if (GTK_INSPECTOR_IS_EVENT_RECORDING (recording))
     {
       GdkEvent *event;
+      EventTrace *traces;
+      gsize n_traces;
 
       gtk_stack_set_visible_child_name (GTK_STACK (recorder->recording_data_stack), "event_data");
 
       event = gtk_inspector_event_recording_get_event (GTK_INSPECTOR_EVENT_RECORDING (recording));
+      traces = gtk_inspector_event_recording_get_traces (GTK_INSPECTOR_EVENT_RECORDING (recording), &n_traces);
 
       for (guint pos = gtk_single_selection_get_selected (selection) - 1; pos > 0; pos--)
         {
@@ -749,7 +794,7 @@ recording_selected (GtkSingleSelection   *selection,
             }
         }
 
-      populate_event_properties (recorder->event_properties, event);
+      populate_event_properties (recorder->event_properties, event, traces, n_traces);
 
       if (recorder->highlight_sequences)
         selected_sequence = gdk_event_get_event_sequence (event);
@@ -766,33 +811,33 @@ recording_selected (GtkSingleSelection   *selection,
 }
 
 static GdkTexture *
-get_color_texture (const GdkRGBA *color)
+get_color2_texture (const GdkColor *color)
 {
+  GdkMemoryTextureBuilder *builder;
   GdkTexture *texture;
-  guchar pixel[4];
+  gsize stride;
   guchar *data;
   GBytes *bytes;
   int width = 30;
   int height = 30;
-  int i;
 
-  pixel[0] = round (color->red * 255);
-  pixel[1] = round (color->green * 255);
-  pixel[2] = round (color->blue * 255);
-  pixel[3] = round (color->alpha * 255);
+  stride = width * 4 * sizeof (float);
+  data = g_malloc (stride * height);
+  for (int i = 0; i < width * height; i++)
+    memcpy (data + 4 * sizeof (float) * i, color->values, 4 * sizeof (float));
 
-  data = g_malloc (4 * width * height);
-  for (i = 0; i < width * height; i++)
-    {
-      memcpy (data + 4 * i, pixel, 4);
-    }
+  bytes = g_bytes_new_take (data, stride * height);
 
-  bytes = g_bytes_new_take (data, 4 * width * height);
-  texture = gdk_memory_texture_new (width,
-                                    height,
-                                    GDK_MEMORY_R8G8B8A8,
-                                    bytes,
-                                    width * 4);
+  builder = gdk_memory_texture_builder_new ();
+  gdk_memory_texture_builder_set_bytes (builder, bytes);
+  gdk_memory_texture_builder_set_stride (builder, stride);
+  gdk_memory_texture_builder_set_width (builder, 30);
+  gdk_memory_texture_builder_set_height (builder, 30);
+  gdk_memory_texture_builder_set_format (builder, GDK_MEMORY_R32G32B32A32_FLOAT);
+  gdk_memory_texture_builder_set_color_state (builder, color->color_state);
+
+  texture = gdk_memory_texture_builder_build (builder);
+
   g_bytes_unref (bytes);
 
   return texture;
@@ -834,24 +879,48 @@ get_linear_gradient_texture (gsize n_stops, const GskColorStop *stops)
 }
 
 static void
-add_text_row (GListStore *store,
-              const char *name,
-              const char *text)
+list_store_add_object_property (GListStore *store,
+                                const char *name,
+                                const char *value,
+                                GdkTexture *texture)
 {
-  g_list_store_append (store, object_property_new (name, text, NULL));
+  gpointer object = object_property_new (name, value, texture);
+  g_list_store_append (store, object);
+  g_object_unref (object);
 }
 
 static void
-add_color_row (GListStore    *store,
-               const char    *name,
-               const GdkRGBA *color)
+add_text_row (GListStore *store,
+              const char *name,
+              const char *format,
+              ...) G_GNUC_PRINTF(3, 4);
+static void
+add_text_row (GListStore *store,
+              const char *name,
+              const char *format,
+              ...)
+{
+  va_list args;
+  char *text;
+
+  va_start (args, format);
+  text = g_strdup_vprintf (format, args);
+  va_end (args);
+  list_store_add_object_property (store, name, text, NULL);
+  g_free (text);
+}
+
+static void
+add_color_row (GListStore     *store,
+               const char     *name,
+               const GdkColor *color)
 {
   char *text;
   GdkTexture *texture;
 
-  text = gdk_rgba_to_string (color);
-  texture = get_color_texture (color);
-  g_list_store_append (store, object_property_new (name, text, texture));
+  text = gdk_color_to_string (color);
+  texture = get_color2_texture (color);
+  list_store_add_object_property (store, name, text, texture);
   g_free (text);
   g_object_unref (texture);
 }
@@ -861,19 +930,15 @@ add_int_row (GListStore  *store,
              const char  *name,
              int          value)
 {
-  char *text = g_strdup_printf ("%d", value);
-  add_text_row (store, name, text);
-  g_free (text);
+  add_text_row (store, name, "%d", value);
 }
 
 static void
-add_uint_row (GListStore  *store,
-              const char  *name,
-              guint        value)
+add_uint_row (GListStore         *store,
+              const char         *name,
+              unsigned long long  value)
 {
-  char *text = g_strdup_printf ("%u", value);
-  add_text_row (store, name, text);
-  g_free (text);
+  add_text_row (store, name, "%llu", value);
 }
 
 static void
@@ -889,31 +954,106 @@ add_float_row (GListStore  *store,
                const char  *name,
                float        value)
 {
-  char *text = g_strdup_printf ("%.2f", value);
-  add_text_row (store, name, text);
-  g_free (text);
+  add_text_row (store, name, "%.2f", value);
+}
+
+static const char *
+enum_to_nick (GType type,
+              int   value)
+{
+  GEnumClass *class;
+  GEnumValue *v;
+
+  class = g_type_class_ref (type);
+  v = g_enum_get_value (class, value);
+  g_type_class_unref (class);
+
+  return v->value_nick;
+}
+
+static void
+add_texture_rows (GListStore *store,
+                  GdkTexture *texture)
+{
+  list_store_add_object_property (store, "Texture", NULL, texture);
+  add_text_row (store, "Type", "%s", G_OBJECT_TYPE_NAME (texture));
+  add_text_row (store, "Size", "%u x %u", gdk_texture_get_width (texture), gdk_texture_get_height (texture));
+  add_text_row (store, "Format", "%s", enum_to_nick (GDK_TYPE_MEMORY_FORMAT, gdk_texture_get_format (texture)));
+  add_text_row (store, "Color State", "%s", gdk_color_state_get_name (gdk_texture_get_color_state (texture)));
+
+  if (GDK_IS_MEMORY_TEXTURE (texture))
+    {
+      GBytes *bytes;
+      gsize stride;
+
+      bytes = gdk_memory_texture_get_bytes (GDK_MEMORY_TEXTURE (texture), &stride);
+      add_uint_row (store, "Buffer Size", g_bytes_get_size (bytes));
+      add_uint_row (store, "Stride", stride);
+    }
+  else if (GDK_IS_GL_TEXTURE (texture))
+    {
+      add_uint_row (store, "Texture Id", gdk_gl_texture_get_id (GDK_GL_TEXTURE (texture)));
+      add_text_row (store, "Mipmap", gdk_gl_texture_has_mipmap (GDK_GL_TEXTURE (texture)) ? "yes" : "no");
+      add_text_row (store, "Sync", gdk_gl_texture_get_sync (GDK_GL_TEXTURE (texture)) ? "yes" : "no");
+    }
+  else if (GDK_IS_DMABUF_TEXTURE (texture))
+    {
+      const GdkDmabuf *dmabuf = gdk_dmabuf_texture_get_dmabuf (GDK_DMABUF_TEXTURE (texture));
+      unsigned i;
+
+      add_text_row (store, "Dmabuf Format", "%.4s:%#" G_GINT64_MODIFIER "x", (char *) &dmabuf->fourcc, dmabuf->modifier);
+      add_uint_row (store, "Planes", dmabuf->n_planes);
+      for (i = 0; i < dmabuf->n_planes; i++)
+        {
+          char *name = g_strdup_printf ("File Descriptor %u", i);
+          add_int_row (store, name, dmabuf->planes[i].fd);
+          g_free (name);
+          name = g_strdup_printf ("Stride %u", i);
+          add_uint_row (store, name, dmabuf->planes[i].stride);
+          g_free (name);
+          name = g_strdup_printf ("Offset %u", i);
+          add_uint_row (store, name, dmabuf->planes[i].offset);
+          g_free (name);
+        }
+    }
 }
 
 static void
 populate_render_node_properties (GListStore    *store,
-                                 GskRenderNode *node)
+                                 GskRenderNode *node,
+                                 const char    *role)
 {
-  graphene_rect_t bounds;
-  char *tmp;
+  graphene_rect_t bounds, opaque;
 
   g_list_store_remove_all (store);
 
   gsk_render_node_get_bounds (node, &bounds);
 
-  add_text_row (store, "Type", node_type_name (gsk_render_node_get_node_type (node)));
+  if (role)
+    add_text_row (store, "Role", "%s", role);
 
-  tmp = g_strdup_printf ("%.2f x %.2f + %.2f + %.2f",
-                         bounds.size.width,
-                         bounds.size.height,
-                         bounds.origin.x,
-                         bounds.origin.y);
-  add_text_row (store, "Bounds", tmp);
-  g_free (tmp);
+  add_text_row (store, "Type", "%s", node_type_name (gsk_render_node_get_node_type (node)));
+
+  add_text_row (store, "Bounds",
+                       "(%.2f, %.2f) to (%.2f, %.2f) - %.2f x %.2f",
+                       bounds.origin.x,
+                       bounds.origin.y,
+                       bounds.origin.x + bounds.size.width,
+                       bounds.origin.y + bounds.size.height,
+                       bounds.size.width,
+                       bounds.size.height);
+
+  if (gsk_render_node_get_opaque_rect (node, &opaque))
+    add_text_row (store, "Opaque",
+                         "(%.2f, %.2f) to (%.2f, %.2f) - %.2f x %.2f",
+                         opaque.origin.x,
+                         opaque.origin.y,
+                         opaque.origin.x + opaque.size.width,
+                         opaque.origin.y + opaque.size.height,
+                         opaque.size.width,
+                         opaque.size.height);
+  else
+    add_text_row (store, "Opaque", "no");
 
   switch (gsk_render_node_get_node_type (node))
     {
@@ -937,31 +1077,35 @@ populate_render_node_properties (GListStore    *store,
         texture = gdk_texture_new_for_surface (drawn_surface);
         cairo_surface_destroy (drawn_surface);
 
-        g_list_store_append (store, object_property_new ("Surface", "", texture));
+        list_store_add_object_property (store, "Surface", NULL, texture);
+        g_object_unref (texture);
       }
       break;
 
     case GSK_TEXTURE_NODE:
       {
-        GdkTexture *texture = g_object_ref (gsk_texture_node_get_texture (node));
-        g_list_store_append (store, object_property_new ("Texture", "", texture));
+        GdkTexture *texture = gsk_texture_node_get_texture (node);
+
+        add_texture_rows (store, texture);
       }
       break;
 
     case GSK_TEXTURE_SCALE_NODE:
       {
-        GdkTexture *texture = g_object_ref (gsk_texture_scale_node_get_texture (node));
+        GdkTexture *texture = gsk_texture_scale_node_get_texture (node);
         GskScalingFilter filter = gsk_texture_scale_node_get_filter (node);
-        g_list_store_append (store, object_property_new ("Texture", "", texture));
+        gchar *tmp;
+
+        add_texture_rows (store, texture);
 
         tmp = g_enum_to_string (GSK_TYPE_SCALING_FILTER, filter);
-        add_text_row (store, "Filter", tmp);
+        add_text_row (store, "Filter", "%s", tmp);
         g_free (tmp);
       }
       break;
 
     case GSK_COLOR_NODE:
-      add_color_row (store, "Color", gsk_color_node_get_color (node));
+      add_color_row (store, "Color", gsk_color_node_get_color2 (node));
       break;
 
     case GSK_LINEAR_GRADIENT_NODE:
@@ -975,20 +1119,18 @@ populate_render_node_properties (GListStore    *store,
         GString *s;
         GdkTexture *texture;
 
-        tmp = g_strdup_printf ("%.2f %.2f ⟶ %.2f %.2f", start->x, start->y, end->x, end->y);
-        add_text_row (store, "Direction", tmp);
-        g_free (tmp);
+        add_text_row (store, "Direction", "%.2f %.2f ⟶ %.2f %.2f", start->x, start->y, end->x, end->y);
 
         s = g_string_new ("");
         for (i = 0; i < n_stops; i++)
           {
-            tmp = gdk_rgba_to_string (&stops[i].color);
-            g_string_append_printf (s, "%.2f, %s\n", stops[i].offset, tmp);
-            g_free (tmp);
+            g_string_append_printf (s, "%.2f, ", stops[i].offset);
+            gdk_rgba_print (&stops[i].color, s);
+            g_string_append_c (s, '\n');
           }
 
         texture = get_linear_gradient_texture (n_stops, stops);
-        g_list_store_append (store, object_property_new ("Color Stops", s->str, texture));
+        list_store_add_object_property (store, "Color Stops", s->str, texture);
         g_object_unref (texture);
 
         g_string_free (s, TRUE);
@@ -1009,28 +1151,20 @@ populate_render_node_properties (GListStore    *store,
         GString *s;
         GdkTexture *texture;
 
-        tmp = g_strdup_printf ("%.2f, %.2f", center->x, center->y);
-        add_text_row (store, "Center", tmp);
-        g_free (tmp);
-
-        tmp = g_strdup_printf ("%.2f ⟶  %.2f", start, end);
-        add_text_row (store, "Direction", tmp);
-        g_free (tmp);
-
-        tmp = g_strdup_printf ("%.2f, %.2f", hradius, vradius);
-        add_text_row (store, "Radius", tmp);
-        g_free (tmp);
+        add_text_row (store, "Center", "%.2f, %.2f", center->x, center->y);
+        add_text_row (store, "Direction", "%.2f ⟶  %.2f", start, end);
+        add_text_row (store, "Radius", "%.2f, %.2f", hradius, vradius);
 
         s = g_string_new ("");
         for (i = 0; i < n_stops; i++)
           {
-            tmp = gdk_rgba_to_string (&stops[i].color);
-            g_string_append_printf (s, "%.2f, %s\n", stops[i].offset, tmp);
-            g_free (tmp);
+            g_string_append_printf (s, "%.2f, ", stops[i].offset);
+            gdk_rgba_print (&stops[i].color, s);
+            g_string_append_c (s, '\n');
           }
 
         texture = get_linear_gradient_texture (n_stops, stops);
-        g_list_store_append (store, object_property_new ("Color Stops", s->str, texture));
+        list_store_add_object_property (store, "Color Stops", s->str, texture);
         g_object_unref (texture);
 
         g_string_free (s, TRUE);
@@ -1047,24 +1181,19 @@ populate_render_node_properties (GListStore    *store,
         GString *s;
         GdkTexture *texture;
 
-        tmp = g_strdup_printf ("%.2f, %.2f", center->x, center->y);
-        add_text_row (store, "Center", tmp);
-        g_free (tmp);
-
-        tmp = g_strdup_printf ("%.2f", rotation);
-        add_text_row (store, "Rotation", tmp);
-        g_free (tmp);
+        add_text_row (store, "Center", "%.2f, %.2f", center->x, center->y);
+        add_text_row (store, "Rotation", "%.2f", rotation);
 
         s = g_string_new ("");
         for (i = 0; i < n_stops; i++)
           {
-            tmp = gdk_rgba_to_string (&stops[i].color);
-            g_string_append_printf (s, "%.2f, %s\n", stops[i].offset, tmp);
-            g_free (tmp);
+            g_string_append_printf (s, "%.2f, ", stops[i].offset);
+            gdk_rgba_print (&stops[i].color, s);
+            g_string_append_c (s, '\n');
           }
 
         texture = get_linear_gradient_texture (n_stops, stops);
-        g_list_store_append (store, object_property_new ("Color Stops", s->str, texture));
+        list_store_add_object_property (store, "Color Stops", s->str, texture);
         g_object_unref (texture);
 
         g_string_free (s, TRUE);
@@ -1074,27 +1203,25 @@ populate_render_node_properties (GListStore    *store,
     case GSK_TEXT_NODE:
       {
         const PangoFont *font = gsk_text_node_get_font (node);
-        const GdkRGBA *color = gsk_text_node_get_color (node);
         const graphene_point_t *offset = gsk_text_node_get_offset (node);
         PangoFontDescription *desc;
         GString *s;
+        gchar *tmp;
 
         desc = pango_font_describe ((PangoFont *)font);
         tmp = pango_font_description_to_string (desc);
-        add_text_row (store, "Font", tmp);
+        add_text_row (store, "Font", "%s", tmp);
         g_free (tmp);
         pango_font_description_free (desc);
 
         s = g_string_sized_new (0);
         gsk_text_node_serialize_glyphs (node, s);
-        add_text_row (store, "Glyphs", s->str);
+        add_text_row (store, "Glyphs", "%s", s->str);
         g_string_free (s, TRUE);
 
-        tmp = g_strdup_printf ("%.2f %.2f", offset->x, offset->y);
-        add_text_row (store, "Position", tmp);
-        g_free (tmp);
+        add_text_row (store, "Position", "%.2f %.2f", offset->x, offset->y);
 
-        add_color_row (store, "Color", color);
+        add_color_row (store, "Color", gsk_text_node_get_color2 (node));
       }
       break;
 
@@ -1102,18 +1229,18 @@ populate_render_node_properties (GListStore    *store,
       {
         const char *name[4] = { "Top", "Right", "Bottom", "Left" };
         const float *widths = gsk_border_node_get_widths (node);
-        const GdkRGBA *colors = gsk_border_node_get_colors (node);
+        const GdkColor *colors = gsk_border_node_get_colors2 (node);
         int i;
 
         for (i = 0; i < 4; i++)
           {
             GdkTexture *texture;
-            char *text;
+            char *text, *tmp;
 
-            text = gdk_rgba_to_string (&colors[i]);
+            text = gdk_color_to_string (&colors[i]);
             tmp = g_strdup_printf ("%.2f, %s", widths[i], text);
-            texture = get_color_texture (&colors[i]);
-            g_list_store_append (store, object_property_new (name[i], tmp, texture));
+            texture = get_color2_texture (&colors[i]);
+            list_store_add_object_property (store, name[i], tmp, texture);
             g_object_unref (texture);
 
             g_free (text);
@@ -1133,17 +1260,15 @@ populate_render_node_properties (GListStore    *store,
     case GSK_BLEND_NODE:
       {
         GskBlendMode mode = gsk_blend_node_get_blend_mode (node);
-        tmp = g_enum_to_string (GSK_TYPE_BLEND_MODE, mode);
-        add_text_row (store, "Blendmode", tmp);
-        g_free (tmp);
+        add_text_row (store, "Blendmode", "%s", enum_to_nick (GSK_TYPE_BLEND_MODE, mode));
       }
       break;
 
     case GSK_MASK_NODE:
       {
         GskMaskMode mode = gsk_mask_node_get_mask_mode (node);
-        tmp = g_enum_to_string (GSK_TYPE_MASK_MODE, mode);
-        add_text_row (store, "Mask mode", tmp);
+        gchar *tmp = g_enum_to_string (GSK_TYPE_MASK_MODE, mode);
+        add_text_row (store, "Mask mode", "%s", tmp);
         g_free (tmp);
       }
       break;
@@ -1154,6 +1279,7 @@ populate_render_node_properties (GListStore    *store,
 
     case GSK_GL_SHADER_NODE:
       {
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
         GskGLShader *shader = gsk_gl_shader_node_get_shader (node);
         GBytes *args = gsk_gl_shader_node_get_args (node);
         int i;
@@ -1200,9 +1326,7 @@ populate_render_node_properties (GListStore    *store,
                   gsk_gl_shader_get_arg_vec2 (shader, args, i, &v);
                   float x = graphene_vec2_get_x (&v);
                   float y = graphene_vec2_get_x (&v);
-                  char *s = g_strdup_printf ("%.2f %.2f", x, y);
-                  add_text_row (store, title, s);
-                  g_free (s);
+                  add_text_row (store, title, "%.2f %.2f", x, y);
                 }
                 break;
 
@@ -1213,9 +1337,7 @@ populate_render_node_properties (GListStore    *store,
                   float x = graphene_vec3_get_x (&v);
                   float y = graphene_vec3_get_y (&v);
                   float z = graphene_vec3_get_z (&v);
-                  char *s = g_strdup_printf ("%.2f %.2f %.2f", x, y, z);
-                  add_text_row (store, title, s);
-                  g_free (s);
+                  add_text_row (store, title, "%.2f %.2f %.2f", x, y, z);
                 }
                 break;
 
@@ -1227,20 +1349,19 @@ populate_render_node_properties (GListStore    *store,
                   float y = graphene_vec4_get_y (&v);
                   float z = graphene_vec4_get_z (&v);
                   float w = graphene_vec4_get_w (&v);
-                  char *s = g_strdup_printf ("%.2f %.2f %.2f %.2f", x, y, z, w);
-                  add_text_row (store, title, s);
-                  g_free (s);
+                  add_text_row (store, title, "%.2f %.2f %.2f %.2f", x, y, z, w);
                 }
                 break;
               }
             g_free (title);
           }
+G_GNUC_END_IGNORE_DEPRECATIONS
       }
       break;
 
     case GSK_INSET_SHADOW_NODE:
       {
-        const GdkRGBA *color = gsk_inset_shadow_node_get_color (node);
+        const GdkColor *color = gsk_inset_shadow_node_get_color2 (node);
         float dx = gsk_inset_shadow_node_get_dx (node);
         float dy = gsk_inset_shadow_node_get_dy (node);
         float spread = gsk_inset_shadow_node_get_spread (node);
@@ -1248,9 +1369,7 @@ populate_render_node_properties (GListStore    *store,
 
         add_color_row (store, "Color", color);
 
-        tmp = g_strdup_printf ("%.2f %.2f", dx, dy);
-        add_text_row (store, "Offset", tmp);
-        g_free (tmp);
+        add_text_row (store, "Offset", "%.2f %.2f", dx, dy);
 
         add_float_row (store, "Spread", spread);
         add_float_row (store, "Radius", radius);
@@ -1260,7 +1379,7 @@ populate_render_node_properties (GListStore    *store,
     case GSK_OUTSET_SHADOW_NODE:
       {
         const GskRoundedRect *outline = gsk_outset_shadow_node_get_outline (node);
-        const GdkRGBA *color = gsk_outset_shadow_node_get_color (node);
+        const GdkColor *color = gsk_outset_shadow_node_get_color2 (node);
         float dx = gsk_outset_shadow_node_get_dx (node);
         float dy = gsk_outset_shadow_node_get_dy (node);
         float spread = gsk_outset_shadow_node_get_spread (node);
@@ -1268,16 +1387,13 @@ populate_render_node_properties (GListStore    *store,
         float rect[12];
 
         gsk_rounded_rect_to_float (outline, graphene_point_zero (), rect);
-        tmp = g_strdup_printf ("%.2f x %.2f + %.2f + %.2f",
-                               rect[2], rect[3], rect[0], rect[1]);
-        add_text_row (store, "Outline", tmp);
-        g_free (tmp);
+        add_text_row (store, "Outline",
+                             "%.2f x %.2f + %.2f + %.2f",
+                             rect[2], rect[3], rect[0], rect[1]);
 
         add_color_row (store, "Color", color);
 
-        tmp = g_strdup_printf ("%.2f %.2f", dx, dy);
-        add_text_row (store, "Offset", tmp);
-        g_free (tmp);
+        add_text_row (store, "Offset", "%.2f %.2f", dx, dy);
 
         add_float_row (store, "Spread", spread);
         add_float_row (store, "Radius", radius);
@@ -1288,13 +1404,12 @@ populate_render_node_properties (GListStore    *store,
       {
         const graphene_rect_t *child_bounds = gsk_repeat_node_get_child_bounds (node);
 
-        tmp = g_strdup_printf ("%.2f x %.2f + %.2f + %.2f",
-                               child_bounds->size.width,
-                               child_bounds->size.height,
-                               child_bounds->origin.x,
-                               child_bounds->origin.y);
-        add_text_row (store, "Child Bounds", tmp);
-        g_free (tmp);
+        add_text_row (store, "Child Bounds",
+                             "%.2f x %.2f + %.2f + %.2f",
+                             child_bounds->size.width,
+                             child_bounds->size.height,
+                             child_bounds->origin.x,
+                             child_bounds->origin.y);
       }
       break;
 
@@ -1303,88 +1418,103 @@ populate_render_node_properties (GListStore    *store,
         const graphene_matrix_t *matrix = gsk_color_matrix_node_get_color_matrix (node);
         const graphene_vec4_t *offset = gsk_color_matrix_node_get_color_offset (node);
 
-        tmp = g_strdup_printf ("% .2f % .2f % .2f % .2f\n"
-                               "% .2f % .2f % .2f % .2f\n"
-                               "% .2f % .2f % .2f % .2f\n"
-                               "% .2f % .2f % .2f % .2f",
-                               graphene_matrix_get_value (matrix, 0, 0),
-                               graphene_matrix_get_value (matrix, 0, 1),
-                               graphene_matrix_get_value (matrix, 0, 2),
-                               graphene_matrix_get_value (matrix, 0, 3),
-                               graphene_matrix_get_value (matrix, 1, 0),
-                               graphene_matrix_get_value (matrix, 1, 1),
-                               graphene_matrix_get_value (matrix, 1, 2),
-                               graphene_matrix_get_value (matrix, 1, 3),
-                               graphene_matrix_get_value (matrix, 2, 0),
-                               graphene_matrix_get_value (matrix, 2, 1),
-                               graphene_matrix_get_value (matrix, 2, 2),
-                               graphene_matrix_get_value (matrix, 2, 3),
-                               graphene_matrix_get_value (matrix, 3, 0),
-                               graphene_matrix_get_value (matrix, 3, 1),
-                               graphene_matrix_get_value (matrix, 3, 2),
-                               graphene_matrix_get_value (matrix, 3, 3));
-        add_text_row (store, "Matrix", tmp);
-        g_free (tmp);
-        tmp = g_strdup_printf ("%.2f %.2f %.2f %.2f",
-                               graphene_vec4_get_x (offset),
-                               graphene_vec4_get_y (offset),
-                               graphene_vec4_get_z (offset),
-                               graphene_vec4_get_w (offset));
-        add_text_row (store, "Offset", tmp);
-        g_free (tmp);
+        add_text_row (store, "Matrix",
+                             "% .2f % .2f % .2f % .2f\n"
+                             "% .2f % .2f % .2f % .2f\n"
+                             "% .2f % .2f % .2f % .2f\n"
+                             "% .2f % .2f % .2f % .2f",
+                             graphene_matrix_get_value (matrix, 0, 0),
+                             graphene_matrix_get_value (matrix, 0, 1),
+                             graphene_matrix_get_value (matrix, 0, 2),
+                             graphene_matrix_get_value (matrix, 0, 3),
+                             graphene_matrix_get_value (matrix, 1, 0),
+                             graphene_matrix_get_value (matrix, 1, 1),
+                             graphene_matrix_get_value (matrix, 1, 2),
+                             graphene_matrix_get_value (matrix, 1, 3),
+                             graphene_matrix_get_value (matrix, 2, 0),
+                             graphene_matrix_get_value (matrix, 2, 1),
+                             graphene_matrix_get_value (matrix, 2, 2),
+                             graphene_matrix_get_value (matrix, 2, 3),
+                             graphene_matrix_get_value (matrix, 3, 0),
+                             graphene_matrix_get_value (matrix, 3, 1),
+                             graphene_matrix_get_value (matrix, 3, 2),
+                             graphene_matrix_get_value (matrix, 3, 3));
+        add_text_row (store, "Offset",
+                             "%.2f %.2f %.2f %.2f",
+                             graphene_vec4_get_x (offset),
+                             graphene_vec4_get_y (offset),
+                             graphene_vec4_get_z (offset),
+                             graphene_vec4_get_w (offset));
       }
       break;
 
     case GSK_CLIP_NODE:
       {
         const graphene_rect_t *clip = gsk_clip_node_get_clip (node);
-        tmp = g_strdup_printf ("%.2f x %.2f + %.2f + %.2f",
-                               clip->size.width,
-                               clip->size.height,
-                               clip->origin.x,
-                               clip->origin.y);
-        add_text_row (store, "Clip", tmp);
-        g_free (tmp);
+        add_text_row (store, "Clip",
+                             "%.2f x %.2f + %.2f + %.2f",
+                             clip->size.width,
+                             clip->size.height,
+                             clip->origin.x,
+                             clip->origin.y);
       }
       break;
 
     case GSK_ROUNDED_CLIP_NODE:
       {
         const GskRoundedRect *clip = gsk_rounded_clip_node_get_clip (node);
-        tmp = g_strdup_printf ("%.2f x %.2f + %.2f + %.2f",
-                               clip->bounds.size.width,
-                               clip->bounds.size.height,
-                               clip->bounds.origin.x,
-                               clip->bounds.origin.y);
-        add_text_row (store, "Clip", tmp);
+        add_text_row (store, "Clip",
+                             "%.2f x %.2f + %.2f + %.2f",
+                             clip->bounds.size.width,
+                             clip->bounds.size.height,
+                             clip->bounds.origin.x,
+                             clip->bounds.origin.y);
+
+        add_text_row (store, "Top Left Corner Size", "%.2f x %.2f", clip->corner[0].width, clip->corner[0].height);
+        add_text_row (store, "Top Right Corner Size", "%.2f x %.2f", clip->corner[1].width, clip->corner[1].height);
+        add_text_row (store, "Bottom Right Corner Size", "%.2f x %.2f", clip->corner[2].width, clip->corner[2].height);
+        add_text_row (store, "Bottom Left Corner Size", "%.2f x %.2f", clip->corner[3].width, clip->corner[3].height);
+      }
+      break;
+
+    case GSK_FILL_NODE:
+      {
+        GskPath *path = gsk_fill_node_get_path (node);
+        GskFillRule fill_rule = gsk_fill_node_get_fill_rule (node);
+        char *tmp;
+
+        tmp = gsk_path_to_string (path);
+        add_text_row (store, "Path", "%s", tmp);
         g_free (tmp);
 
-        tmp = g_strdup_printf ("%.2f x %.2f", clip->corner[0].width, clip->corner[0].height);
-        add_text_row (store, "Top Left Corner Size", tmp);
+        add_text_row (store, "Fill rule", "%s", enum_to_nick (GSK_TYPE_FILL_RULE, fill_rule));
+      }
+      break;
+
+    case GSK_STROKE_NODE:
+      {
+        GskPath *path = gsk_stroke_node_get_path (node);
+        const GskStroke *stroke = gsk_stroke_node_get_stroke (node);
+        GskLineCap line_cap = gsk_stroke_get_line_cap (stroke);
+        GskLineJoin line_join = gsk_stroke_get_line_join (stroke);
+        char *tmp;
+
+        tmp = gsk_path_to_string (path);
+        add_text_row (store, "Path", "%s", tmp);
         g_free (tmp);
 
-        tmp = g_strdup_printf ("%.2f x %.2f", clip->corner[1].width, clip->corner[1].height);
-        add_text_row (store, "Top Right Corner Size", tmp);
-        g_free (tmp);
-
-        tmp = g_strdup_printf ("%.2f x %.2f", clip->corner[2].width, clip->corner[2].height);
-        add_text_row (store, "Bottom Right Corner Size", tmp);
-        g_free (tmp);
-
-        tmp = g_strdup_printf ("%.2f x %.2f", clip->corner[3].width, clip->corner[3].height);
-        add_text_row (store, "Bottom Left Corner Size", tmp);
-        g_free (tmp);
+        add_text_row (store, "Line width", "%.2f", gsk_stroke_get_line_width (stroke));
+        add_text_row (store, "Line cap", "%s", enum_to_nick (GSK_TYPE_LINE_CAP, line_cap));
+        add_text_row (store, "Line join", "%s", enum_to_nick (GSK_TYPE_LINE_JOIN, line_join));
       }
       break;
 
     case GSK_CONTAINER_NODE:
-      tmp = g_strdup_printf ("%d", gsk_container_node_get_n_children (node));
-      add_text_row (store, "Children", tmp);
-      g_free (tmp);
+      add_uint_row (store, "Children", gsk_container_node_get_n_children (node));
       break;
 
     case GSK_DEBUG_NODE:
-      add_text_row (store, "Message", gsk_debug_node_get_message (node));
+      add_text_row (store, "Message", "%s", gsk_debug_node_get_message (node));
       break;
 
     case GSK_SHADOW_NODE:
@@ -1394,17 +1524,14 @@ populate_render_node_properties (GListStore    *store,
         for (i = 0; i < gsk_shadow_node_get_n_shadows (node); i++)
           {
             char *label;
-            char *value;
-            const GskShadow *shadow = gsk_shadow_node_get_shadow (node, i);
+            const GskShadow2 *shadow = gsk_shadow_node_get_shadow2 (node, i);
 
             label = g_strdup_printf ("Color %d", i);
             add_color_row (store, label, &shadow->color);
             g_free (label);
 
             label = g_strdup_printf ("Offset %d", i);
-            value = g_strdup_printf ("%.2f %.2f", shadow->dx, shadow->dy);
-            add_text_row (store, label, value);
-            g_free (value);
+            add_text_row (store, label, "%.2f %.2f", shadow->offset.x, shadow->offset.y);
             g_free (label);
 
             label = g_strdup_printf ("Radius %d", i);
@@ -1417,22 +1544,32 @@ populate_render_node_properties (GListStore    *store,
     case GSK_TRANSFORM_NODE:
       {
         static const char * category_names[] = {
-          [GSK_TRANSFORM_CATEGORY_UNKNOWN] = "unknown",
-          [GSK_TRANSFORM_CATEGORY_ANY] = "any",
-          [GSK_TRANSFORM_CATEGORY_3D] = "3D",
-          [GSK_TRANSFORM_CATEGORY_2D] = "2D",
-          [GSK_TRANSFORM_CATEGORY_2D_AFFINE] = "2D affine",
-          [GSK_TRANSFORM_CATEGORY_2D_TRANSLATE] = "2D translate",
-          [GSK_TRANSFORM_CATEGORY_IDENTITY] = "identity"
+          [GSK_FINE_TRANSFORM_CATEGORY_UNKNOWN] = "unknown",
+          [GSK_FINE_TRANSFORM_CATEGORY_ANY] = "any",
+          [GSK_FINE_TRANSFORM_CATEGORY_3D] = "3D",
+          [GSK_FINE_TRANSFORM_CATEGORY_2D] = "2D",
+          [GSK_FINE_TRANSFORM_CATEGORY_2D_DIHEDRAL] = "2D dihedral",
+          [GSK_FINE_TRANSFORM_CATEGORY_2D_NEGATIVE_AFFINE] = "2D negative affine",
+          [GSK_FINE_TRANSFORM_CATEGORY_2D_AFFINE] = "2D affine",
+          [GSK_FINE_TRANSFORM_CATEGORY_2D_TRANSLATE] = "2D translate",
+          [GSK_FINE_TRANSFORM_CATEGORY_IDENTITY] = "identity"
         };
         GskTransform *transform;
         char *s;
 
         transform = gsk_transform_node_get_transform (node);
         s = gsk_transform_to_string (transform);
-        add_text_row (store, "Matrix", s);
+        add_text_row (store, "Matrix", "%s", s);
         g_free (s);
-        add_text_row (store, "Category", category_names[gsk_transform_get_category (transform)]);
+        add_text_row (store, "Category", "%s", category_names[gsk_transform_get_fine_category (transform)]);
+      }
+      break;
+
+    case GSK_SUBSURFACE_NODE:
+      {
+        GdkSubsurface *subsurface = gsk_subsurface_node_get_subsurface (node);
+
+        add_text_row (store, "Subsurface", "%p", subsurface);
       }
       break;
 
@@ -1610,14 +1747,15 @@ scroll_unit_name (GdkScrollUnit unit)
 
 static void
 populate_event_properties (GListStore *store,
-                           GdkEvent   *event)
+                           GdkEvent   *event,
+                           EventTrace *traces,
+                           gsize       n_traces)
 {
   GdkEventType type;
   GdkDevice *device;
   GdkDeviceTool *tool;
   double x, y;
   double dx, dy;
-  char *tmp;
   GdkModifierType state;
   GdkScrollUnit scroll_unit;
 
@@ -1625,28 +1763,24 @@ populate_event_properties (GListStore *store,
 
   type = gdk_event_get_event_type (event);
 
-  add_text_row (store, "Type", event_type_name (type));
+  add_text_row (store, "Type", "%s", event_type_name (type));
   if (gdk_event_get_event_sequence (event) != NULL)
     {
-      tmp = g_strdup_printf ("%p", gdk_event_get_event_sequence (event));
-      add_text_row (store, "Sequence", tmp);
-      g_free (tmp);
+      add_text_row (store, "Sequence", "%p", gdk_event_get_event_sequence (event));
     }
   add_int_row (store, "Timestamp", gdk_event_get_time (event));
 
   device = gdk_event_get_device (event);
   if (device)
-    add_text_row (store, "Device", gdk_device_get_name (device));
+    add_text_row (store, "Device", "%s", gdk_device_get_name (device));
 
   tool = gdk_event_get_device_tool (event);
   if (tool)
-    add_text_row (store, "Device Tool", device_tool_name (tool));
+    add_text_row (store, "Device Tool", "%s", device_tool_name (tool));
 
   if (gdk_event_get_position (event, &x, &y))
     {
-      tmp = g_strdup_printf ("%.2f %.2f", x, y);
-      add_text_row (store, "Position", tmp);
-      g_free (tmp);
+      add_text_row (store, "Position", "%.2f %.2f", x, y);
     }
 
   if (tool)
@@ -1662,9 +1796,7 @@ populate_event_properties (GListStore *store,
             {
               double val;
               gdk_event_get_axis (event, i, &val);
-              tmp = g_strdup_printf ("%.2f", val);
-              add_text_row (store, axis_name (i), tmp);
-              g_free (tmp);
+              add_text_row (store, axis_name (i), "%.2f", val);
             }
         }
     }
@@ -1672,8 +1804,8 @@ populate_event_properties (GListStore *store,
   state = gdk_event_get_modifier_state (event);
   if (state != 0)
     {
-      tmp = modifier_names (state);
-      add_text_row (store, "State", tmp);
+      char *tmp = modifier_names (state);
+      add_text_row (store, "State", "%s", tmp);
       g_free (tmp);
     }
 
@@ -1686,30 +1818,35 @@ populate_event_properties (GListStore *store,
 
     case GDK_KEY_PRESS:
     case GDK_KEY_RELEASE:
-      add_int_row (store, "Keycode", gdk_key_event_get_keycode (event));
-      add_int_row (store, "Keyval", gdk_key_event_get_keyval (event));
-      tmp = key_event_string (event);
-      add_text_row (store, "Key", tmp);
-      g_free (tmp);
-      add_int_row (store, "Layout", gdk_key_event_get_layout (event));
-      add_int_row (store, "Level", gdk_key_event_get_level (event));
-      add_boolean_row (store, "Is Modifier", gdk_key_event_is_modifier (event));
+      {
+        char *tmp;
+
+        tmp = modifier_names (gdk_key_event_get_consumed_modifiers (event));
+        add_text_row (store, "Consumed modifiers", "%s", tmp);
+        g_free (tmp);
+        add_int_row (store, "Keycode", gdk_key_event_get_keycode (event));
+        add_int_row (store, "Keyval", gdk_key_event_get_keyval (event));
+        tmp = key_event_string (event);
+        add_text_row (store, "Key", "%s", tmp);
+        g_free (tmp);
+        add_int_row (store, "Layout", gdk_key_event_get_layout (event));
+        add_int_row (store, "Level", gdk_key_event_get_level (event));
+        add_boolean_row (store, "Is Modifier", gdk_key_event_is_modifier (event));
+      }
       break;
 
     case GDK_SCROLL:
       if (gdk_scroll_event_get_direction (event) == GDK_SCROLL_SMOOTH)
         {
           gdk_scroll_event_get_deltas (event, &x, &y);
-          tmp = g_strdup_printf ("%.2f %.2f", x, y);
-          add_text_row (store, "Delta", tmp);
-          g_free (tmp);
+          add_text_row (store, "Delta", "%.2f %.2f", x, y);
 
           scroll_unit = gdk_scroll_event_get_unit (event);
-          add_text_row (store, "Unit", scroll_unit_name (scroll_unit));
+          add_text_row (store, "Unit", "%s", scroll_unit_name (scroll_unit));
         }
       else
         {
-          add_text_row (store, "Direction", scroll_direction_name (gdk_scroll_event_get_direction (event)));
+          add_text_row (store, "Direction", "%s", scroll_direction_name (gdk_scroll_event_get_direction (event)));
         }
       add_boolean_row (store, "Is Stop", gdk_scroll_event_is_stop (event));
       break;
@@ -1731,20 +1868,14 @@ populate_event_properties (GListStore *store,
 
     case GDK_TOUCHPAD_SWIPE:
     case GDK_TOUCHPAD_PINCH:
-      add_text_row (store, "Phase", gesture_phase_name (gdk_touchpad_event_get_gesture_phase (event)));
+      add_text_row (store, "Phase", "%s", gesture_phase_name (gdk_touchpad_event_get_gesture_phase (event)));
       add_int_row (store, "Fingers", gdk_touchpad_event_get_n_fingers (event));
       gdk_touchpad_event_get_deltas (event, &dx, &dy);
-      tmp = g_strdup_printf ("%.2f %.f2", dx, dy);
-      add_text_row (store, "Delta", tmp);
-      g_free (tmp);
+      add_text_row (store, "Delta", "%.2f %.f2", dx, dy);
       if (type == GDK_TOUCHPAD_PINCH)
         {
-          tmp = g_strdup_printf ("%.2f", gdk_touchpad_event_get_pinch_angle_delta (event));
-          add_text_row (store, "Angle Delta", tmp);
-          g_free (tmp);
-          tmp = g_strdup_printf ("%.2f", gdk_touchpad_event_get_pinch_scale (event));
-          add_text_row (store, "Scale", tmp);
-          g_free (tmp);
+          add_text_row (store, "Angle Delta", "%.2f", gdk_touchpad_event_get_pinch_angle_delta (event));
+          add_text_row (store, "Scale", "%.2f", gdk_touchpad_event_get_pinch_scale (event));
         }
       break;
 
@@ -1783,11 +1914,34 @@ populate_event_properties (GListStore *store,
                 }
             }
 
-          add_text_row (store, "History", s->str);
+          add_text_row (store, "History", "%s", s->str);
 
           g_string_free (s, TRUE);
           g_free (history);
         }
+    }
+
+  if (n_traces > 0)
+    {
+      GString *s = g_string_new ("");
+      const char *phase_name[] = { "", "↘", "↙", "⊙" };
+
+      add_text_row (store, "Target", "%s", g_type_name (traces[0].target_type));
+
+      for (gsize i = 0; i < n_traces; i++)
+        {
+          EventTrace *t = &traces[i];
+
+          g_string_append_printf (s, "%s %s %s %s\n",
+                                  phase_name[t->phase],
+                                  g_type_name (t->widget_type),
+                                  g_type_name (t->controller_type),
+                                  t->handled ? "✓" : "");
+          g_string_append_c (s, '\n');
+        }
+
+      add_text_row (store, "Trace", "%s", s->str);
+      g_string_free (s, TRUE);
     }
 }
 
@@ -1817,6 +1971,7 @@ render_node_list_selection_changed (GtkListBox           *list,
   GskRenderNode *node;
   GdkPaintable *paintable;
   GtkTreeListRow *row_item;
+  const char *role;
 
   row_item = gtk_single_selection_get_selected_item (recorder->render_node_selection);
 
@@ -1830,7 +1985,8 @@ render_node_list_selection_changed (GtkListBox           *list,
 
   gtk_picture_set_paintable (GTK_PICTURE (recorder->render_node_view), paintable);
   node = gtk_render_node_paintable_get_render_node (GTK_RENDER_NODE_PAINTABLE (paintable));
-  populate_render_node_properties (recorder->render_node_properties, node);
+  role = g_object_get_data (G_OBJECT (paintable), "role");
+  populate_render_node_properties (recorder->render_node_properties, node, role);
 
   g_object_unref (paintable);
 }
@@ -1911,22 +2067,13 @@ render_node_clip (GtkButton            *button,
 {
   GskRenderNode *node;
   GdkClipboard *clipboard;
-  GBytes *bytes;
-  GdkContentProvider *content;
 
   node = get_selected_node (recorder);
   if (node == NULL)
     return;
 
-  bytes = gsk_render_node_serialize (node);
-  content = gdk_content_provider_new_for_bytes ("text/plain;charset=utf-8", bytes);
-
   clipboard = gtk_widget_get_clipboard (GTK_WIDGET (recorder));
-
-  gdk_clipboard_set_content (clipboard, content);
-
-  g_object_unref (content);
-  g_bytes_unref (bytes);
+  gdk_clipboard_set (clipboard, GSK_TYPE_RENDER_NODE, node);
 }
 
 static void
@@ -2328,6 +2475,7 @@ gtk_inspector_recorder_set_recording (GtkInspectorRecorder *recorder,
     {
       recorder->recording = gtk_inspector_start_recording_new ();
       recorder->start_time = 0;
+      recorder->record_events = TRUE;
       gtk_inspector_recorder_add_recording (recorder, recorder->recording);
     }
   else
@@ -2338,10 +2486,29 @@ gtk_inspector_recorder_set_recording (GtkInspectorRecorder *recorder,
   g_object_notify_by_pspec (G_OBJECT (recorder), props[PROP_RECORDING]);
 }
 
+void
+gtk_inspector_recorder_record_single_frame (GtkInspectorRecorder *recorder)
+{
+  if (gtk_inspector_recorder_is_recording (recorder))
+    return;
+
+  recorder->recording = gtk_inspector_start_recording_new ();
+  recorder->start_time = 0;
+  recorder->record_events = FALSE;
+  recorder->stop_after_next_frame = TRUE;
+  gtk_inspector_recorder_add_recording (recorder, recorder->recording);
+}
+
 gboolean
 gtk_inspector_recorder_is_recording (GtkInspectorRecorder *recorder)
 {
   return recorder->recording != NULL;
+}
+
+static gboolean
+gtk_inspector_recorder_is_recording_events (GtkInspectorRecorder *recorder)
+{
+  return recorder->recording != NULL && recorder->record_events;
 }
 
 void
@@ -2381,6 +2548,18 @@ gtk_inspector_recorder_record_render (GtkInspectorRecorder *recorder,
                                                   node);
   gtk_inspector_recorder_add_recording (recorder, recording);
   g_object_unref (recording);
+
+  if (recorder->stop_after_next_frame)
+    {
+      GtkSingleSelection *selection;
+
+      recorder->stop_after_next_frame = FALSE;
+      gtk_inspector_recorder_set_recording (recorder, FALSE);
+
+      selection = GTK_SINGLE_SELECTION (gtk_list_view_get_model (GTK_LIST_VIEW (recorder->recordings_list)));
+      gtk_single_selection_set_selected (selection, g_list_model_get_n_items (G_LIST_MODEL (selection)) - 1);
+      render_node_clip (NULL, recorder);
+    }
 }
 
 void
@@ -2392,7 +2571,7 @@ gtk_inspector_recorder_record_event (GtkInspectorRecorder *recorder,
   GdkFrameClock *frame_clock;
   gint64 frame_time;
 
-  if (!gtk_inspector_recorder_is_recording (recorder))
+  if (!gtk_inspector_recorder_is_recording_events (recorder))
     return;
 
   frame_clock = gtk_widget_get_frame_clock (widget);
@@ -2410,7 +2589,30 @@ gtk_inspector_recorder_record_event (GtkInspectorRecorder *recorder,
 
   recording = gtk_inspector_event_recording_new (frame_time, event);
   gtk_inspector_recorder_add_recording (recorder, recording);
+
+  recorder->last_event_recording = (GtkInspectorEventRecording *) recording;
+
   g_object_unref (recording);
+}
+
+void
+gtk_inspector_recorder_trace_event (GtkInspectorRecorder *recorder,
+                                    GdkEvent             *event,
+                                    GtkPropagationPhase   phase,
+                                    GtkWidget            *widget,
+                                    GtkEventController   *controller,
+                                    GtkWidget            *target,
+                                    gboolean              handled)
+{
+  GtkInspectorEventRecording *recording = recorder->last_event_recording;
+
+  if (!gtk_inspector_recorder_is_recording_events (recorder))
+    return;
+
+  if (recording == NULL || recording->event != event)
+    return;
+
+  gtk_inspector_event_recording_add_trace (recording, phase, widget, controller, target, handled);
 }
 
 void

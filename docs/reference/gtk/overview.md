@@ -28,6 +28,9 @@ GTK depends on the following libraries:
  - **OpenGL**: OpenGL is the premier environment for developing portable,
    interactive 2D and 3D graphics applications. More information available
    on the [Khronos website][opengl].
+ - **Vulkan**: Vulkan is the a newer graphics API, that can be considered
+   the successor of OpenGL.  More information available on the
+   [Khronos website][vulkan].
  - **Pango**: Pango is a library for internationalized text handling. It
    centers around the `PangoLayout` object, representing a paragraph of
    text.  Pango provides the engine for `GtkTextView`, `GtkLabel`,
@@ -55,11 +58,12 @@ GTK is divided into three parts:
    storage types for efficient use in GUI applications, and much more.
 
 [gnu-lgpl]: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html
-[glib]: https://developer.gnome.org/glib/stable/
-[gobject]: https://developer.gnome.org/gobject/stable/
-[gio]: https://developer.gnome.org/gio/stable/
+[glib]: https://docs.gtk.org/glib/
+[gobject]: https://docs.gtk.org/gobject/
+[gio]: https://docs.gtk.org/gio/
 [cairo]: https://www.cairographics.org/manual/
 [opengl]: https://www.opengl.org/about/
-[pango]: https://pango.gnome.org/
-[gdkpixbuf]: https://developer.gnome.org/gdk-pixbuf/stable/
+[vulkan]: https://www.vulkan.org/
+[pango]: https://docs.gtk.org/Pango/
+[gdkpixbuf]: https://docs.gtk.org/gdk-pixbuf/
 [graphene]: https://ebassi.github.io/graphene/

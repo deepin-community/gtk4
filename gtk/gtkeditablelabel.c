@@ -48,6 +48,20 @@
  * for leaving the edit mode are the Enter key (to save
  * the results) or the Escape key (to cancel the editing).
  *
+ * # Shortcuts and Gestures
+ *
+ * `GtkEditableLabel` supports the following keyboard shortcuts:
+ *
+ * - <kbd>Enter</kbd> starts editing.
+ * - <kbd>Escape</kbd> stops editing.
+ *
+ * # Actions
+ *
+ * `GtkEditableLabel` defines a set of built-in actions:
+ *
+ * - `editing.starts` switches the widget into editing mode.
+ * - `editing.stop` switches the widget out of editing mode.
+ *
  * # CSS nodes
  *
  * ```
@@ -387,7 +401,7 @@ gtk_editable_label_class_init (GtkEditableLabelClass *class)
   widget_class->grab_focus = gtk_editable_label_grab_focus;
 
   /**
-   * GtkEditableLabel:editing: (attributes org.gtk.Property.get=gtk_editable_label_get_editing)
+   * GtkEditableLabel:editing:
    *
    * This property is %TRUE while the widget is in edit mode.
    */
@@ -407,7 +421,7 @@ gtk_editable_label_class_init (GtkEditableLabelClass *class)
    * user can make changes to the text.
    *
    * The default bindings for this action are clicking
-   * on the widget and the Enter key.
+   * on the widget and the <kbd>Enter</kbd> key.
    *
    * This action is disabled when `GtkEditableLabel:editing`
    * is %FALSE.
@@ -466,7 +480,7 @@ gtk_editable_label_new (const char *str)
 }
 
 /**
- * gtk_editable_label_get_editing: (attributes org.gtk.Method.get_property=editing)
+ * gtk_editable_label_get_editing:
  * @self: a `GtkEditableLabel`
  *
  * Returns whether the label is currently in “editing mode”.

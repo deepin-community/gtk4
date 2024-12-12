@@ -90,6 +90,10 @@
  * </object>
  * ```
  *
+ * If a `GtkDropDown` is created in this manner, or with
+ * [ctor@Gtk.DropDown.new_from_strings], for instance, the object returned from
+ * [method@Gtk.DropDown.get_selected_item] will be a [class@Gtk.StringObject].
+ *
  * To learn more about the list widget framework, see the
  * [overview](section-list-widget.html).
  *
@@ -554,7 +558,7 @@ gtk_drop_down_class_init (GtkDropDownClass *klass)
   widget_class->unroot = gtk_drop_down_unroot;
 
   /**
-   * GtkDropDown:factory: (attributes org.gtk.Property.get=gtk_drop_down_get_factory org.gtk.Property.set=gtk_drop_down_set_factory)
+   * GtkDropDown:factory:
    *
    * Factory for populating list items.
    */
@@ -564,7 +568,7 @@ gtk_drop_down_class_init (GtkDropDownClass *klass)
                          G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkDropDown:header-factory: (attributes org.gtk.Property.get=gtk_drop_down_get_header_factory org.gtk.Property.set=gtk_drop_down_set_header_factory)
+   * GtkDropDown:header-factory:
    *
    * The factory for creating header widgets for the popup.
    *
@@ -576,7 +580,7 @@ gtk_drop_down_class_init (GtkDropDownClass *klass)
                          G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkDropDown:list-factory: (attributes org.gtk.Property.get=gtk_drop_down_get_list_factory org.gtk.Property.set=gtk_drop_down_set_list_factory)
+   * GtkDropDown:list-factory:
    *
    * The factory for populating list items in the popup.
    *
@@ -588,7 +592,7 @@ gtk_drop_down_class_init (GtkDropDownClass *klass)
                          G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkDropDown:model: (attributes org.gtk.Property.get=gtk_drop_down_get_model org.gtk.Property.set=gtk_drop_down_set_model)
+   * GtkDropDown:model:
    *
    * Model for the displayed items.
    */
@@ -598,7 +602,7 @@ gtk_drop_down_class_init (GtkDropDownClass *klass)
                          G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkDropDown:selected: (attributes org.gtk.Property.get=gtk_drop_down_get_selected org.gtk.Property.set=gtk_drop_down_set_selected)
+   * GtkDropDown:selected:
    *
    * The position of the selected item.
    *
@@ -611,7 +615,7 @@ gtk_drop_down_class_init (GtkDropDownClass *klass)
                        G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkDropDown:selected-item: (attributes org.gtk.Property.get=gtk_drop_down_get_selected_item)
+   * GtkDropDown:selected-item:
    *
    * The selected item.
    */
@@ -621,7 +625,7 @@ gtk_drop_down_class_init (GtkDropDownClass *klass)
                          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkDropDown:enable-search: (attributes org.gtk.Property.get=gtk_drop_down_get_enable_search org.gtk.Property.set=gtk_drop_down_set_enable_search)
+   * GtkDropDown:enable-search:
    *
    * Whether to show a search entry in the popup.
    *
@@ -634,7 +638,7 @@ gtk_drop_down_class_init (GtkDropDownClass *klass)
                          G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkDropDown:expression: (type GtkExpression) (attributes org.gtk.Property.get=gtk_drop_down_get_expression org.gtk.Property.set=gtk_drop_down_set_expression)
+   * GtkDropDown:expression: (type GtkExpression)
    *
    * An expression to evaluate to obtain strings to match against the search
    * term.
@@ -648,7 +652,7 @@ gtk_drop_down_class_init (GtkDropDownClass *klass)
                                G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkDropDown:show-arrow: (attributes org.gtk.Property.get=gtk_drop_down_get_show_arrow org.gtk.Property.set=gtk_drop_down_set_show_arrow)
+   * GtkDropDown:show-arrow:
    *
    * Whether to show an arrow within the GtkDropDown widget.
    *
@@ -660,7 +664,7 @@ gtk_drop_down_class_init (GtkDropDownClass *klass)
                            G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkDropDown:search-match-mode: (attributes org.gtk.Property.get=gtk_drop_down_get_search_match_mode org.gtk.Property.set=gtk_drop_down_set_search_match_mode)
+   * GtkDropDown:search-match-mode:
    *
    * The match mode for the search filter.
    *
@@ -755,6 +759,21 @@ selected_item_changed (GtkDropDown *self,
 }
 
 static void
+root_changed (GtkWidget   *box,
+              GParamSpec  *pspec,
+              GtkDropDown *self)
+{
+  GtkWidget *icon;
+
+  icon = gtk_widget_get_last_child (box);
+
+  if (gtk_widget_get_ancestor (box, GTK_TYPE_POPOVER) == self->popup)
+    gtk_widget_set_visible (icon, TRUE);
+  else
+    gtk_widget_set_visible (icon, FALSE);
+}
+
+static void
 bind_item (GtkSignalListItemFactory *factory,
            GtkListItem              *list_item,
            gpointer                  data)
@@ -763,13 +782,11 @@ bind_item (GtkSignalListItemFactory *factory,
   gpointer item;
   GtkWidget *box;
   GtkWidget *label;
-  GtkWidget *icon;
   GValue value = G_VALUE_INIT;
 
   item = gtk_list_item_get_item (list_item);
   box = gtk_list_item_get_child (list_item);
   label = gtk_widget_get_first_child (box);
-  icon = gtk_widget_get_last_child (box);
 
   if (self->expression &&
       gtk_expression_evaluate (self->expression, item, &value))
@@ -789,17 +806,13 @@ bind_item (GtkSignalListItemFactory *factory,
       g_critical ("Either GtkDropDown:factory or GtkDropDown:expression must be set");
     }
 
-  if (gtk_widget_get_ancestor (box, GTK_TYPE_POPOVER) == self->popup)
-    {
-      gtk_widget_set_visible (icon, TRUE);
-      g_signal_connect (self, "notify::selected-item",
-                        G_CALLBACK (selected_item_changed), list_item);
-      selected_item_changed (self, NULL, list_item);
-    }
-  else
-    {
-      gtk_widget_set_visible (icon, FALSE);
-    }
+  g_signal_connect (self, "notify::selected-item",
+                    G_CALLBACK (selected_item_changed), list_item);
+  selected_item_changed (self, NULL, list_item);
+
+  g_signal_connect (box, "notify::root",
+                    G_CALLBACK (root_changed), self);
+  root_changed (box, NULL, self);
 }
 
 static void
@@ -808,8 +821,12 @@ unbind_item (GtkSignalListItemFactory *factory,
              gpointer                  data)
 {
   GtkDropDown *self = data;
+  GtkWidget *box;
+
+  box = gtk_list_item_get_child (list_item);
 
   g_signal_handlers_disconnect_by_func (self, selected_item_changed, list_item);
+  g_signal_handlers_disconnect_by_func (box, root_changed, self);
 }
 
 static void
@@ -893,7 +910,7 @@ gtk_drop_down_new_from_strings (const char * const *strings)
 }
 
 /**
- * gtk_drop_down_get_model: (attributes org.gtk.Method.get_property=model)
+ * gtk_drop_down_get_model:
  * @self: a `GtkDropDown`
  *
  * Gets the model that provides the displayed items.
@@ -909,7 +926,7 @@ gtk_drop_down_get_model (GtkDropDown *self)
 }
 
 /**
- * gtk_drop_down_set_model: (attributes org.gtk.Method.set_property=model)
+ * gtk_drop_down_set_model:
  * @self: a `GtkDropDown`
  * @model: (nullable) (transfer none): the model to use
  *
@@ -968,7 +985,7 @@ gtk_drop_down_set_model (GtkDropDown *self,
 }
 
 /**
- * gtk_drop_down_get_factory: (attributes org.gtk.Method.get_property=factory)
+ * gtk_drop_down_get_factory:
  * @self: a `GtkDropDown`
  *
  * Gets the factory that's currently used to populate list items.
@@ -988,7 +1005,7 @@ gtk_drop_down_get_factory (GtkDropDown *self)
 }
 
 /**
- * gtk_drop_down_set_factory: (attributes org.gtk.Method.set_property=factory)
+ * gtk_drop_down_set_factory:
  * @self: a `GtkDropDown`
  * @factory: (nullable) (transfer none): the factory to use
  *
@@ -1019,7 +1036,7 @@ gtk_drop_down_set_factory (GtkDropDown        *self,
 }
 
 /**
- * gtk_drop_down_get_header_factory: (attributes org.gtk.Method.get_property=header-factory)
+ * gtk_drop_down_get_header_factory:
  * @self: a `GtkDropDown`
  *
  * Gets the factory that's currently used to create header widgets for the popup.
@@ -1037,7 +1054,7 @@ gtk_drop_down_get_header_factory (GtkDropDown *self)
 }
 
 /**
- * gtk_drop_down_set_header_factory: (attributes org.gtk.Method.set_property=header-factory)
+ * gtk_drop_down_set_header_factory:
  * @self: a `GtkDropDown`
  * @factory: (nullable) (transfer none): the factory to use
  *
@@ -1061,7 +1078,7 @@ gtk_drop_down_set_header_factory (GtkDropDown        *self,
 }
 
 /**
- * gtk_drop_down_get_list_factory: (attributes org.gtk.Method.get_property=list-factory)
+ * gtk_drop_down_get_list_factory:
  * @self: a `GtkDropDown`
  *
  * Gets the factory that's currently used to populate list items in the popup.
@@ -1077,7 +1094,7 @@ gtk_drop_down_get_list_factory (GtkDropDown *self)
 }
 
 /**
- * gtk_drop_down_set_list_factory: (attributes org.gtk.Method.set_property=list-factory)
+ * gtk_drop_down_set_list_factory:
  * @self: a `GtkDropDown`
  * @factory: (nullable) (transfer none): the factory to use
  *
@@ -1104,7 +1121,7 @@ gtk_drop_down_set_list_factory (GtkDropDown        *self,
 }
 
 /**
- * gtk_drop_down_set_selected: (attributes org.gtk.Method.set_property=selected)
+ * gtk_drop_down_set_selected:
  * @self: a `GtkDropDown`
  * @position: the position of the item to select, or %GTK_INVALID_LIST_POSITION
  *
@@ -1126,7 +1143,7 @@ gtk_drop_down_set_selected (GtkDropDown *self,
 }
 
 /**
- * gtk_drop_down_get_selected: (attributes org.gtk.Method.get_property=selected)
+ * gtk_drop_down_get_selected:
  * @self: a `GtkDropDown`
  *
  * Gets the position of the selected item.
@@ -1146,7 +1163,7 @@ gtk_drop_down_get_selected (GtkDropDown *self)
 }
 
 /**
- * gtk_drop_down_get_selected_item: (attributes org.gtk.Method.get_property=selected-item)
+ * gtk_drop_down_get_selected_item:
  * @self: a `GtkDropDown`
  *
  * Gets the selected item. If no item is selected, %NULL is returned.
@@ -1165,7 +1182,7 @@ gtk_drop_down_get_selected_item (GtkDropDown *self)
 }
 
 /**
- * gtk_drop_down_set_enable_search: (attributes org.gtk.Method.set_property=enable-search)
+ * gtk_drop_down_set_enable_search:
  * @self: a `GtkDropDown`
  * @enable_search: whether to enable search
  *
@@ -1195,7 +1212,7 @@ gtk_drop_down_set_enable_search (GtkDropDown *self,
 }
 
 /**
- * gtk_drop_down_get_enable_search: (attributes org.gtk.Method.set_property=enable-search)
+ * gtk_drop_down_get_enable_search:
  * @self: a `GtkDropDown`
  *
  * Returns whether search is enabled.
@@ -1211,7 +1228,7 @@ gtk_drop_down_get_enable_search (GtkDropDown *self)
 }
 
 /**
- * gtk_drop_down_set_expression: (attributes org.gtk.Method.set_property=expression)
+ * gtk_drop_down_set_expression:
  * @self: a `GtkDropDown`
  * @expression: (nullable): a `GtkExpression`
  *
@@ -1246,7 +1263,7 @@ gtk_drop_down_set_expression (GtkDropDown   *self,
 }
 
 /**
- * gtk_drop_down_get_expression: (attributes org.gtk.Method.get_property=expression)
+ * gtk_drop_down_get_expression:
  * @self: a `GtkDropDown`
  *
  * Gets the expression set that is used to obtain strings from items.
@@ -1264,7 +1281,7 @@ gtk_drop_down_get_expression (GtkDropDown *self)
 }
 
 /**
- * gtk_drop_down_set_show_arrow: (attributes org.gtk.Method.set_property=show-arrow)
+ * gtk_drop_down_set_show_arrow:
  * @self: a `GtkDropDown`
  * @show_arrow: whether to show an arrow within the widget
  *
@@ -1290,7 +1307,7 @@ gtk_drop_down_set_show_arrow (GtkDropDown *self,
 }
 
 /**
- * gtk_drop_down_get_show_arrow: (attributes org.gtk.Method.set_property=show-arrow)
+ * gtk_drop_down_get_show_arrow:
  * @self: a `GtkDropDown`
  *
  * Returns whether to show an arrow within the widget.
@@ -1308,7 +1325,7 @@ gtk_drop_down_get_show_arrow (GtkDropDown *self)
 }
 
 /**
- * gtk_drop_down_set_search_match_mode: (attributes org.gtk.Method.set_property=search-match-mode)
+ * gtk_drop_down_set_search_match_mode:
  * @self: a `GtkDropDown`
  * @search_match_mode: the new match mode
  *
@@ -1333,7 +1350,7 @@ gtk_drop_down_set_search_match_mode (GtkDropDown *self,
 }
 
 /**
- * gtk_drop_down_get_search_match_mode: (attributes org.gtk.Method.get_property=search-match-mode)
+ * gtk_drop_down_get_search_match_mode:
  * @self: a `GtkDropDown`
  *
  * Returns the match mode that the search filter is using.

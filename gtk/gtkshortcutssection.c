@@ -53,6 +53,23 @@
  * and columns.
  *
  * This widget is only meant to be used with [class@Gtk.ShortcutsWindow].
+ *
+ * The recommended way to construct a `GtkShortcutsSection` is with
+ * [class@Gtk.Builder], by using the `<child>` tag to populate a
+ * `GtkShortcutsSection` with one or more [class@Gtk.ShortcutsGroup]
+ * instances, which in turn contain one or more [class@Gtk.ShortcutsShortcut]
+ * objects.
+ *
+ * If you need to add a group programmatically, use
+ * [method@Gtk.ShortcutsSection.add_group].
+ *
+ * # Shortcuts and Gestures
+ *
+ * Pan gestures allow to navigate between sections.
+ *
+ * The following signals have default keybindings:
+ *
+ * - [signal@Gtk.ShortcutsSection::change-current-page]
  */
 
 struct _GtkShortcutsSection
@@ -109,8 +126,6 @@ static void gtk_shortcuts_section_set_view_name    (GtkShortcutsSection *self,
                                                     const char          *view_name);
 static void gtk_shortcuts_section_set_max_height   (GtkShortcutsSection *self,
                                                     guint                max_height);
-static void gtk_shortcuts_section_add_group        (GtkShortcutsSection *self,
-                                                    GtkShortcutsGroup   *group);
 
 static void gtk_shortcuts_section_show_all         (GtkShortcutsSection *self);
 static void gtk_shortcuts_section_filter_groups    (GtkShortcutsSection *self);
@@ -343,6 +358,19 @@ gtk_shortcuts_section_class_init (GtkShortcutsSectionClass *klass)
 
   g_object_class_install_properties (object_class, LAST_PROP, properties);
 
+  /**
+   * GtkShortcutsSection::change-current-page:
+   * @shortcut_section: the shortcut section
+   * @offset: the offset
+   *
+   * Emitted when we change the current page.
+   *
+   * The default bindings for this signal are
+   * <kbd>Ctrl</kbd>+<kbd>PgUp</kbd>, <kbd>PgUp</kbd>,
+   * <kbd>Ctrl</kbd>+<kbd>PgDn</kbd>, <kbd>PgDn</kbd>.
+   *
+   * Returns: whether the page was changed
+   */
   signals[CHANGE_CURRENT_PAGE] =
     g_signal_new (I_("change-current-page"),
                   G_TYPE_FROM_CLASS (object_class),
@@ -454,10 +482,29 @@ gtk_shortcuts_section_set_max_height (GtkShortcutsSection *self,
   g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_MAX_HEIGHT]);
 }
 
-static void
+/**
+ * gtk_shortcuts_section_add_group:
+ * @self: a `GtkShortcutsSection`
+ * @group: the `GtkShortcutsGroup` to add
+ *
+ * Adds a group to the shortcuts section.
+ *
+ * This is the programmatic equivalent to using [class@Gtk.Builder] and a
+ * `<child>` tag to add the child.
+ * 
+ * Adding children with the `GtkBox` API is not appropriate, as
+ * `GtkShortcutsSection` manages its children internally.
+ *
+ * Since: 4.14
+ */
+void
 gtk_shortcuts_section_add_group (GtkShortcutsSection *self,
                                  GtkShortcutsGroup   *group)
 {
+  g_return_if_fail (GTK_IS_SHORTCUTS_SECTION (self));
+  g_return_if_fail (GTK_IS_SHORTCUTS_GROUP (group));
+  g_return_if_fail (gtk_widget_get_parent (GTK_WIDGET (group)) == NULL);
+
   GtkWidget *page, *column;
 
   page = gtk_widget_get_last_child (GTK_WIDGET (self->stack));

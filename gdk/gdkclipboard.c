@@ -297,7 +297,7 @@ gdk_clipboard_read_local_async (GdkClipboard        *clipboard,
     {
       GOutputStream *output_stream;
       GIOStream *stream;
-      
+
       stream = gdk_pipe_io_stream_new ();
       output_stream = g_io_stream_get_output_stream (stream);
       gdk_clipboard_write_async (clipboard,
@@ -353,7 +353,7 @@ gdk_clipboard_class_init (GdkClipboardClass *class)
   class->read_finish = gdk_clipboard_read_local_finish;
 
   /**
-   * GdkClipboard:display: (attributes org.gtk.Property.get=gdk_clipboard_get_display)
+   * GdkClipboard:display:
    *
    * The `GdkDisplay` that the clipboard belongs to.
    */
@@ -366,7 +366,7 @@ gdk_clipboard_class_init (GdkClipboardClass *class)
                          G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GdkClipboard:formats: (attributes org.gtk.Property.get=gdk_clipboard_get_formats)
+   * GdkClipboard:formats:
    *
    * The possible formats that the clipboard can provide its data in.
    */
@@ -378,7 +378,7 @@ gdk_clipboard_class_init (GdkClipboardClass *class)
                         G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GdkClipboard:local: (attributes org.gtk.Property.get=gdk_clipboard_is_local)
+   * GdkClipboard:local: (getter is_local)
    *
    * %TRUE if the contents of the clipboard are owned by this process.
    */
@@ -390,7 +390,7 @@ gdk_clipboard_class_init (GdkClipboardClass *class)
                           G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GdkClipboard:content: (attributes org.gtk.Property.get=gdk_clipboard_get_content)
+   * GdkClipboard:content:
    *
    * The `GdkContentProvider` or %NULL if the clipboard is empty or contents are
    * provided otherwise.
@@ -429,7 +429,7 @@ gdk_clipboard_init (GdkClipboard *clipboard)
 }
 
 /**
- * gdk_clipboard_get_display: (attributes org.gtk.Method.get_property=display)
+ * gdk_clipboard_get_display:
  * @clipboard: a `GdkClipboard`
  *
  * Gets the `GdkDisplay` that the clipboard was created for.
@@ -447,7 +447,7 @@ gdk_clipboard_get_display (GdkClipboard *clipboard)
 }
 
 /**
- * gdk_clipboard_get_formats: (attributes org.gtk.Method.get_property=formats)
+ * gdk_clipboard_get_formats:
  * @clipboard: a `GdkClipboard`
  *
  * Gets the formats that the clipboard can provide its current contents in.
@@ -465,7 +465,7 @@ gdk_clipboard_get_formats (GdkClipboard *clipboard)
 }
 
 /**
- * gdk_clipboard_is_local: (attributes org.gtk.Method.get_property=local)
+ * gdk_clipboard_is_local: (get-property local)
  * @clipboard: a `GdkClipboard`
  *
  * Returns if the clipboard is local.
@@ -489,7 +489,7 @@ gdk_clipboard_is_local (GdkClipboard *clipboard)
 }
 
 /**
- * gdk_clipboard_get_content: (attributes org.gtk.Method.get_property=content)
+ * gdk_clipboard_get_content:
  * @clipboard: a `GdkClipboard`
  *
  * Returns the `GdkContentProvider` currently set on @clipboard.
@@ -515,22 +515,21 @@ gdk_clipboard_get_content (GdkClipboard *clipboard)
  * @clipboard: a `GdkClipboard`
  * @io_priority: the I/O priority of the request
  * @cancellable: (nullable): optional `GCancellable` object
- * @callback: (scope async): callback to call when the request is satisfied
- * @user_data: (closure): the data to pass to callback function
+ * @callback: (scope async) (closure user_data): callback to call when the request is satisfied
+ * @user_data:: the data to pass to callback function
  *
  * Asynchronously instructs the @clipboard to store its contents remotely.
  *
  * If the clipboard is not local, this function does nothing but report success.
- *
- * The @callback must call [method@Gdk.Clipboard.store_finish].
  *
  * The purpose of this call is to preserve clipboard contents beyond the
  * lifetime of an application, so this function is typically called on
  * exit. Depending on the platform, the functionality may not be available
  * unless a "clipboard manager" is running.
  *
- * This function is called automatically when a [class@Gtk.Application] is
- * shut down, so you likely don't need to call it.
+ * This function is called automatically when a
+ * [GtkApplication](../gtk4/class.Application.html)
+ * is shut down, so you likely don't need to call it.
  */
 void
 gdk_clipboard_store_async (GdkClipboard        *clipboard,
@@ -631,14 +630,11 @@ gdk_clipboard_read_internal (GdkClipboard        *clipboard,
  * @mime_types: (array zero-terminated=1): a %NULL-terminated array of mime types to choose from
  * @io_priority: the I/O priority of the request
  * @cancellable: (nullable): optional `GCancellable` object
- * @callback: (scope async): callback to call when the request is satisfied
- * @user_data: (closure): the data to pass to callback function
+ * @callback: (scope async) (closure user_data): callback to call when the request is satisfied
+ * @user_data: the data to pass to callback function
  *
  * Asynchronously requests an input stream to read the @clipboard's
  * contents from.
- *
- * When the operation is finished @callback will be called. You must then
- * call [method@Gdk.Clipboard.read_finish] to get the result of the operation.
  *
  * The clipboard will choose the most suitable mime type from the given list
  * to fulfill the request, preferring the ones listed first.
@@ -767,7 +763,7 @@ gdk_clipboard_read_value_internal (GdkClipboard        *clipboard,
   GdkContentFormats *formats;
   GValue *value;
   GTask *task;
- 
+
   task = g_task_new (clipboard, cancellable, callback, user_data);
   g_task_set_priority (task, io_priority);
   g_task_set_source_tag (task, source_tag);
@@ -827,14 +823,11 @@ gdk_clipboard_read_value_internal (GdkClipboard        *clipboard,
  * @type: a `GType` to read
  * @io_priority: the I/O priority of the request
  * @cancellable: (nullable): optional `GCancellable` object
- * @callback: (scope async): callback to call when the request is satisfied
- * @user_data: (closure): the data to pass to callback function
+ * @callback: (scope async) (closure user_data): callback to call when the request is satisfied
+ * @user_data: the data to pass to callback function
  *
  * Asynchronously request the @clipboard contents converted to the given
  * @type.
- *
- * When the operation is finished @callback will be called. You must then call
- * [method@Gdk.Clipboard.read_value_finish] to get the resulting `GValue`.
  *
  * For local clipboard contents that are available in the given `GType`,
  * the value will be copied directly. Otherwise, GDK will try to use
@@ -889,13 +882,10 @@ gdk_clipboard_read_value_finish (GdkClipboard  *clipboard,
  * gdk_clipboard_read_texture_async:
  * @clipboard: a `GdkClipboard`
  * @cancellable: (nullable): optional `GCancellable` object, %NULL to ignore.
- * @callback: (scope async): callback to call when the request is satisfied
- * @user_data: (closure): the data to pass to callback function
+ * @callback: (scope async) (closure user_data): callback to call when the request is satisfied
+ * @user_data: the data to pass to callback function
  *
  * Asynchronously request the @clipboard contents converted to a `GdkPixbuf`.
- *
- * When the operation is finished @callback will be called. You must then
- * call [method@Gdk.Clipboard.read_texture_finish] to get the result.
  *
  * This is a simple wrapper around [method@Gdk.Clipboard.read_value_async].
  * Use that function or [method@Gdk.Clipboard.read_async] directly if you
@@ -946,7 +936,7 @@ gdk_clipboard_read_texture_finish (GdkClipboard  *clipboard,
   value = g_task_propagate_pointer (G_TASK (result), error);
   if (!value)
     return NULL;
-  
+
   return g_value_dup_object (value);
 }
 
@@ -954,13 +944,10 @@ gdk_clipboard_read_texture_finish (GdkClipboard  *clipboard,
  * gdk_clipboard_read_text_async:
  * @clipboard: a `GdkClipboard`
  * @cancellable: (nullable): optional `GCancellable` object
- * @callback: (scope async): callback to call when the request is satisfied
- * @user_data: (closure): the data to pass to callback function
+ * @callback: (scope async) (closure user_data): callback to call when the request is satisfied
+ * @user_data: the data to pass to callback function
  *
  * Asynchronously request the @clipboard contents converted to a string.
- *
- * When the operation is finished @callback will be called. You must then
- * call [method@Gdk.Clipboard.read_text_finish] to get the result.
  *
  * This is a simple wrapper around [method@Gdk.Clipboard.read_value_async].
  * Use that function or [method@Gdk.Clipboard.read_async] directly if you
@@ -1011,7 +998,7 @@ gdk_clipboard_read_text_finish (GdkClipboard  *clipboard,
   value = g_task_propagate_pointer (G_TASK (result), error);
   if (!value)
     return NULL;
-  
+
   return g_value_dup_string (value);
 }
 
@@ -1110,7 +1097,7 @@ gdk_clipboard_write_async (GdkClipboard        *clipboard,
       GError *error = NULL;
 
       g_assert (gtype != G_TYPE_INVALID);
-      
+
       g_value_init (&value, gtype);
       if (gdk_content_provider_get_value (priv->content, &value, &error))
         {
@@ -1126,7 +1113,7 @@ gdk_clipboard_write_async (GdkClipboard        *clipboard,
         {
           g_task_return_error (task, error);
         }
-      
+
       g_value_unset (&value);
     }
   else
@@ -1148,7 +1135,7 @@ gdk_clipboard_write_finish (GdkClipboard  *clipboard,
   g_return_val_if_fail (g_task_is_valid (result, clipboard), FALSE);
   g_return_val_if_fail (g_task_get_source_tag (G_TASK (result)) == gdk_clipboard_write_async, FALSE);
 
-  return g_task_propagate_boolean (G_TASK (result), error); 
+  return g_task_propagate_boolean (G_TASK (result), error);
 }
 
 static gboolean
@@ -1248,8 +1235,8 @@ gdk_clipboard_set_content (GdkClipboard       *clipboard,
  * Sets the clipboard to contain the value collected from the given varargs.
  *
  * Values should be passed the same way they are passed to other value
- * collecting APIs, such as [`method@GObject.Object.set`] or
- * [`func@GObject.signal_emit`].
+ * collecting APIs, such as [method@GObject.Object.set] or
+ * [func@GObject.signal_emit].
  *
  * ```c
  * gdk_clipboard_set (clipboard, GTK_TYPE_STRING, "Hello World");
@@ -1263,7 +1250,7 @@ gdk_clipboard_set (GdkClipboard *clipboard,
                    ...)
 {
   va_list args;
-                          
+
   g_return_if_fail (GDK_IS_CLIPBOARD (clipboard));
 
   va_start (args, type);

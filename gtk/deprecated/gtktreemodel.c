@@ -257,6 +257,8 @@ static guint tree_model_signals[LAST_SIGNAL] = { 0 };
  * GtkTreePath:
  *
  * An opaque structure representing a path to a row in a model.
+ *
+ * Deprecated: 4.10
  */
 struct _GtkTreePath
 {
@@ -850,7 +852,8 @@ gtk_tree_path_prepend_index (GtkTreePath *path,
       int *indices;
       path->alloc = MAX (path->alloc * 2, 1);
       indices = g_new (int, path->alloc);
-      memcpy (indices + 1, path->indices, path->depth * sizeof (int));
+      if (path->depth > 0)
+        memcpy (indices + 1, path->indices, path->depth * sizeof (int));
       g_free (path->indices);
       path->indices = indices;
     }
@@ -970,7 +973,8 @@ gtk_tree_path_copy (const GtkTreePath *path)
   retval->depth = path->depth;
   retval->alloc = retval->depth;
   retval->indices = g_new (int, path->alloc);
-  memcpy (retval->indices, path->indices, path->depth * sizeof (int));
+  if (path->depth > 0)
+    memcpy (retval->indices, path->indices, path->depth * sizeof (int));
   return retval;
 }
 
@@ -2125,8 +2129,8 @@ gtk_tree_model_foreach_helper (GtkTreeModel            *model,
 /**
  * gtk_tree_model_foreach:
  * @model: a `GtkTreeModel`
- * @func: (scope call): a function to be called on each row
- * @user_data: (closure): user data to passed to @func
+ * @func: (scope call) (closure user_data): a function to be called on each row
+ * @user_data: user data to passed to @func
  *
  * Calls @func on each node in model in a depth-first fashion.
  *

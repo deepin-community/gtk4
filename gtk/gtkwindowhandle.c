@@ -447,6 +447,9 @@ drag_gesture_update_cb (GtkGestureDrag  *gesture,
       p.x += native_x;
       p.y += native_y;
 
+      if (GTK_IS_WINDOW (native))
+        gtk_window_unfullscreen (GTK_WINDOW (native));
+
       surface = gtk_native_get_surface (native);
       if (GDK_IS_TOPLEVEL (surface))
         gdk_toplevel_begin_move (GDK_TOPLEVEL (surface),
@@ -533,7 +536,7 @@ gtk_window_handle_class_init (GtkWindowHandleClass *klass)
   widget_class->unrealize = gtk_window_handle_unrealize;
 
   /**
-   * GtkWindowHandle:child: (attributes org.gtk.Property.get=gtk_window_handle_get_child org.gtk.Property.set=gtk_window_handle_set_child)
+   * GtkWindowHandle:child:
    *
    * The child widget.
    */
@@ -600,7 +603,7 @@ gtk_window_handle_new (void)
 }
 
 /**
- * gtk_window_handle_get_child: (attributes org.gtk.Method.get_property=child)
+ * gtk_window_handle_get_child:
  * @self: a `GtkWindowHandle`
  *
  * Gets the child widget of @self.
@@ -616,7 +619,7 @@ gtk_window_handle_get_child (GtkWindowHandle *self)
 }
 
 /**
- * gtk_window_handle_set_child: (attributes org.gtk.Method.set_property=child)
+ * gtk_window_handle_set_child:
  * @self: a `GtkWindowHandle`
  * @child: (nullable): the child widget
  *

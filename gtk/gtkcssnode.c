@@ -445,9 +445,12 @@ gtk_css_node_real_update_style (GtkCssNode                   *cssnode,
     }
   else if (static_style != style && (change & GTK_CSS_CHANGE_TIMESTAMP))
     {
+      GtkCssNode *parent = gtk_css_node_get_parent (cssnode);
       new_style = gtk_css_animated_style_new_advance (GTK_CSS_ANIMATED_STYLE (style),
                                                       static_style,
-                                                      timestamp);
+                                                      parent ? gtk_css_node_get_style (parent) : NULL,
+                                                      timestamp,
+                                                      gtk_css_node_get_style_provider (cssnode));
     }
   else
     {
@@ -1200,7 +1203,7 @@ gtk_css_node_get_classes (GtkCssNode *cssnode)
   return result;
 }
 
-void
+gboolean
 gtk_css_node_add_class (GtkCssNode *cssnode,
                         GQuark      style_class)
 {
@@ -1208,10 +1211,13 @@ gtk_css_node_add_class (GtkCssNode *cssnode,
     {
       gtk_css_node_invalidate (cssnode, GTK_CSS_CHANGE_CLASS);
       g_object_notify_by_pspec (G_OBJECT (cssnode), cssnode_properties[PROP_CLASSES]);
+      return TRUE;
     }
+
+  return FALSE;
 }
 
-void
+gboolean
 gtk_css_node_remove_class (GtkCssNode *cssnode,
                            GQuark      style_class)
 {
@@ -1219,7 +1225,10 @@ gtk_css_node_remove_class (GtkCssNode *cssnode,
     {
       gtk_css_node_invalidate (cssnode, GTK_CSS_CHANGE_CLASS);
       g_object_notify_by_pspec (G_OBJECT (cssnode), cssnode_properties[PROP_CLASSES]);
+      return TRUE;
     }
+
+  return FALSE;
 }
 
 gboolean
@@ -1363,7 +1372,7 @@ gtk_css_node_validate (GtkCssNode *cssnode)
 
   if (GDK_PROFILER_IS_RUNNING)
     {
-      gdk_profiler_end_mark (before,  "css validation", "");
+      gdk_profiler_end_mark (before,  "Validate CSS", "");
       gdk_profiler_set_int_counter (invalidated_nodes_counter, invalidated_nodes);
       gdk_profiler_set_int_counter (created_styles_counter, created_styles);
       invalidated_nodes = 0;

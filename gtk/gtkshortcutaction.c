@@ -161,14 +161,12 @@ gtk_shortcut_action_activate (GtkShortcutAction      *self,
   g_return_val_if_fail (GTK_IS_SHORTCUT_ACTION (self), FALSE);
   g_return_val_if_fail (GTK_IS_WIDGET (widget), FALSE);
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DEBUG_CHECK (KEYBINDINGS))
     {
       char *act = gtk_shortcut_action_to_string (self);
       gdk_debug_message ("Shortcut action activate on %s: %s", G_OBJECT_TYPE_NAME (widget), act);
       g_free (act);
     }
-#endif
 
   return GTK_SHORTCUT_ACTION_GET_CLASS (self)->activate (self, flags, widget, args);
 }
@@ -408,10 +406,10 @@ gtk_callback_action_init (GtkCallbackAction *self)
 
 /**
  * gtk_callback_action_new:
- * @callback: (scope notified): the callback to call
- * @data: (closure callback): the data to be passed to @callback
- * @destroy: (destroy data): the function to be called when the
- *   callback action is finalized
+ * @callback: (scope notified) (closure data) (destroy destroy): the callback
+ *   to call when the action is activated
+ * @data: the data to be passed to @callback
+ * @destroy: the function to be called when the callback action is finalized
  *
  * Create a custom action that calls the given @callback when
  * activated.
@@ -942,7 +940,7 @@ gtk_signal_action_class_init (GtkSignalActionClass *klass)
   action_class->print = gtk_signal_action_print;
 
   /**
-   * GtkSignalAction:signal-name: (attributes org.gtk.Property.get=gtk_signal_action_get_signal_name)
+   * GtkSignalAction:signal-name:
    *
    * The name of the signal to emit.
    */
@@ -993,7 +991,7 @@ gtk_signal_action_new (const char *signal_name)
 }
 
 /**
- * gtk_signal_action_get_signal_name: (attributes org.gtk.Method.get_property=signal-name)
+ * gtk_signal_action_get_signal_name:
  * @self: a signal action
  *
  * Returns the name of the signal that will be emitted.
@@ -1192,7 +1190,7 @@ gtk_named_action_class_init (GtkNamedActionClass *klass)
   action_class->print = gtk_named_action_print;
 
   /**
-   * GtkNamedAction:action-name: (attributes org.gtk.Property.get=gtk_named_action_get_action_name)
+   * GtkNamedAction:action-name:
    *
    * The name of the action to activate.
    */
@@ -1236,7 +1234,7 @@ gtk_named_action_new (const char *name)
 }
 
 /**
- * gtk_named_action_get_action_name: (attributes org.gtk.Method.get_property=action-name)
+ * gtk_named_action_get_action_name:
  * @self: a named action
  *
  * Returns the name of the action that will be activated.

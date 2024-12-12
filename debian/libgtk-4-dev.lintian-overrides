@@ -1,0 +1,2 @@
+# mostly /usr/share/gir-1.0: see the GObject-Introspection mini-policy
+arch-dep-package-has-big-usr-share *

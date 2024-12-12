@@ -1,9 +1,7 @@
-FROM fedora:38
+FROM fedora:40
 
 RUN dnf -y install \
     adwaita-icon-theme \
-    atk-devel \
-    at-spi2-atk-devel \
     avahi-gobject-devel \
     cairo-devel \
     cairo-gobject-devel \
@@ -18,7 +16,6 @@ RUN dnf -y install \
     dejavu-sans-mono-fonts \
     desktop-file-utils \
     diffutils \
-    docbook-style-xsl \
     elfutils-libelf-devel \
     expat-devel \
     fribidi-devel \
@@ -102,7 +99,10 @@ RUN dnf -y install \
     which \
     wireplumber \
     xorg-x11-server-Xvfb \
+ && dnf -y update \
  && dnf clean all
+
+RUN rm /usr/share/vulkan/icd.d/powervr_mesa_icd.x86_64.json
 
 # Enable sudo for wheel users
 RUN sed -i -e 's/# %wheel/%wheel/' -e '0,/%wheel/{s/%wheel/# %wheel/}' /etc/sudoers

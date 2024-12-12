@@ -26,6 +26,12 @@
 #include "gtkprintjob.h"
 
 /**
+ * GtkPrintBackend:
+ *
+ * A print backend.
+ */
+
+/**
  * GtkPrinter:
  *
  * A `GtkPrinter` object represents a printer.
@@ -110,7 +116,7 @@ gtk_printer_class_init (GtkPrinterClass *class)
   object_class->get_property = gtk_printer_get_property;
 
   /**
-   * GtkPrinter:name: (attributes org.gtk.Property.get=gtk_printer_get_name)
+   * GtkPrinter:name:
    *
    * The name of the printer.
    */
@@ -121,7 +127,7 @@ gtk_printer_class_init (GtkPrinterClass *class)
 							G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
 
   /**
-   * GtkPrinter:backend: (attributes org.gtk.Property.get=gtk_printer_get_backend)
+   * GtkPrinter:backend:
    *
    * The backend for the printer.
    */
@@ -132,7 +138,7 @@ gtk_printer_class_init (GtkPrinterClass *class)
 							G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
 
   /**
-   * GtkPrinter:is-virtual: (attributes org.gtk.Property.get=gtk_printer_is_virtual)
+   * GtkPrinter:is-virtual: (getter is_virtual)
    *
    * %FALSE if this represents a real hardware device.
    */
@@ -143,7 +149,7 @@ gtk_printer_class_init (GtkPrinterClass *class)
 							 G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
 
   /**
-   * GtkPrinter:accepts-pdf: (attributes org.gtk.Property.get=gtk_printer_accepts_pdf)
+   * GtkPrinter:accepts-pdf: (getter accepts_pdf)
    *
    * %TRUE if this printer can accept PDF.
    */
@@ -154,7 +160,7 @@ gtk_printer_class_init (GtkPrinterClass *class)
 							 G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
 
   /**
-   * GtkPrinter:accepts-ps: (attributes org.gtk.Property.get=gtk_printer_accepts_ps)
+   * GtkPrinter:accepts-ps: (getter accepts_ps)
    *
    * %TRUE if this printer can accept PostScript.
    */
@@ -165,7 +171,7 @@ gtk_printer_class_init (GtkPrinterClass *class)
 							 G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
 
   /**
-   * GtkPrinter:state-message: (attributes org.gtk.Property.get=gtk_printer_get_state_message)
+   * GtkPrinter:state-message:
    *
    * String giving the current status of the printer.
    */
@@ -176,7 +182,7 @@ gtk_printer_class_init (GtkPrinterClass *class)
 							G_PARAM_READABLE));
 
   /**
-   * GtkPrinter:location: (attributes org.gtk.Property.get=gtk_printer_get_location)
+   * GtkPrinter:location:
    *
    * Information about the location of the printer.
    */
@@ -187,7 +193,7 @@ gtk_printer_class_init (GtkPrinterClass *class)
 							G_PARAM_READABLE));
 
   /**
-   * GtkPrinter:icon-name: (attributes org.gtk.Property.get=gtk_printer_get_icon_name)
+   * GtkPrinter:icon-name:
    *
    * Icon name to use for the printer.
    */
@@ -198,7 +204,7 @@ gtk_printer_class_init (GtkPrinterClass *class)
 							G_PARAM_READABLE));
 
   /**
-   * GtkPrinter:job-count: (attributes org.gtk.Property.get=gtk_printer_get_job_count)
+   * GtkPrinter:job-count:
    *
    * Number of jobs queued in the printer.
    */
@@ -211,7 +217,7 @@ gtk_printer_class_init (GtkPrinterClass *class)
  						     G_PARAM_READABLE));
 
   /**
-   * GtkPrinter:paused: (attributes org.gtk.Property.get=gtk_printer_is_paused)
+   * GtkPrinter:paused: (getter is_paused)
    *
    * %TRUE if this printer is paused.
    *
@@ -225,7 +231,7 @@ gtk_printer_class_init (GtkPrinterClass *class)
 							 G_PARAM_READABLE));
 
   /**
-   * GtkPrinter:accepting-jobs: (attributes org.gtk.Property.get=gtk_printer_is_accepting_jobs)
+   * GtkPrinter:accepting-jobs: (getter is_accepting_jobs)
    *
    * %TRUE if the printer is accepting jobs.
    */
@@ -422,7 +428,7 @@ gtk_printer_new (const char      *name,
 }
 
 /**
- * gtk_printer_get_backend: (attributes org.gtk.Method.get_property=backend)
+ * gtk_printer_get_backend:
  * @printer: a `GtkPrinter`
  *
  * Returns the backend of the printer.
@@ -440,7 +446,7 @@ gtk_printer_get_backend (GtkPrinter *printer)
 }
 
 /**
- * gtk_printer_get_name: (attributes org.gtk.Method.get_property=name)
+ * gtk_printer_get_name:
  * @printer: a `GtkPrinter`
  *
  * Returns the name of the printer.
@@ -493,7 +499,7 @@ gtk_printer_set_description (GtkPrinter  *printer,
 }
 
 /**
- * gtk_printer_get_state_message: (attributes org.gtk.Method.get_property=state-message)
+ * gtk_printer_get_state_message:
  * @printer: a `GtkPrinter`
  *
  * Returns the state message describing the current state
@@ -530,7 +536,7 @@ gtk_printer_set_state_message (GtkPrinter  *printer,
 }
 
 /**
- * gtk_printer_get_location: (attributes org.gtk.Method.get_property=location)
+ * gtk_printer_get_location:
  * @printer: a `GtkPrinter`
  *
  * Returns a description of the location of the printer.
@@ -566,7 +572,7 @@ gtk_printer_set_location (GtkPrinter  *printer,
 }
 
 /**
- * gtk_printer_get_icon_name: (attributes org.gtk.Method.get_property=icon-name)
+ * gtk_printer_get_icon_name:
  * @printer: a `GtkPrinter`
  *
  * Gets the name of the icon to use for the printer.
@@ -597,7 +603,7 @@ gtk_printer_set_icon_name (GtkPrinter  *printer,
 }
 
 /**
- * gtk_printer_get_job_count: (attributes org.gtk.Method.get_property=job-count)
+ * gtk_printer_get_job_count:
  * @printer: a `GtkPrinter`
  *
  * Gets the number of jobs currently queued on the printer.
@@ -690,7 +696,7 @@ gtk_printer_set_is_active (GtkPrinter *printer,
 }
 
 /**
- * gtk_printer_is_paused: (attributes org.gtk.Method.get_property=paused)
+ * gtk_printer_is_paused: (get-property paused)
  * @printer: a `GtkPrinter`
  *
  * Returns whether the printer is currently paused.
@@ -727,7 +733,7 @@ gtk_printer_set_is_paused (GtkPrinter *printer,
 }
 
 /**
- * gtk_printer_is_accepting_jobs: (attributes org.gtk.Method.get_property=accepting-jobs)
+ * gtk_printer_is_accepting_jobs: (get-property accepting-jobs)
  * @printer: a `GtkPrinter`
  *
  * Returns whether the printer is accepting jobs
@@ -761,7 +767,7 @@ gtk_printer_set_is_accepting_jobs (GtkPrinter *printer,
 }
 
 /**
- * gtk_printer_is_virtual: (attributes org.gtk.Method.get_property=is-virtual)
+ * gtk_printer_is_virtual: (get-property is-virtual)
  * @printer: a `GtkPrinter`
  *
  * Returns whether the printer is virtual (i.e. does not
@@ -781,7 +787,7 @@ gtk_printer_is_virtual (GtkPrinter *printer)
 }
 
 /**
- * gtk_printer_accepts_pdf: (attributes org.gtk.Method.get_property=accepts-pdf)
+ * gtk_printer_accepts_pdf: (get-property accepts-pdf)
  * @printer: a `GtkPrinter`
  *
  * Returns whether the printer accepts input in
@@ -811,7 +817,7 @@ gtk_printer_set_accepts_pdf (GtkPrinter *printer,
 }
 
 /**
- * gtk_printer_accepts_ps: (attributes org.gtk.Method.get_property=accepts-ps)
+ * gtk_printer_accepts_ps: (get-property accepts-ps)
  * @printer: a `GtkPrinter`
  *
  * Returns whether the printer accepts input in
@@ -1336,6 +1342,30 @@ gtk_enumerate_printers (GtkPrinterFunc func,
       printer_list->loop = g_main_loop_new (NULL, FALSE);
       g_main_loop_run (printer_list->loop);
     }
+}
+
+
+static GtkPrinter *found_printer;
+
+static gboolean
+match_printer_name (GtkPrinter *printer,
+                    gpointer    data)
+{
+  if (strcmp (gtk_printer_get_name (printer), (const char *)data) == 0)
+    {
+      found_printer = g_object_ref (printer);
+      return TRUE;
+    }
+
+  return FALSE;
+}
+
+GtkPrinter *
+gtk_printer_find (const char *name)
+{
+  found_printer = NULL;
+  gtk_enumerate_printers (match_printer_name, (gpointer) name, NULL, TRUE);
+  return g_steal_pointer (&found_printer);
 }
 
 GType

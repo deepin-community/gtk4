@@ -130,7 +130,6 @@ struct _GtkStringSet {
   int used_in_chunk;
 };
 
-#ifdef G_ENABLE_DEBUG
 static void
 dump_string_set (GtkStringSet *set)
 {
@@ -153,7 +152,6 @@ dump_string_set (GtkStringSet *set)
       g_print ("%s\n", string);
     }
 }
-#endif
 
 static void
 gtk_string_set_init (GtkStringSet *set)
@@ -416,6 +414,7 @@ struct _GtkIconPaintable
   guint is_svg          : 1;
   guint is_resource     : 1;
   guint is_symbolic     : 1;
+  guint only_fg         : 1;
 
   /* Cached information if we go ahead and try to load the icon.
    *
@@ -1700,7 +1699,7 @@ gtk_icon_theme_set_theme_name (GtkIconTheme *self,
  *
  * Gets the current icon theme name.
  *
- * Returns (transfer full): the current icon theme name,
+ * Returns: (transfer full): the current icon theme name,
  */
 char *
 gtk_icon_theme_get_theme_name (GtkIconTheme *self)
@@ -2019,7 +2018,6 @@ load_themes (GtkIconTheme *self)
 
   self->last_stat_time = g_get_monotonic_time ();
 
-#ifdef G_ENABLE_DEBUG
   if (GTK_DISPLAY_DEBUG_CHECK (self->display, ICONTHEME))
     {
       GList *l;
@@ -2036,7 +2034,6 @@ load_themes (GtkIconTheme *self)
 
       dump_string_set (&self->icons);
     }
-#endif
 }
 
 static gboolean
@@ -2073,7 +2070,7 @@ ensure_valid_themes (GtkIconTheme *self,
 
       load_themes (self);
 
-      gdk_profiler_end_mark (before, "icon theme load", self->current_theme);
+      gdk_profiler_end_mark (before, "Icon theme load", self->current_theme);
 
       if (was_valid)
         queue_theme_changed (self);
@@ -2155,13 +2152,11 @@ real_choose_icon (GtkIconTheme      *self,
   key.flags = flags;
 
   /* This is used in the icontheme unit test */
-#ifdef G_ENABLE_DEBUG
   if (GTK_DISPLAY_DEBUG_CHECK (self->display, ICONTHEME))
     {
       for (i = 0; icon_names[i]; i++)
         gdk_debug_message ("\tlookup name: %s", icon_names[i]);
     }
-#endif
 
   icon = icon_cache_lookup (self, &key);
   if (icon)
@@ -2266,14 +2261,12 @@ real_choose_icon (GtkIconTheme      *self,
   /* Fall back to missing icon */
   if (icon == NULL)
     {
-#ifdef G_ENABLE_DEBUG
       if (GTK_DEBUG_CHECK (ICONFALLBACK))
         {
           char *s = g_strjoinv (", ", (char **)icon_names);
           gdk_debug_message ("No icon found in %s (or fallbacks) for: %s", self->current_theme, s);
           g_free (s);
         }
-#endif
       icon = icon_paintable_new ("image-missing", size, scale);
       icon->filename = g_strdup (IMAGE_MISSING_RESOURCE_PATH);
       icon->is_resource = TRUE;
@@ -2440,8 +2433,8 @@ load_icon_thread (GTask        *task,
  * gtk_icon_theme_lookup_icon:
  * @self: a `GtkIconTheme`
  * @icon_name: the name of the icon to lookup
- * @fallbacks: (nullable) (array zero-terminated=1):
- * @size: desired icon size.
+ * @fallbacks: (nullable) (array zero-terminated=1): fallback names
+ * @size: desired icon size, in application pixels
  * @scale: the window scale this will be displayed on
  * @direction: text direction the icon will be displayed in
  * @flags: flags modifying the behavior of the icon lookup
@@ -2533,40 +2526,18 @@ gtk_icon_theme_lookup_icon (GtkIconTheme       *self,
   return icon;
 }
 
-/* Error quark */
+/**
+ * gtk_icon_theme_error_quark:
+ *
+ * Registers an error quark for [class@Gtk.IconTheme] errors.
+ *
+ * Returns: the error quark
+ **/
 GQuark
 gtk_icon_theme_error_quark (void)
 {
   return g_quark_from_static_string ("gtk-icon-theme-error-quark");
 }
-
-void
-gtk_icon_theme_lookup_symbolic_colors (GtkCssStyle *style,
-                                       GdkRGBA      color_out[4])
-{
-  GtkCssValue *palette, *color;
-  const char *names[4] = {
-    [GTK_SYMBOLIC_COLOR_ERROR] = "error",
-    [GTK_SYMBOLIC_COLOR_WARNING] = "warning",
-    [GTK_SYMBOLIC_COLOR_SUCCESS] = "success"
-  };
-  const GdkRGBA *lookup;
-  gsize i;
-
-  color = style->core->color;
-  palette = style->core->icon_palette;
-  color_out[GTK_SYMBOLIC_COLOR_FOREGROUND] = *gtk_css_color_value_get_rgba (color);
-
-  for (i = 1; i < 4; i++)
-    {
-      lookup = gtk_css_palette_value_get_color (palette, names[i]);
-      if (lookup)
-        color_out[i] = *lookup;
-      else
-        color_out[i] = color_out[GTK_SYMBOLIC_COLOR_FOREGROUND];
-    }
-}
-
 
 /**
  * gtk_icon_theme_has_icon:
@@ -3593,7 +3564,7 @@ gtk_icon_paintable_class_init (GtkIconPaintableClass *klass)
   gobject_class->finalize = gtk_icon_paintable_finalize;
 
   /**
-   * GtkIconPaintable:file: (attributes org.gtk.Property.get=gtk_icon_paintable_get_file)
+   * GtkIconPaintable:file:
    *
    * The file representing the icon, if any.
    */
@@ -3603,7 +3574,7 @@ gtk_icon_paintable_class_init (GtkIconPaintableClass *klass)
                                                         G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME | G_PARAM_STATIC_BLURB | G_PARAM_STATIC_NICK));
 
   /**
-   * GtkIconPaintable:icon-name: (attributes org.gtk.Property.get=gtk_icon_paintable_get_icon_name)
+   * GtkIconPaintable:icon-name:
    *
    * The icon name that was chosen during lookup.
    */
@@ -3613,7 +3584,7 @@ gtk_icon_paintable_class_init (GtkIconPaintableClass *klass)
                                                         G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME | G_PARAM_STATIC_BLURB | G_PARAM_STATIC_NICK));
 
   /**
-   * GtkIconPaintable:is-symbolic: (attributes org.gtk.Property.get=gtk_icon_paintable_is_symbolic)
+   * GtkIconPaintable:is-symbolic: (getter is_symbolic)
    *
    * Whether the icon is symbolic or not.
    */
@@ -3638,7 +3609,7 @@ new_resource_file (const char *filename)
 }
 
 /**
- * gtk_icon_paintable_get_file: (attributes org.gtk.Method.get_property=file)
+ * gtk_icon_paintable_get_file:
  * @self: a `GtkIconPaintable`
  *
  * Gets the `GFile` that was used to load the icon.
@@ -3662,7 +3633,7 @@ gtk_icon_paintable_get_file (GtkIconPaintable *icon)
 }
 
 /**
- * gtk_icon_paintable_get_icon_name: (attributes org.gtk.Method.get_property=icon-name)
+ * gtk_icon_paintable_get_icon_name:
  * @self: a `GtkIconPaintable`
  *
  * Get the icon name being used for this icon.
@@ -3688,7 +3659,7 @@ gtk_icon_paintable_get_icon_name (GtkIconPaintable *icon)
 }
 
 /**
- * gtk_icon_paintable_is_symbolic: (attributes org.gtk.Method.get_property=is-symbolic)
+ * gtk_icon_paintable_is_symbolic: (get-property is-symbolic)
  * @self: a `GtkIconPaintable`
  *
  * Checks if the icon is symbolic or not.
@@ -3720,6 +3691,7 @@ icon_ensure_texture__locked (GtkIconPaintable *icon,
   gint64 before;
   int pixel_size;
   GError *load_error = NULL;
+  gboolean only_fg = FALSE;
 
   icon_cache_mark_used_if_cached (icon);
 
@@ -3747,28 +3719,32 @@ icon_ensure_texture__locked (GtkIconPaintable *icon,
     {
       if (icon->is_svg)
         {
-          if (gtk_icon_paintable_is_symbolic (icon))
+          if (icon->is_symbolic)
             icon->texture = gdk_texture_new_from_resource_symbolic (icon->filename,
                                                                     pixel_size, pixel_size,
                                                                     icon->desired_scale,
+                                                                    &only_fg,
                                                                     &load_error);
           else
             icon->texture = gdk_texture_new_from_resource_at_scale (icon->filename,
                                                                     pixel_size, pixel_size,
-                                                                    TRUE, &load_error);
+                                                                    TRUE,
+                                                                    &only_fg,
+                                                                    &load_error);
         }
       else
-        icon->texture = gdk_texture_new_from_resource (icon->filename);
+        icon->texture = gdk_texture_new_from_resource_with_fg (icon->filename, &only_fg);
     }
   else if (icon->filename)
     {
       if (icon->is_svg)
         {
-          if (gtk_icon_paintable_is_symbolic (icon))
-            icon->texture = gdk_texture_new_from_path_symbolic (icon->filename,
-                                                                pixel_size, pixel_size,
-                                                                icon->desired_scale,
-                                                                &load_error);
+          if (icon->is_symbolic)
+            icon->texture = gdk_texture_new_from_filename_symbolic (icon->filename,
+                                                                    pixel_size, pixel_size,
+                                                                    icon->desired_scale,
+                                                                    &only_fg,
+                                                                    &load_error);
           else
             {
               GFile *file = g_file_new_for_path (icon->filename);
@@ -3778,7 +3754,9 @@ icon_ensure_texture__locked (GtkIconPaintable *icon,
                 {
                   icon->texture = gdk_texture_new_from_stream_at_scale (stream,
                                                                         pixel_size, pixel_size,
-                                                                        TRUE, NULL,
+                                                                        TRUE,
+                                                                        &only_fg,
+                                                                        NULL,
                                                                         &load_error);
                   g_object_unref (stream);
                 }
@@ -3788,7 +3766,7 @@ icon_ensure_texture__locked (GtkIconPaintable *icon,
         }
       else
         {
-          icon->texture = gdk_texture_new_from_filename (icon->filename, &load_error);
+          icon->texture = gdk_texture_new_from_filename_with_fg (icon->filename, &only_fg, &load_error);
         }
     }
   else
@@ -3806,14 +3784,18 @@ icon_ensure_texture__locked (GtkIconPaintable *icon,
           if (icon->is_svg)
             icon->texture = gdk_texture_new_from_stream_at_scale (stream,
                                                                   pixel_size, pixel_size,
-                                                                  TRUE, NULL,
+                                                                  TRUE,
+                                                                  &only_fg,
+                                                                  NULL,
                                                                   &load_error);
           else
-            icon->texture = gdk_texture_new_from_stream (stream, NULL, &load_error);
+            icon->texture = gdk_texture_new_from_stream_with_fg (stream, &only_fg, NULL, &load_error);
 
           g_object_unref (stream);
         }
     }
+
+  icon->only_fg = only_fg;
 
   if (!icon->texture)
     {
@@ -3822,6 +3804,7 @@ icon_ensure_texture__locked (GtkIconPaintable *icon,
       icon->texture = gdk_texture_new_from_resource (IMAGE_MISSING_RESOURCE_PATH);
       icon->icon_name = g_strdup ("image-missing");
       icon->is_symbolic = FALSE;
+      icon->only_fg = FALSE;
     }
 
   if (GDK_PROFILER_IS_RUNNING)
@@ -3830,7 +3813,7 @@ icon_ensure_texture__locked (GtkIconPaintable *icon,
       /* Don't report quick (< 0.5 msec) parses */
       if (end - before > 500000 || !in_thread)
         {
-          gdk_profiler_add_markf (before, (end - before), in_thread ?  "icon load (thread)" : "icon load" ,
+          gdk_profiler_add_markf (before, (end - before), in_thread ?  "Icon load (thread)" : "Icon load" ,
                                   "%s size %d@%d", icon->filename, icon->desired_size, icon->desired_scale);
         }
     }
@@ -3904,22 +3887,9 @@ gtk_icon_paintable_snapshot_symbolic (GtkSymbolicPaintable *paintable,
   int texture_width, texture_height;
   double render_width;
   double render_height;
-  gboolean symbolic;
+  graphene_rect_t render_rect;
 
   texture = gtk_icon_paintable_ensure_texture (icon);
-  symbolic = gtk_icon_paintable_is_symbolic (icon);
-
-  if (symbolic)
-    {
-      graphene_matrix_t matrix;
-      graphene_vec4_t offset;
-
-      init_color_matrix (&matrix, &offset,
-                         &colors[0], &colors[3],
-                         &colors[2], &colors[1]);
-
-      gtk_snapshot_push_color_matrix (snapshot, &matrix, &offset);
-    }
 
   texture_width = gdk_texture_get_width (texture);
   texture_height = gdk_texture_get_height (texture);
@@ -3936,14 +3906,39 @@ gtk_icon_paintable_snapshot_symbolic (GtkSymbolicPaintable *paintable,
       render_height = height;
     }
 
-  gtk_snapshot_append_texture (snapshot, texture,
-                               &GRAPHENE_RECT_INIT ((width - render_width) / 2,
-                                                    (height - render_height) / 2,
-                                                    render_width,
-                                                    render_height));
+  graphene_rect_init (&render_rect,
+                      (width - render_width) / 2,
+                      (height - render_height) / 2,
+                      render_width,
+                      render_height);
 
-  if (symbolic)
-    gtk_snapshot_pop (snapshot);
+  if (icon->is_symbolic && icon->only_fg)
+    {
+      g_debug ("snapshot symbolic icon using mask");
+      gtk_snapshot_push_mask (snapshot, GSK_MASK_MODE_ALPHA);
+      gtk_snapshot_append_texture (snapshot, texture, &render_rect);
+      gtk_snapshot_pop (snapshot);
+      gtk_snapshot_append_color (snapshot, &colors[0], &render_rect);
+      gtk_snapshot_pop (snapshot);
+    }
+  else if (icon->is_symbolic)
+    {
+      graphene_matrix_t matrix;
+      graphene_vec4_t offset;
+
+      g_debug ("snapshot symbolic icon using color-matrix");
+      init_color_matrix (&matrix, &offset,
+                         &colors[0], &colors[3],
+                         &colors[2], &colors[1]);
+
+      gtk_snapshot_push_color_matrix (snapshot, &matrix, &offset);
+      gtk_snapshot_append_texture (snapshot, texture, &render_rect);
+      gtk_snapshot_pop (snapshot);
+    }
+  else
+    {
+      gtk_snapshot_append_texture (snapshot, texture, &render_rect);
+    }
 }
 
 static GdkPaintableFlags
@@ -3986,7 +3981,7 @@ icon_symbolic_paintable_init (GtkSymbolicPaintableInterface *iface)
 /**
  * gtk_icon_paintable_new_for_file:
  * @file: a `GFile`
- * @size: desired icon size
+ * @size: desired icon size, in application pixels
  * @scale: the desired scale
  *
  * Creates a `GtkIconPaintable` for a file with a given size and scale.
@@ -4012,7 +4007,7 @@ gtk_icon_paintable_new_for_file (GFile *file,
       char *uri;
 
       uri = g_file_get_uri (file);
-      icon->filename = g_strdup (uri + 11); /* resource:// */
+      icon->filename = g_strdup (uri + strlen ("resource://"));
       g_free (uri);
     }
   else
@@ -4021,6 +4016,7 @@ gtk_icon_paintable_new_for_file (GFile *file,
     }
 
   icon->is_svg = suffix_from_name (icon->filename) == ICON_CACHE_FLAG_SVG_SUFFIX;
+  icon->is_symbolic = icon_uri_is_symbolic (icon->filename, -1);
 
   return icon;
 }
@@ -4029,7 +4025,7 @@ gtk_icon_paintable_new_for_file (GFile *file,
  * gtk_icon_theme_lookup_by_gicon:
  * @self: a `GtkIconTheme`
  * @icon: the `GIcon` to look up
- * @size: desired icon size
+ * @size: desired icon size, in application pixels
  * @scale: the desired scale
  * @direction: text direction the icon will be displayed in
  * @flags: flags modifying the behavior of the icon lookup

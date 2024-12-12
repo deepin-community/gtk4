@@ -326,7 +326,7 @@ RegisterGdkClass (GType wtype)
   static WNDCLASSEXW wcl;
   ATOM klass = 0;
 
-  wcl.cbSize = sizeof (WNDCLASSEX);
+  wcl.cbSize = sizeof (WNDCLASSEXW);
   wcl.style = 0; /* DON'T set CS_<H,V>REDRAW. It causes total redraw
                   * on WM_SIZE and WM_MOVE. Flicker, Performance!
                   */
@@ -340,7 +340,7 @@ RegisterGdkClass (GType wtype)
   /* initialize once! */
   if (0 == hAppIcon && 0 == hAppIconSm)
     {
-      char sLoc [MAX_PATH+1];
+      wchar_t sLoc [MAX_PATH+1];
 
       // try to load first icon of executable program
       if (0 != GetModuleFileName (NULL, sLoc, MAX_PATH))
@@ -1627,7 +1627,7 @@ _gdk_win32_surface_lacks_wm_decorations (GdkSurface *window)
   has_any_decorations = FALSE;
 
   if (style & (WS_BORDER | WS_THICKFRAME | WS_CAPTION |
-               WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX))
+               WS_SYSMENU | WS_MAXIMIZEBOX))
     has_any_decorations = TRUE;
   else
     GDK_NOTE (MISC, g_print ("Window %p (handle %p): has no decorations (style %lx)\n",
@@ -1696,7 +1696,6 @@ _gdk_win32_surface_update_style_bits (GdkSurface *window)
       update_single_bit (&new_style, all, decorations & GDK_DECOR_RESIZEH, WS_THICKFRAME);
       update_single_bit (&new_style, all, decorations & GDK_DECOR_TITLE, WS_CAPTION);
       update_single_bit (&new_style, all, decorations & GDK_DECOR_MENU, WS_SYSMENU);
-      update_single_bit (&new_style, all, decorations & GDK_DECOR_MINIMIZE, WS_MINIMIZEBOX);
       update_single_bit (&new_style, all, decorations & GDK_DECOR_MAXIMIZE, WS_MAXIMIZEBOX);
     }
 
@@ -2065,7 +2064,7 @@ stash_window (GdkSurface          *window,
   hmonitor = MonitorFromWindow (GDK_SURFACE_HWND (window), MONITOR_DEFAULTTONEAREST);
   hmonitor_info.cbSize = sizeof (hmonitor_info);
 
-  if (!GetMonitorInfoA (hmonitor, &hmonitor_info))
+  if (!GetMonitorInfo (hmonitor, &hmonitor_info))
     return;
 
   if (impl->snap_stash == NULL)
@@ -4201,82 +4200,13 @@ BOOL WINAPI
 GtkShowWindow (GdkSurface *window,
                int        cmd_show)
 {
-  cairo_t *cr;
-  cairo_surface_t *surface;
-  RECT window_rect;
-  HDC hdc;
-  POINT window_position;
-  SIZE window_size;
-  POINT source_point;
-  BLENDFUNCTION blender;
-
-  HWND hwnd = GDK_SURFACE_HWND (window);
   GdkWin32Surface *impl = GDK_WIN32_SURFACE (window);
-
-  switch (cmd_show)
-    {
-    case SW_FORCEMINIMIZE:
-    case SW_HIDE:
-    case SW_MINIMIZE:
-      break;
-    case SW_MAXIMIZE:
-    case SW_RESTORE:
-    case SW_SHOW:
-    case SW_SHOWDEFAULT:
-    case SW_SHOWMINIMIZED:
-    case SW_SHOWMINNOACTIVE:
-    case SW_SHOWNA:
-    case SW_SHOWNOACTIVATE:
-    case SW_SHOWNORMAL:
-      if (IsWindowVisible (hwnd))
-        break;
-
-      /* Window was hidden, will be shown. Erase it, GDK will repaint soon,
-       * but not soon enough, so it's possible to see old content before
-       * the next redraw, unless we erase the window first.
-       */
-      GetWindowRect (hwnd, &window_rect);
-      source_point.x = source_point.y = 0;
-
-      window_position.x = window_rect.left;
-      window_position.y = window_rect.top;
-      window_size.cx = window_rect.right - window_rect.left;
-      window_size.cy = window_rect.bottom - window_rect.top;
-
-      blender.BlendOp = AC_SRC_OVER;
-      blender.BlendFlags = 0;
-      blender.AlphaFormat = AC_SRC_ALPHA;
-      blender.SourceConstantAlpha = 255;
-
-      /* Create a surface of appropriate size and clear it */
-      surface = cairo_win32_surface_create_with_dib (CAIRO_FORMAT_ARGB32,
-                                                     window_size.cx,
-                                                     window_size.cy);
-      cairo_surface_set_device_scale (surface, impl->surface_scale, impl->surface_scale);
-      cr = cairo_create (surface);
-      cairo_set_operator (cr, CAIRO_OPERATOR_SOURCE);
-      cairo_set_source_rgba (cr, 1.0, 1.0, 1.0, 0.0);
-      cairo_paint (cr);
-      cairo_destroy (cr);
-      cairo_surface_flush (surface);
-      hdc = cairo_win32_surface_get_dc (surface);
-
-      /* No API_CALL() wrapper, don't check for errors */
-      UpdateLayeredWindow (hwnd, NULL,
-                           &window_position, &window_size,
-                           hdc, &source_point,
-                           0, &blender, ULW_ALPHA);
-
-      cairo_surface_destroy (surface);
-
-      break;
-    }
 
   /* Ensure that maximized window size is corrected later on */
   if (cmd_show == SW_MAXIMIZE)
     impl->maximizing = TRUE;
 
-  return ShowWindow (hwnd, cmd_show);
+  return ShowWindow (GDK_SURFACE_HWND (window), cmd_show);
 }
 
 static void
@@ -4308,6 +4238,82 @@ gdk_win32_surface_set_shadow_width (GdkSurface *window,
   impl->shadow_y = top + bottom;
 }
 
+static void
+gdk_win32_surface_set_icon_list (GdkSurface *surface,
+                                 GList      *textures)
+{
+  GdkTexture *texture, *big_texture, *small_texture;
+  gint big_diff, small_diff;
+  gint big_w, big_h, small_w, small_h;
+  gint w, h;
+  gint dw, dh, diff;
+  HICON small_hicon, big_hicon;
+  GdkWin32Surface *impl;
+
+  if (GDK_SURFACE_DESTROYED (surface))
+    return;
+
+  impl = GDK_WIN32_SURFACE (surface);
+
+  /* ideal sizes for small and large icons */
+  big_w = GetSystemMetrics (SM_CXICON);
+  big_h = GetSystemMetrics (SM_CYICON);
+  small_w = GetSystemMetrics (SM_CXSMICON);
+  small_h = GetSystemMetrics (SM_CYSMICON);
+
+  /* find closest sized icons in the list */
+  big_texture = NULL;
+  small_texture = NULL;
+  big_diff = 0;
+  small_diff = 0;
+  while (textures)
+    {
+      texture = (GdkTexture*) textures->data;
+      w = gdk_texture_get_width (texture);
+      h = gdk_texture_get_height (texture);
+
+      dw = ABS (w - big_w);
+      dh = ABS (h - big_h);
+      diff = dw*dw + dh*dh;
+      if (big_texture == NULL || diff < big_diff)
+        {
+          big_texture = texture;
+          big_diff = diff;
+        }
+
+      dw = ABS (w - small_w);
+      dh = ABS (h - small_h);
+      diff = dw*dw + dh*dh;
+      if (small_texture == NULL || diff < small_diff)
+        {
+          small_texture = texture;
+          small_diff = diff;
+        }
+
+      textures = textures->next;
+    }
+
+  if (big_texture == NULL || small_texture == NULL)
+    return;
+
+  /* Create the icons */
+  big_hicon = big_texture ? _gdk_win32_create_hicon_for_texture (big_texture, TRUE, 0, 0) : NULL;
+  small_hicon = small_texture ? _gdk_win32_create_hicon_for_texture (small_texture, TRUE, 0, 0) : NULL;
+
+  /* Set the icons */
+  SendMessage (GDK_SURFACE_HWND (surface), WM_SETICON, ICON_BIG,
+               (LPARAM)big_hicon);
+  SendMessage (GDK_SURFACE_HWND (surface), WM_SETICON, ICON_SMALL,
+               (LPARAM)small_hicon);
+
+  /* Store the icons, destroying any previous icons */
+  if (impl->hicon_big)
+    GDI_CALL (DestroyIcon, (impl->hicon_big));
+  impl->hicon_big = big_hicon;
+  if (impl->hicon_small)
+    GDI_CALL (DestroyIcon, (impl->hicon_small));
+  impl->hicon_small = small_hicon;
+}
 
 double
 _gdk_win32_surface_get_scale (GdkSurface *surface)
@@ -4442,6 +4448,10 @@ _gdk_win32_surface_request_layout (GdkSurface *surface)
     {
       _gdk_win32_get_window_rect (surface, &rect);
 
+      /* Keep current position if rect is invalid (i.e. queried in bad context) */
+      if (rect.right == rect.left || rect.bottom == rect.top)
+        return;
+
       impl->next_layout.configured_width = (rect.right - rect.left + scale - 1) / scale;
       impl->next_layout.configured_height = (rect.bottom - rect.top + scale - 1) / scale;
 
@@ -4473,8 +4483,13 @@ _gdk_win32_surface_compute_size (GdkSurface *surface)
 
   if (!impl->drag_move_resize_context.native_move_resize_pending)
     {
+      bool size_changed;
+
       if (GDK_IS_TOPLEVEL (surface) && impl->force_recompute_size)
         {
+          size_changed = width != surface->width ||
+                         height != surface->height;
+
           surface->width = width;
           surface->height = height;
           gdk_win32_surface_resize (surface, width, height);
@@ -4482,11 +4497,15 @@ _gdk_win32_surface_compute_size (GdkSurface *surface)
         }
       else
         {
+          size_changed = width != impl->next_layout.configured_width ||
+                         height != impl->next_layout.configured_height;
+
           surface->width = impl->next_layout.configured_width;
           surface->height = impl->next_layout.configured_height;
         }
 
-      _gdk_surface_update_size (surface);
+      if (size_changed)
+        _gdk_surface_update_size (surface);
     }
 
   return FALSE;
@@ -4725,15 +4744,14 @@ gdk_win32_toplevel_set_property (GObject      *object,
       GDK_SURFACE (surface)->modal_hint = g_value_get_boolean (value);
 
       if (GDK_SURFACE (surface)->modal_hint)
-        {
-          SetCapture (GDK_SURFACE_HWND (surface));
-          _gdk_push_modal_window (surface);
-        }
+        _gdk_push_modal_window (surface);
 
       g_object_notify_by_pspec (G_OBJECT (surface), pspec);
       break;
 
     case LAST_PROP + GDK_TOPLEVEL_PROP_ICON_LIST:
+      gdk_win32_surface_set_icon_list (surface, g_value_get_pointer (value));
+      g_object_notify_by_pspec (G_OBJECT (surface), pspec);
       break;
 
     case LAST_PROP + GDK_TOPLEVEL_PROP_DECORATED:
@@ -5070,6 +5088,15 @@ gdk_win32_surface_apply_queued_move_resize (GdkSurface *surface,
                                SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOREDRAW));
 
       GDK_NOTE (EVENTS, g_print (" ... set window position\n"));
+
+      /*
+       * Workaround situations in the current Win32 surface resize code that may have notified GDK
+       * too late for resizes, which manifests on nVidia drivers (and AMD drivers in mailbox
+       * presentation mode) running under Vulkan when one interactively enlarges the surface (HWND).
+       *
+       * See MR !7562 for more details
+       */
+      _gdk_surface_update_size (surface);
 
       return;
     }

@@ -1,3 +1,7 @@
+gsk_expand_content_md_files = [
+  'paths.md',
+]
+
 if get_option('documentation')
   gsk4_toml = configure_file(
     input: 'gsk4.toml.in',
@@ -21,9 +25,21 @@ if get_option('documentation')
       '@INPUT1@',
     ],
     depends: [ gdk_gir[0] ],
-    depend_files: [ expand_content_md_files ],
+    depend_files: [ gsk_expand_content_md_files ],
     build_by_default: true,
     install: true,
     install_dir: docs_dir,
+  )
+
+  test('doc-check-gsk',
+    gidocgen,
+    args: [
+      'check',
+      '--config', gsk4_toml,
+      '--add-include-path=@0@'.format(meson.current_build_dir() / '../../../gtk'),
+      gsk_gir[0],
+    ],
+    depends: gsk_gir[0],
+    suite: ['docs'],
   )
 endif

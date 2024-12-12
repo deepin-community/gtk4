@@ -37,10 +37,7 @@
  * should be modal.
  *
  * The dialog is shown with [method@Gtk.FileDialog.open],
- * [method@Gtk.FileDialog.save], etc. These APIs follow the
- * GIO async pattern, and the result can be obtained by calling
- * the corresponding finish function, for example
- * [method@Gtk.FileDialog.open_finish].
+ * [method@Gtk.FileDialog.save], etc.
  *
  * Since: 4.10
  */
@@ -208,7 +205,7 @@ gtk_file_dialog_class_init (GtkFileDialogClass *class)
   object_class->set_property = gtk_file_dialog_set_property;
 
   /**
-   * GtkFileDialog:title: (attributes org.gtk.Property.get=gtk_file_dialog_get_title org.gtk.Property.set=gtk_file_dialog_set_title)
+   * GtkFileDialog:title:
    *
    * A title that may be shown on the file chooser dialog.
    *
@@ -220,7 +217,7 @@ gtk_file_dialog_class_init (GtkFileDialogClass *class)
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkFileDialog:modal: (attributes org.gtk.Property.get=gtk_file_dialog_get_modal org.gtk.Property.set=gtk_file_dialog_set_modal)
+   * GtkFileDialog:modal:
    *
    * Whether the file chooser dialog is modal.
    *
@@ -232,7 +229,7 @@ gtk_file_dialog_class_init (GtkFileDialogClass *class)
                             G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkFileDialog:filters: (attributes org.gtk.Property.get=gtk_file_dialog_get_filters org.gtk.Property.set=gtk_file_dialog_set_filters)
+   * GtkFileDialog:filters:
    *
    * The list of filters.
    *
@@ -246,7 +243,7 @@ gtk_file_dialog_class_init (GtkFileDialogClass *class)
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkFileDialog:default-filter: (attributes org.gtk.Property.get=gtk_file_dialog_get_default_filter org.gtk.Property.set=gtk_file_dialog_set_default_filter)
+   * GtkFileDialog:default-filter:
    *
    * The default filter, that is, the filter that is initially
    * active in the file chooser dialog.
@@ -266,7 +263,7 @@ gtk_file_dialog_class_init (GtkFileDialogClass *class)
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkFileDialog:initial-file: (attributes org.gtk.Property.get=gtk_file_dialog_get_initial_file org.gtk.Property.set=gtk_file_dialog_set_initial_file)
+   * GtkFileDialog:initial-file:
    *
    * The initial file, that is, the file that is initially selected
    * in the file chooser dialog
@@ -282,7 +279,7 @@ gtk_file_dialog_class_init (GtkFileDialogClass *class)
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkFileDialog:initial-folder: (attributes org.gtk.Property.get=gtk_file_dialog_get_initial_folder org.gtk.Property.set=gtk_file_dialog_set_initial_folder)
+   * GtkFileDialog:initial-folder:
    *
    * The initial folder, that is, the directory that is initially
    * opened in the file chooser dialog
@@ -295,7 +292,7 @@ gtk_file_dialog_class_init (GtkFileDialogClass *class)
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkFileDialog:initial-name: (attributes org.gtk.Property.get=gtk_file_dialog_get_initial_name org.gtk.Property.set=gtk_file_dialog_set_initial_name)
+   * GtkFileDialog:initial-name:
    *
    * The initial name, that is, the filename that is initially
    * selected in the file chooser dialog.
@@ -308,7 +305,7 @@ gtk_file_dialog_class_init (GtkFileDialogClass *class)
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkFileDialog:accept-label: (attributes org.gtk.Property.get=gtk_file_dialog_get_accept_label org.gtk.Property.set=gtk_file_dialog_set_accept_label)
+   * GtkFileDialog:accept-label:
    *
    * Label for the file chooser's accept button.
    *
@@ -693,7 +690,7 @@ gtk_file_dialog_set_initial_file (GtkFileDialog *self,
     {
       GFile *folder;
       GFileInfo *info;
-   
+
       if (self->initial_file && g_file_equal (self->initial_file, file))
         return;
 
@@ -891,6 +888,10 @@ finish_file_op (GtkFileDialog  *self,
 
       if (g_list_model_get_n_items (files) > 0)
         file = g_list_model_get_item (files, 0);
+      else
+        g_set_error_literal (error,
+                             GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_FAILED,
+                             "No file selected");
 
       g_object_unref (files);
 
@@ -916,15 +917,14 @@ finish_multiple_files_op (GtkFileDialog  *self,
  * @self: a `GtkFileDialog`
  * @parent: (nullable): the parent `GtkWindow`
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
  * This function initiates a file selection operation by
  * presenting a file chooser dialog to the user.
  *
  * The @callback will be called when the dialog is dismissed.
- * It should call [method@Gtk.FileDialog.open_finish]
- * to obtain the result.
  *
  * Since: 4.10
  */
@@ -986,8 +986,9 @@ gtk_file_dialog_open_finish (GtkFileDialog   *self,
  * @self: a `GtkFileDialog`
  * @parent: (nullable): the parent `GtkWindow`
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
  * This function initiates a directory selection operation by
  * presenting a file chooser dialog to the user.
@@ -997,8 +998,6 @@ gtk_file_dialog_open_finish (GtkFileDialog   *self,
  * will be in the directory [property@Gtk.FileDialog:initial-folder].
  *
  * The @callback will be called when the dialog is dismissed.
- * It should call [method@Gtk.FileDialog.select_folder_finish]
- * to obtain the result.
  *
  * Since: 4.10
  */
@@ -1060,15 +1059,14 @@ gtk_file_dialog_select_folder_finish (GtkFileDialog  *self,
  * @self: a `GtkFileDialog`
  * @parent: (nullable): the parent `GtkWindow`
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
  * This function initiates a file save operation by
  * presenting a file chooser dialog to the user.
  *
  * The @callback will be called when the dialog is dismissed.
- * It should call [method@Gtk.FileDialog.save_finish]
- * to obtain the result.
  *
  * Since: 4.10
  */
@@ -1130,8 +1128,9 @@ gtk_file_dialog_save_finish (GtkFileDialog   *self,
  * @self: a `GtkFileDialog`
  * @parent: (nullable): the parent `GtkWindow`
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
  * This function initiates a multi-file selection operation by
  * presenting a file chooser dialog to the user.
@@ -1140,8 +1139,6 @@ gtk_file_dialog_save_finish (GtkFileDialog   *self,
  * [property@Gtk.FileDialog:initial-folder].
  *
  * The @callback will be called when the dialog is dismissed.
- * It should call [method@Gtk.FileDialog.open_multiple_finish]
- * to obtain the result.
  *
  * Since: 4.10
  */
@@ -1204,8 +1201,9 @@ gtk_file_dialog_open_multiple_finish (GtkFileDialog   *self,
  * @self: a `GtkFileDialog`
  * @parent: (nullable): the parent `GtkWindow`
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
  * This function initiates a multi-directory selection operation by
  * presenting a file chooser dialog to the user.
@@ -1214,8 +1212,6 @@ gtk_file_dialog_open_multiple_finish (GtkFileDialog   *self,
  * [property@Gtk.FileDialog:initial-folder].
  *
  * The @callback will be called when the dialog is dismissed.
- * It should call [method@Gtk.FileDialog.select_multiple_folders_finish]
- * to obtain the result.
  *
  * Since: 4.10
  */
@@ -1276,6 +1272,8 @@ gtk_file_dialog_select_multiple_folders_finish (GtkFileDialog   *self,
 /**
  * gtk_file_dialog_get_accept_label:
  * @self: a `GtkFileDialog`
+ *
+ * Retrieves the text used by the dialog on its accept button.
  *
  * Returns: (nullable): the label shown on the file chooser's accept button.
  *

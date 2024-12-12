@@ -77,14 +77,19 @@ content_files = [
   "section-tree-widget.md",
   "migrating-2to4.md",
   "migrating-3to4.md",
+  "migrating-4to5.md",
   "broadway.md",
   "osx.md",
   "wayland.md",
   "windows.md",
   "x11.md",
+  "tools.md",
   "visual_index.md",
+  "node-format.md",
 ]
 content_images = [
+  "../images/favicon.svg",
+  "../images/favicon-192x192.png",
   "images/aboutdialog.png",
   "images/action-bar.png",
   "images/appchooserbutton.png",
@@ -245,4 +250,14 @@ content_images = [
   "images/box-model-light.png",
   "images/box-model-dark.png",
 ]
+content_base_url = "https://gitlab.gnome.org/GNOME/gtk/-/blob/main/docs/reference/gtk/"
 urlmap_file = "urlmap.js"
+
+[[object]]
+name = "StyleProvider"
+  [[object.signal]]
+  name = "gtk-private-changed"
+  hidden = true
+
+[check]
+ignore_deprecated = true

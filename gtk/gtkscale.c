@@ -70,6 +70,15 @@
  * the mark. It can be translated with the usual ”translatable” and
  * “context” attributes.
  *
+ * # Shortcuts and Gestures
+ *
+ * `GtkPopoverMenu` supports the following keyboard shortcuts:
+ *
+ * - Arrow keys, <kbd>+</kbd> and <kbd>-</kbd> will increment or decrement
+ *   by step, or by page when combined with <kbd>Ctrl</kbd>.
+ * - <kbd>PgUp</kbd> and <kbd>PgDn</kbd> will increment or decrement by page.
+ * - <kbd>Home</kbd> and <kbd>End</kbd> will set the minimum or maximum value.
+ *
  * # CSS nodes
  *
  * ```
@@ -330,6 +339,8 @@ gtk_scale_allocate_value (GtkScale *scale)
   GtkAllocation value_alloc;
   int range_width, range_height;
   graphene_rect_t slider_bounds;
+  GdkRectangle trough_rect;
+  int slider_center_x, slider_center_y, trough_center_x, trough_center_y;
 
   range_width = gtk_widget_get_width (widget);
   range_height = gtk_widget_get_height (widget);
@@ -337,6 +348,14 @@ gtk_scale_allocate_value (GtkScale *scale)
   slider_widget = gtk_range_get_slider_widget (range);
   if (!gtk_widget_compute_bounds (slider_widget, widget, &slider_bounds))
     graphene_rect_init (&slider_bounds, 0, 0, gtk_widget_get_width (widget), gtk_widget_get_height (widget));
+
+  slider_center_x = slider_bounds.origin.x + slider_bounds.size.width / 2;
+  slider_center_y = slider_bounds.origin.y + slider_bounds.size.height / 2;
+
+  gtk_range_get_range_rect (range, &trough_rect);
+
+  trough_center_x = trough_rect.x + trough_rect.width / 2;
+  trough_center_y = trough_rect.y + trough_rect.height / 2;
 
   gtk_widget_measure (priv->value_widget,
                       GTK_ORIENTATION_HORIZONTAL, -1,
@@ -353,21 +372,21 @@ gtk_scale_allocate_value (GtkScale *scale)
         {
         case GTK_POS_LEFT:
           value_alloc.x = 0;
-          value_alloc.y = (range_height - value_alloc.height) / 2;
+          value_alloc.y = trough_center_y - value_alloc.height / 2;
           break;
 
         case GTK_POS_RIGHT:
           value_alloc.x = range_width - value_alloc.width;
-          value_alloc.y = (range_height - value_alloc.height) / 2;
+          value_alloc.y = trough_center_y - value_alloc.height / 2;
           break;
 
         case GTK_POS_TOP:
-          value_alloc.x = slider_bounds.origin.x + (slider_bounds.size.width - value_alloc.width) / 2;
-          value_alloc.y = slider_bounds.origin.y - value_alloc.height;
+          value_alloc.x = slider_center_x - value_alloc.width / 2;
+          value_alloc.y = 0;
           break;
 
         case GTK_POS_BOTTOM:
-          value_alloc.x = slider_bounds.origin.x + (slider_bounds.size.width - value_alloc.width) / 2;
+          value_alloc.x = slider_center_x - value_alloc.width / 2;
           value_alloc.y = range_height - value_alloc.height;
           break;
 
@@ -382,21 +401,21 @@ gtk_scale_allocate_value (GtkScale *scale)
         {
         case GTK_POS_LEFT:
           value_alloc.x = 0;
-          value_alloc.y = (slider_bounds.origin.y + (slider_bounds.size.height / 2)) - value_alloc.height / 2;
+          value_alloc.y = slider_center_y - value_alloc.height / 2;
           break;
 
         case GTK_POS_RIGHT:
           value_alloc.x = range_width - value_alloc.width;
-          value_alloc.y = (slider_bounds.origin.y + (slider_bounds.size.height / 2)) - value_alloc.height / 2;
+          value_alloc.y = slider_center_y - value_alloc.height / 2;
           break;
 
         case GTK_POS_TOP:
-          value_alloc.x = (range_width - value_alloc.width) / 2;
+          value_alloc.x = trough_center_x - value_alloc.width / 2;
           value_alloc.y = 0;
           break;
 
         case GTK_POS_BOTTOM:
-          value_alloc.x = (range_width - value_alloc.width) / 2;
+          value_alloc.x = trough_center_x - value_alloc.width / 2;
           value_alloc.y = range_height - value_alloc.height;
           break;
 
@@ -563,7 +582,7 @@ gtk_scale_size_allocate (GtkWidget *widget,
                               &marks_height, NULL,
                               NULL, NULL);
           marks_rect.x = 0;
-          marks_rect.y = 0;
+          marks_rect.y = range_rect.y - marks_height;
           marks_rect.width = range_rect.width;
           marks_rect.height = marks_height;
           gtk_widget_size_allocate (priv->top_marks_widget, &marks_rect, -1);
@@ -669,7 +688,7 @@ gtk_scale_class_init (GtkScaleClass *class)
   class->get_layout_offsets = gtk_scale_real_get_layout_offsets;
 
   /**
-   * GtkScale:digits: (attributes org.gtk.Method.get=gtk_scale_get_digits org.gtk.Method.set=gtk_scale_set_digits)
+   * GtkScale:digits:
    *
    * The number of decimal places that are displayed in the value.
    */
@@ -680,7 +699,7 @@ gtk_scale_class_init (GtkScaleClass *class)
                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkScale:draw-value: (attributes org.gtk.Method.get=gtk_scale_get_draw_value org.gtk.Method.set=gtk_scale_set_draw_value)
+   * GtkScale:draw-value:
    *
    * Whether the current value is displayed as a string next to the slider.
    */
@@ -690,7 +709,7 @@ gtk_scale_class_init (GtkScaleClass *class)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkScale:has-origin: (attributes org.gtk.Method.get=gtk_scale_get_has_origin org.gtk.Method.set=gtk_scale_set_has_origin)
+   * GtkScale:has-origin:
    *
    * Whether the scale has an origin.
    */
@@ -700,7 +719,7 @@ gtk_scale_class_init (GtkScaleClass *class)
                             GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkScale:value-pos: (attributes org.gtk.Method.get=gtk_scale_get_value_pos org.gtk.Method.set=gtk_scale_set_value_pos)
+   * GtkScale:value-pos:
    *
    * The position in which the current value is displayed.
    */
@@ -988,7 +1007,7 @@ gtk_scale_new_with_range (GtkOrientation orientation,
 }
 
 /**
- * gtk_scale_set_digits: (attributes org.gtk.Method.set_property=digits)
+ * gtk_scale_set_digits:
  * @scale: a `GtkScale`
  * @digits: the number of decimal places to display,
  *   e.g. use 1 to display 1.0, 2 to display 1.00, etc
@@ -1035,7 +1054,7 @@ gtk_scale_set_digits (GtkScale *scale,
 }
 
 /**
- * gtk_scale_get_digits: (attributes org.gtk.Method.get_property=digits)
+ * gtk_scale_get_digits:
  * @scale: a `GtkScale`
  *
  * Gets the number of decimal places that are displayed in the value.
@@ -1086,7 +1105,7 @@ update_value_position (GtkScale *scale)
 }
 
 /**
- * gtk_scale_set_draw_value: (attributes org.gtk.Method.set_property=draw-value)
+ * gtk_scale_set_draw_value:
  * @scale: a `GtkScale`
  * @draw_value: %TRUE to draw the value
  *
@@ -1128,7 +1147,7 @@ gtk_scale_set_draw_value (GtkScale *scale,
 }
 
 /**
- * gtk_scale_get_draw_value: (attributes org.gtk.Method.get_property=draw-value)
+ * gtk_scale_get_draw_value:
  * @scale: a `GtkScale`
  *
  * Returns whether the current value is displayed as a string
@@ -1147,7 +1166,7 @@ gtk_scale_get_draw_value (GtkScale *scale)
 }
 
 /**
- * gtk_scale_set_has_origin: (attributes org.gtk.Method.set_property=has-origin)
+ * gtk_scale_set_has_origin:
  * @scale: a `GtkScale`
  * @has_origin: %TRUE if the scale has an origin
  *
@@ -1176,7 +1195,7 @@ gtk_scale_set_has_origin (GtkScale *scale,
 }
 
 /**
- * gtk_scale_get_has_origin: (attributes org.gtk.Method.get_property=has-origin)
+ * gtk_scale_get_has_origin:
  * @scale: a `GtkScale`
  *
  * Returns whether the scale has an origin.
@@ -1192,7 +1211,7 @@ gtk_scale_get_has_origin (GtkScale *scale)
 }
 
 /**
- * gtk_scale_set_value_pos: (attributes org.gtk.Method.set_property=value-pos)
+ * gtk_scale_set_value_pos:
  * @scale: a `GtkScale`
  * @pos: the position in which the current value is displayed
  *
@@ -1218,7 +1237,7 @@ gtk_scale_set_value_pos (GtkScale        *scale,
 }
 
 /**
- * gtk_scale_get_value_pos: (attributes org.gtk.Method.get_property=value-pos)
+ * gtk_scale_get_value_pos:
  * @scale: a `GtkScale`
  *
  * Gets the position in which the current value is displayed.
@@ -1417,11 +1436,12 @@ gtk_scale_measure (GtkWidget      *widget,
   GtkScale *scale = GTK_SCALE (widget);
   GtkScalePrivate *priv = gtk_scale_get_instance_private (scale);
   GtkOrientation scale_orientation;
+  int range_minimum, range_natural, scale_minimum = 0, scale_natural = 0;
 
   GTK_WIDGET_CLASS (gtk_scale_parent_class)->measure (widget,
                                                       orientation,
                                                       for_size,
-                                                      minimum, natural,
+                                                      &range_minimum, &range_natural,
                                                       minimum_baseline, natural_baseline);
 
   scale_orientation = gtk_orientable_get_orientation (GTK_ORIENTABLE (widget));
@@ -1443,8 +1463,8 @@ gtk_scale_measure (GtkWidget      *widget,
 
       marks_size = MAX (top_marks_size, bottom_marks_size);
 
-      *minimum = MAX (*minimum, marks_size);
-      *natural = MAX (*natural, marks_size);
+      scale_minimum = MAX (scale_minimum, marks_size);
+      scale_natural = MAX (scale_natural, marks_size);
     }
 
   if (priv->value_widget)
@@ -1458,29 +1478,32 @@ gtk_scale_measure (GtkWidget      *widget,
         {
           if (orientation == GTK_ORIENTATION_HORIZONTAL)
             {
-              *minimum = MAX (*minimum, min);
-              *natural = MAX (*natural, nat);
+              scale_minimum = MAX (scale_minimum, min);
+              scale_natural = MAX (scale_natural, nat);
             }
           else
             {
-              *minimum += min;
-              *natural += nat;
+              scale_minimum += min;
+              scale_natural += nat;
             }
         }
       else
         {
           if (orientation == GTK_ORIENTATION_HORIZONTAL)
             {
-              *minimum += min;
-              *natural += nat;
+              scale_minimum += min;
+              scale_natural += nat;
             }
           else
             {
-              *minimum = MAX (*minimum, min);
-              *natural = MAX (*natural, nat);
+              scale_minimum = MAX (scale_minimum, min);
+              scale_natural = MAX (scale_natural, nat);
             }
         }
     }
+
+  *minimum = MAX (range_minimum, scale_minimum);
+  *natural = MAX (range_natural, scale_natural);
 }
 
 static void
@@ -2030,8 +2053,9 @@ gtk_scale_buildable_custom_finished (GtkBuildable *buildable,
 /**
  * gtk_scale_set_format_value_func:
  * @scale: a `GtkScale`
- * @func: (nullable): function that formats the value
- * @user_data: (closure): user data to pass to @func
+ * @func: (nullable) (scope notified) (closure user_data) (destroy destroy_notify): function
+ *   that formats the value
+ * @user_data: user data to pass to @func
  * @destroy_notify: (nullable): destroy function for @user_data
  *
  * @func allows you to change how the scale value is displayed.

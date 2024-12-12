@@ -55,12 +55,13 @@ model_to_string (GListModel *model)
 static char *
 section_model_to_string (GListModel *model)
 {
-  GString *string = g_string_new (NULL);
+  GString *string;
   guint i, s, e, n;
 
   if (!GTK_IS_SECTION_MODEL (model))
     return model_to_string (model);
 
+  string = g_string_new (NULL);
   n = g_list_model_get_n_items (model);
 
   i = 0;
@@ -624,6 +625,14 @@ test_can_unselect (void)
   assert_selection_changes (selection, "");
 
   gtk_single_selection_set_can_unselect (GTK_SINGLE_SELECTION (selection), TRUE);
+
+  assert_selection (selection, "1");
+  ret = gtk_selection_model_unselect_item (selection, 0);
+  g_assert_false (ret);
+  assert_selection (selection, "1");
+  assert_selection_changes (selection, "");
+
+  gtk_single_selection_set_autoselect (GTK_SINGLE_SELECTION (selection), FALSE);
 
   assert_selection (selection, "1");
   ret = gtk_selection_model_unselect_item (selection, 0);

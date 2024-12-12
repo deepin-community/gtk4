@@ -35,8 +35,7 @@ The issue tracker is meant to be used for actionable issues only.
 
 You should not open a new issue for security related questions.
 
-When in doubt, send an email to the [security](mailto:security@gnome.org)
-mailing list.
+When in doubt, follow the process for [GNOME security issues](https://security.gnome.org/).
 
 ### Bug reports
 
@@ -101,14 +100,16 @@ development tools appropriate for your operating system, including:
  - Meson
  - Ninja
  - Gettext (19.7 or newer)
- - a [C99 compatible compiler](https://wiki.gnome.org/Projects/GLib/CompilerRequirements)
+ - a [C99 compatible compiler][glib-toolchain-reqs]
 
 Up-to-date instructions about developing GNOME applications and libraries
 can be found on [the GNOME Developer Center](https://developer.gnome.org).
 
 The GTK project uses GitLab for code hosting and for tracking issues. More
-information about using GitLab can be found [on the GNOME
-wiki](https://wiki.gnome.org/GitLab).
+information about using GitLab can be found on [the GNOME handbook][handbook].
+
+[glib-toolchain-reqs]: https://gitlab.gnome.org/GNOME/glib/-/blob/main/docs/toolchain-requirements.md
+[handbook]: https://handbook.gnome.org/infrastructure/gitlab.html
 
 ### Dependencies
 
@@ -132,7 +133,7 @@ GTK will attempt to download and build some of these dependencies if it
 cannot find them on your system.
 
 Additionally, you may want to look at projects that create a development
-environment for you, like [jhbuild](https://wiki.gnome.org/HowDoI/Jhbuild)
+environment for you, like [jhbuild](https://gitlab.gnome.org/GNOME/jhbuild)
 and [gvsbuild](https://github.com/wingtk/gvsbuild).
 
 ### Getting started
@@ -145,32 +146,27 @@ $ git clone https://gitlab.gnome.org/yourusername/gtk.git
 $ cd gtk
 ```
 
-**Note**: if you plan to push changes to back to the main repository and
-have a GNOME account, you can skip the fork, and use the following instead:
-
-```sh
-$ git clone git@gitlab.gnome.org:GNOME/gtk.git
-$ cd gtk
-```
-
 To compile the Git version of GTK on your system, you will need to
 configure your build using Meson:
 
 ```sh
-$ meson _builddir .
-$ cd _builddir
-$ ninja
+$ meson setup _builddir .
+$ meson compile -C _builddir
 ```
 
 Typically, you should work on your own branch:
 
 ```sh
-$ git checkout -b your-branch
+$ git switch -C your-branch
 ```
 
 Once you've finished working on the bug fix or feature, push the branch
 to the Git repository and open a new merge request, to let the GTK
 maintainers review your contribution.
+
+**Important**: Do **not** attach a diff or a patch file to a GitLab issue.
+Patches cannot be reviewed, and do not not go through the CI pipeline. If
+you wish to submit your changes to GTK, always use a merge request.
 
 ### Code reviews
 
@@ -214,7 +210,7 @@ Closes #1234
  `git commit -a --author "Joe Coder <joe@coder.org>"` and `--signoff`.
 
  - If your commit is addressing an issue, use the
- [GitLab syntax](https://docs.gitlab.com/ce/user/project/issues/automatic_issue_closing.html)
+ [GitLab syntax](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
  to automatically close the issue when merging the commit with the upstream
  repository:
 
@@ -244,13 +240,11 @@ people committing to GTK to follow a few rules:
    code, you should always ask. If your change is minor and you've been
    working on GTK for a while it probably isn't necessary to ask. But when
    in doubt, ask. Even if your change is correct, somebody may know a
-   better way to do things. If you are making changes to GTK, you should
-   be subscribed to the [gtk-devel](https://mail.gnome.org/mailman/listinfo/gtk-devel-list)
-   mailing list; this is a good place to ask about intended changes.
-   The `#gtk` IRC channel on irc.gnome.org is also a good place to find GTK
-   developers to discuss changes, but if you live outside of the EU/US time
-   zones, an email to the gtk-devel mailing list is the most certain and
-   preferred method.
+   better way to do things.
+   The `gtk` [room on matrix](https://matrix.to/#/#gtk:gnome.org) is also a
+   good place to find GTK developers to discuss changes, but if you live
+   outside of the EU/US time zones, the [gtk tag on the GNOME Discourse instance](https://discourse.gnome.org/tag/gtk)
+   is the most certain and preferred method.
 
 0. Ask _first_.
 
@@ -265,4 +259,4 @@ people committing to GTK to follow a few rules:
 
 If you have been contributing to GTK for a while and you don't have commit
 access to the repository, you may ask to obtain it following the [GNOME account
-process](https://wiki.gnome.org/AccountsTeam/NewAccounts).
+process](https://handbook.gnome.org/infrastructure/developer-access.html).

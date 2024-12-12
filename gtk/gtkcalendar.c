@@ -51,6 +51,13 @@
  * between 1582 and 1929. Display before these dates is likely to be
  * historically incorrect.
  *
+ * # Shortcuts and Gestures
+ *
+ * `GtkCalendar` supports the following gestures:
+ *
+ * - Scrolling up or down will switch to the previous or next month.
+ * - Date strings can be dropped for setting the current day.
+ *
  * # CSS nodes
  *
  * ```
@@ -122,6 +129,10 @@
 #include "gtklabel.h"
 #include "gtkstack.h"
 #include "gtkgrid.h"
+
+/* GDateTime is used, from 0001-01-01 to 9999-12-31 */
+static const int YEAR_MIN = 1;
+static const int YEAR_MAX = 9999;
 
 static const guint month_length[2][13] =
 {
@@ -404,7 +415,7 @@ gtk_calendar_class_init (GtkCalendarClass *class)
                                                      G_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
 
   /**
-   * GtkCalendar:show-heading: (attributes org.gtk.Property.get=gtk_calendar_get_show_heading org.gtk.Property.set=gtk_calendar_set_show_heading)
+   * GtkCalendar:show-heading:
    *
    * Determines whether a heading is displayed.
    */
@@ -415,7 +426,7 @@ gtk_calendar_class_init (GtkCalendarClass *class)
                                                          GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
 
   /**
-   * GtkCalendar:show-day-names: (attributes org.gtk.Property.get=gtk_calendar_get_show_day_names org.gtk.Property.set=gtk_calendar_set_show_day_names)
+   * GtkCalendar:show-day-names:
    *
    * Determines whether day names are displayed.
    */
@@ -425,7 +436,7 @@ gtk_calendar_class_init (GtkCalendarClass *class)
                                                          TRUE,
                                                          GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
   /**
-   * GtkCalendar:show-week-numbers: (attributes org.gtk.Property.get=gtk_calendar_get_show_week_numbers org.gtk.Property.set=gtk_calendar_set_show_week_numbers)
+   * GtkCalendar:show-week-numbers:
    *
    * Determines whether week numbers are displayed.
    */
@@ -953,20 +964,121 @@ calendar_compute_days (GtkCalendar *calendar)
 }
 
 static void
+calendar_update_day_labels (GtkCalendar *calendar)
+{
+  char buffer[255];
+  GDateTime *today;
+  int today_day;
+  int selected_year, selected_month, selected_day;
+  gboolean lower_limit_reached, upper_limit_reached;
+
+  today_day = -1;
+  today = g_date_time_new_now_local ();
+  if (g_date_time_get_year (calendar->date) == g_date_time_get_year (today))
+    if (g_date_time_get_month (calendar->date) == g_date_time_get_month (today))
+      today_day = g_date_time_get_day_of_month (today);
+  g_date_time_unref (today);
+
+  g_date_time_get_ymd (calendar->date, &selected_year, &selected_month, &selected_day);
+
+  lower_limit_reached = selected_year == YEAR_MIN && selected_month == G_DATE_JANUARY;
+  upper_limit_reached = selected_year == YEAR_MAX && selected_month == G_DATE_DECEMBER;
+
+  for (int row = 0; row < 6; row++)
+    for (int col = 0; col < 7; col++)
+      {
+        const int day = calendar->day[row][col];
+        GtkWidget *label = calendar->day_number_labels[row][col];
+        /* Translators: this defines whether the day numbers should use
+         * localized digits or the ones used in English (0123...).
+         *
+         * Translate to "%Id" if you want to use localized digits, or
+         * translate to "%d" otherwise.
+         *
+         * Note that translating this doesn't guarantee that you get localized
+         * digits. That needs support from your system and locale definition
+         * too.
+         */
+        g_snprintf (buffer, sizeof (buffer), C_ ("calendar:day:digits", "%d"), day);
+        gtk_label_set_label (GTK_LABEL (label), buffer);
+        gtk_widget_remove_css_class (label, "other-month");
+        gtk_widget_remove_css_class (label, "today");
+        gtk_widget_unset_state_flags (label, GTK_STATE_FLAG_CHECKED);
+        gtk_widget_unset_state_flags (label, GTK_STATE_FLAG_FOCUSED);
+        gtk_widget_unset_state_flags (label, GTK_STATE_FLAG_SELECTED);
+        gtk_widget_set_sensitive (label, TRUE);
+
+        if (calendar->focus_row == row && calendar->focus_col == col)
+          gtk_widget_set_state_flags (label, GTK_STATE_FLAG_FOCUSED, FALSE);
+
+        switch (calendar->day_month[row][col])
+          {
+          case MONTH_PREV:
+            gtk_widget_add_css_class (label, "other-month");
+            if (lower_limit_reached)
+              {
+                gtk_label_set_label (GTK_LABEL (label), NULL);
+                gtk_widget_set_sensitive (label, FALSE);
+              }
+            break;
+          case MONTH_CURRENT:
+            if (day == selected_day)
+              gtk_widget_set_state_flags (label, GTK_STATE_FLAG_SELECTED, FALSE);
+            if (day == today_day)
+              gtk_widget_add_css_class (label, "today");
+            if (calendar->marked_date[day - 1])
+              gtk_widget_set_state_flags (label, GTK_STATE_FLAG_CHECKED, FALSE);
+            break;
+          case MONTH_NEXT:
+            gtk_widget_add_css_class (label, "other-month");
+            if (upper_limit_reached)
+              {
+                gtk_label_set_label (GTK_LABEL (label), NULL);
+                gtk_widget_set_sensitive (label, FALSE);
+              }
+            break;
+          default:
+            g_assert_not_reached ();
+            break;
+          }
+      }
+}
+
+static void
+calendar_update_navigation_buttons (GtkCalendar *calendar)
+{
+  int year, month;
+  g_date_time_get_ymd (calendar->date, &year, &month, NULL);
+  for (int i = 0; i < 4; i++)
+    gtk_widget_set_sensitive (calendar->arrow_widgets[i], TRUE);
+  if (year == YEAR_MIN)
+    {
+      /* Cannot go back */
+      gtk_widget_set_sensitive (calendar->arrow_widgets[2], FALSE);
+      if (month == G_DATE_JANUARY)
+        gtk_widget_set_sensitive (calendar->arrow_widgets[0], FALSE);
+    }
+  else if (year == YEAR_MAX)
+    {
+      /* Cannot move forward */
+      gtk_widget_set_sensitive (calendar->arrow_widgets[3], FALSE);
+      if (month == G_DATE_DECEMBER)
+        gtk_widget_set_sensitive (calendar->arrow_widgets[1], FALSE);
+    }
+}
+
+static void
 calendar_select_day_internal (GtkCalendar *calendar,
                               GDateTime   *date,
                               gboolean     emit_day_signal)
 {
-  GDateTime *today;
-  int new_day, new_month, new_year;
+  int new_month, new_year;
   gboolean day_changed, month_changed, year_changed;
   char buffer[255];
   char *str;
   time_t tmp_time;
   struct tm *tm;
   int i;
-  int x, y;
-  int today_day;
 
   day_changed = g_date_time_get_day_of_month (calendar->date) != g_date_time_get_day_of_month (date);
   month_changed = g_date_time_get_month (calendar->date) != g_date_time_get_month (date);
@@ -977,7 +1089,6 @@ calendar_select_day_internal (GtkCalendar *calendar,
 
   new_year = g_date_time_get_year (date);
   new_month = g_date_time_get_month (date);
-  new_day = g_date_time_get_day_of_month (date);
 
   g_date_time_unref (calendar->date);
   calendar->date = g_date_time_ref (date);
@@ -1003,65 +1114,9 @@ calendar_select_day_internal (GtkCalendar *calendar,
   gtk_stack_set_visible_child_name (GTK_STACK (calendar->month_name_stack),
                                     default_monthname[new_month - 1]);
 
-  today = g_date_time_new_now_local ();
+  calendar_update_navigation_buttons (calendar);
 
-  if (g_date_time_get_year (calendar->date) == g_date_time_get_year (today) &&
-      g_date_time_get_month (calendar->date) == g_date_time_get_month (today))
-    today_day = g_date_time_get_day_of_month (today);
-  else
-    today_day = -1;
-
-  g_date_time_unref (today);
-
-  /* Update day labels */
-  for (y = 0; y < 6; y ++)
-    for (x = 0; x < 7; x ++)
-      {
-        const int day = calendar->day[y][x];
-        GtkWidget *label = calendar->day_number_labels[y][x];
-        /* Translators: this defines whether the day numbers should use
-         * localized digits or the ones used in English (0123...).
-         *
-         * Translate to "%Id" if you want to use localized digits, or
-         * translate to "%d" otherwise.
-         *
-         * Note that translating this doesn't guarantee that you get localized
-         * digits. That needs support from your system and locale definition
-         * too.
-         */
-        g_snprintf (buffer, sizeof (buffer), C_("calendar:day:digits", "%d"), day);
-
-        gtk_label_set_label (GTK_LABEL (label), buffer);
-
-        if (calendar->day_month[y][x] == MONTH_PREV ||
-            calendar->day_month[y][x] == MONTH_NEXT)
-          gtk_widget_add_css_class (label, "other-month");
-        else
-          gtk_widget_remove_css_class (label, "other-month");
-
-        if (calendar->marked_date[day-1] &&
-            calendar->day_month[y][x] == MONTH_CURRENT)
-          gtk_widget_set_state_flags (label, GTK_STATE_FLAG_CHECKED, FALSE);
-        else
-          gtk_widget_unset_state_flags (label, GTK_STATE_FLAG_CHECKED);
-
-        if (new_day == day &&
-            calendar->day_month[y][x] == MONTH_CURRENT)
-          gtk_widget_set_state_flags (label, GTK_STATE_FLAG_SELECTED, FALSE);
-        else
-          gtk_widget_unset_state_flags (label, GTK_STATE_FLAG_SELECTED);
-
-        if (calendar->focus_row == y && calendar->focus_col == x)
-          gtk_widget_set_state_flags (label, GTK_STATE_FLAG_FOCUSED, FALSE);
-        else
-          gtk_widget_unset_state_flags (label, GTK_STATE_FLAG_FOCUSED);
-
-        if (day == today_day &&
-            calendar->day_month[y][x] == MONTH_CURRENT)
-          gtk_widget_add_css_class (label, "today");
-        else
-          gtk_widget_remove_css_class (label, "today");
-      }
+  calendar_update_day_labels (calendar);
 
   /* Update week number labels.
    * We simply get the week number of calendar->date and add the others.
@@ -1150,42 +1205,17 @@ gtk_calendar_set_property (GObject      *object,
                            GParamSpec   *pspec)
 {
   GtkCalendar *calendar = GTK_CALENDAR (object);
-  GDateTime *date;
 
   switch (prop_id)
     {
     case PROP_YEAR:
-      date = g_date_time_new_local (g_value_get_int (value),
-                                    g_date_time_get_month (calendar->date),
-                                    g_date_time_get_day_of_month (calendar->date),
-                                    0, 0, 0);
-      if (date)
-        {
-          calendar_select_day_internal (calendar, date, TRUE);
-          g_date_time_unref (date);
-        }
+      gtk_calendar_set_year (calendar, g_value_get_int (value));
       break;
     case PROP_MONTH:
-      date = g_date_time_new_local (g_date_time_get_year (calendar->date),
-                                    g_value_get_int (value) + 1,
-                                    g_date_time_get_day_of_month (calendar->date),
-                                    0, 0, 0);
-      if (date)
-        {
-          calendar_select_day_internal (calendar, date, TRUE);
-          g_date_time_unref (date);
-        }
+      gtk_calendar_set_month (calendar, g_value_get_int (value));
       break;
     case PROP_DAY:
-      date = g_date_time_new_local (g_date_time_get_year (calendar->date),
-                                    g_date_time_get_month (calendar->date),
-                                    g_value_get_int (value),
-                                    0, 0, 0);
-      if (date)
-        {
-          calendar_select_day_internal (calendar, date, TRUE);
-          g_date_time_unref (date);
-        }
+      gtk_calendar_set_day (calendar, g_value_get_int (value));
       break;
     case PROP_SHOW_HEADING:
       gtk_calendar_set_show_heading (calendar, g_value_get_boolean (value));
@@ -1213,13 +1243,13 @@ gtk_calendar_get_property (GObject      *object,
   switch (prop_id)
     {
     case PROP_YEAR:
-      g_value_set_int (value, g_date_time_get_year (calendar->date));
+      g_value_set_int (value, gtk_calendar_get_year (calendar));
       break;
     case PROP_MONTH:
-      g_value_set_int (value, g_date_time_get_month (calendar->date) - 1);
+      g_value_set_int (value, gtk_calendar_get_month (calendar));
       break;
     case PROP_DAY:
-      g_value_set_int (value, g_date_time_get_day_of_month (calendar->date));
+      g_value_set_int (value, gtk_calendar_get_day (calendar));
       break;
     case PROP_SHOW_HEADING:
       g_value_set_boolean (value, gtk_calendar_get_show_heading (calendar));
@@ -1325,66 +1355,73 @@ move_focus (GtkCalendar *calendar,
             int          updown)
 {
   GtkTextDirection text_dir = gtk_widget_get_direction (GTK_WIDGET (calendar));
-  int x, y;
+  int focus_row, focus_col;
+  GtkWidget *label;
+
+  focus_row = calendar->focus_row;
+  focus_col = calendar->focus_col;
 
   if (updown == 1)
     {
-      if (calendar->focus_row > 0)
-        calendar->focus_row--;
-      if (calendar->focus_row < 0)
-        calendar->focus_row = 5;
-      if (calendar->focus_col < 0)
-        calendar->focus_col = 6;
+      if (focus_row > 0)
+        focus_row--;
+      if (focus_row < 0)
+        focus_row = 5;
+      if (focus_col < 0)
+        focus_col = 6;
     }
   else if (updown == -1)
     {
-      if (calendar->focus_row < 5)
-        calendar->focus_row++;
-      if (calendar->focus_col < 0)
-        calendar->focus_col = 0;
+      if (focus_row < 5)
+        focus_row++;
+      if (focus_col < 0)
+        focus_col = 0;
     }
   else if ((text_dir == GTK_TEXT_DIR_LTR && direction == -1) ||
            (text_dir == GTK_TEXT_DIR_RTL && direction == 1))
     {
-      if (calendar->focus_col > 0)
-          calendar->focus_col--;
-      else if (calendar->focus_row > 0)
+      if (focus_col > 0)
+        focus_col--;
+      else if (focus_row > 0)
         {
-          calendar->focus_col = 6;
-          calendar->focus_row--;
+          focus_col = 6;
+          focus_row--;
         }
 
-      if (calendar->focus_col < 0)
-        calendar->focus_col = 6;
-      if (calendar->focus_row < 0)
-        calendar->focus_row = 5;
+      if (focus_col < 0)
+        focus_col = 6;
+      if (focus_row < 0)
+        focus_row = 5;
     }
   else
     {
-      if (calendar->focus_col < 6)
-        calendar->focus_col++;
-      else if (calendar->focus_row < 5)
+      if (focus_col < 6)
+        focus_col++;
+      else if (focus_row < 5)
         {
-          calendar->focus_col = 0;
-          calendar->focus_row++;
+          focus_col = 0;
+          focus_row++;
         }
 
-      if (calendar->focus_col < 0)
-        calendar->focus_col = 0;
-      if (calendar->focus_row < 0)
-        calendar->focus_row = 0;
+      if (focus_col < 0)
+        focus_col = 0;
+      if (focus_row < 0)
+        focus_row = 0;
     }
 
-  for (y = 0; y < 6; y ++)
-    for (x = 0; x < 7; x ++)
-      {
-        GtkWidget *label = calendar->day_number_labels[y][x];
+  if (!gtk_widget_is_sensitive (calendar->day_number_labels[focus_row][focus_col]))
+    return; /* Not sensitive, not reachable. */
 
-        if (calendar->focus_row == y && calendar->focus_col == x)
-          gtk_widget_set_state_flags (label, GTK_STATE_FLAG_FOCUSED, FALSE);
-        else
-          gtk_widget_unset_state_flags (label, GTK_STATE_FLAG_FOCUSED);
-      }
+  label = calendar->day_number_labels[calendar->focus_row][calendar->focus_col];
+  gtk_widget_unset_state_flags (label, GTK_STATE_FLAG_FOCUSED);
+  calendar_invalidate_day (calendar, calendar->focus_row, calendar->focus_col);
+
+  calendar->focus_row = focus_row;
+  calendar->focus_col = focus_col;
+
+  label = calendar->day_number_labels[focus_row][focus_col];
+  gtk_widget_set_state_flags (label, GTK_STATE_FLAG_FOCUSED, FALSE);
+  calendar_invalidate_day (calendar, focus_row, focus_col);
 }
 
 static gboolean
@@ -1396,64 +1433,60 @@ gtk_calendar_key_controller_key_pressed (GtkEventControllerKey *controller,
 {
   GtkCalendar *calendar = GTK_CALENDAR (widget);
   int return_val;
-  int old_focus_row;
-  int old_focus_col;
   int row, col, day;
+#ifdef __APPLE__
+  GdkModifierType modifier = GDK_META_MASK;
+#else
+  GdkModifierType modifier = GDK_CONTROL_MASK;
+#endif
 
   return_val = FALSE;
-
-  old_focus_row = calendar->focus_row;
-  old_focus_col = calendar->focus_col;
 
   switch (keyval)
     {
     case GDK_KEY_KP_Left:
     case GDK_KEY_Left:
       return_val = TRUE;
-      if (state & GDK_CONTROL_MASK)
-        calendar_set_month_prev (calendar);
+      if (state & modifier)
+        if (!gtk_widget_is_sensitive (calendar->arrow_widgets[0]))
+          break; /* Not allowed with the mouse, not allowed with the keyboard. */
+        else
+          calendar_set_month_prev (calendar);
       else
-        {
-          move_focus (calendar, -1, 0);
-          calendar_invalidate_day (calendar, old_focus_row, old_focus_col);
-          calendar_invalidate_day (calendar, calendar->focus_row, calendar->focus_col);
-        }
+        move_focus (calendar, -1, 0);
       break;
     case GDK_KEY_KP_Right:
     case GDK_KEY_Right:
       return_val = TRUE;
-      if (state & GDK_CONTROL_MASK)
-        calendar_set_month_next (calendar);
+      if (state & modifier)
+        if (!gtk_widget_is_sensitive (calendar->arrow_widgets[1]))
+          break; /* Not allowed with the mouse, not allowed with the keyboard. */
+        else
+          calendar_set_month_next (calendar);
       else
-        {
-          move_focus (calendar, 1, 0);
-          calendar_invalidate_day (calendar, old_focus_row, old_focus_col);
-          calendar_invalidate_day (calendar, calendar->focus_row, calendar->focus_col);
-        }
+        move_focus (calendar, 1, 0);
       break;
     case GDK_KEY_KP_Up:
     case GDK_KEY_Up:
       return_val = TRUE;
-      if (state & GDK_CONTROL_MASK)
-        calendar_set_year_prev (calendar);
+      if (state & modifier)
+        if (!gtk_widget_is_sensitive (calendar->arrow_widgets[2]))
+          break; /* Not allowed with the mouse, not allowed with the keyboard. */
+        else
+          calendar_set_year_prev (calendar);
       else
-        {
-          move_focus (calendar, 0, 1);
-          calendar_invalidate_day (calendar, old_focus_row, old_focus_col);
-          calendar_invalidate_day (calendar, calendar->focus_row, calendar->focus_col);
-        }
+        move_focus (calendar, 0, 1);
       break;
     case GDK_KEY_KP_Down:
     case GDK_KEY_Down:
       return_val = TRUE;
-      if (state & GDK_CONTROL_MASK)
-        calendar_set_year_next (calendar);
+      if (state & modifier)
+        if (!gtk_widget_is_sensitive (calendar->arrow_widgets[3]))
+          break; /* Not allowed with the mouse, not allowed with the keyboard. */
+        else
+          calendar_set_year_next (calendar);
       else
-        {
-          move_focus (calendar, 0, -1);
-          calendar_invalidate_day (calendar, old_focus_row, old_focus_col);
-          calendar_invalidate_day (calendar, calendar->focus_row, calendar->focus_col);
-        }
+        move_focus (calendar, 0, -1);
       break;
     case GDK_KEY_KP_Space:
     case GDK_KEY_space:
@@ -1649,7 +1682,7 @@ gtk_calendar_unmark_day (GtkCalendar *calendar,
  *
  * The returned date is in the local time zone.
  *
- * Returns: (transfer full): the `GDate` representing the shown date
+ * Returns: (transfer full): the `GDateTime` representing the shown date
  */
 GDateTime *
 gtk_calendar_get_date (GtkCalendar *self)
@@ -1660,7 +1693,7 @@ gtk_calendar_get_date (GtkCalendar *self)
 }
 
 /**
- * gtk_calendar_set_show_week_numbers: (attributes org.gtk.Method.set_property=show-week-numbers)
+ * gtk_calendar_set_show_week_numbers:
  * @self: a `GtkCalendar`
  * @value: whether to show week numbers on the left of the days
  *
@@ -1686,7 +1719,7 @@ gtk_calendar_set_show_week_numbers (GtkCalendar *self,
 }
 
 /**
- * gtk_calendar_get_show_week_numbers: (attributes org.gtk.Method.get_property=show-week-numbers)
+ * gtk_calendar_get_show_week_numbers:
  * @self: a `GtkCalendar`
  *
  * Returns whether @self is showing week numbers right
@@ -1706,7 +1739,7 @@ gtk_calendar_get_show_week_numbers (GtkCalendar *self)
 }
 
 /**
- * gtk_calendar_set_show_heading: (attributes org.gtk.Method.set_property=show-heading)
+ * gtk_calendar_set_show_heading:
  * @self: a `GtkCalendar`
  * @value: Whether to show the heading in the calendar
  *
@@ -1732,7 +1765,7 @@ gtk_calendar_set_show_heading (GtkCalendar *self,
 }
 
 /**
- * gtk_calendar_get_show_heading: (attributes org.gtk.Method.get_property=show-heading)
+ * gtk_calendar_get_show_heading:
  * @self: a `GtkCalendar`
  *
  * Returns whether @self is currently showing the heading.
@@ -1751,7 +1784,7 @@ gtk_calendar_get_show_heading (GtkCalendar *self)
 }
 
 /**
- * gtk_calendar_set_show_day_names: (attributes org.gtk.Method.set_property=show-day-names)
+ * gtk_calendar_set_show_day_names:
  * @self: a `GtkCalendar`
  * @value: Whether to show day names above the day numbers
  *
@@ -1777,7 +1810,7 @@ gtk_calendar_set_show_day_names (GtkCalendar *self,
 }
 
 /**
- * gtk_calendar_get_show_day_names: (attributes org.gtk.Method.get_property=show-day-names)
+ * gtk_calendar_get_show_day_names:
  * @self: a `GtkCalendar`
  *
  * Returns whether @self is currently showing the names
@@ -1794,4 +1827,167 @@ gtk_calendar_get_show_day_names (GtkCalendar *self)
   g_return_val_if_fail (GTK_IS_CALENDAR (self), FALSE);
 
   return self->show_day_names;
+}
+
+/**
+ * gtk_calendar_set_day:
+ * @self: a `GtkCalendar`
+ * @day: The desired day for the selected date (as a number between 1 and 31).
+ *
+ * Sets the day for the selected date.
+ *
+ * The new date must be valid. For example, setting 31 for the day when the
+ * month is February, fails.
+ *
+ * Since: 4.14
+ */
+void
+gtk_calendar_set_day (GtkCalendar *self,
+                      int          day)
+{
+  GDateTime *date;
+
+  g_return_if_fail (GTK_IS_CALENDAR (self));
+  g_return_if_fail (day >= 1 && day <= 31);
+
+  if (day == g_date_time_get_day_of_month (self->date))
+    return;
+
+  date = g_date_time_new_local (g_date_time_get_year (self->date),
+                                g_date_time_get_month (self->date),
+                                day,
+                                0, 0, 0.0);
+  g_return_if_fail (date != NULL);
+
+  calendar_select_day_internal (self, date, TRUE);
+  g_date_time_unref (date);
+
+  g_object_notify (G_OBJECT (self), "day");
+}
+
+/**
+ * gtk_calendar_get_day:
+ * @self: a `GtkCalendar`
+ *
+ * Gets the day of the selected date.
+ *
+ * Returns: the day of the selected date.
+ *
+ * Since: 4.14
+ */
+int
+gtk_calendar_get_day (GtkCalendar *self)
+{
+  g_return_val_if_fail (GTK_IS_CALENDAR (self), -1);
+
+  return g_date_time_get_day_of_month (self->date);
+}
+
+/**
+ * gtk_calendar_set_month:
+ * @self: a `GtkCalendar`
+ * @month: The desired month for the selected date (as a number between 0 and 11).
+ *
+ * Sets the month for the selected date.
+ *
+ * The new date must be valid. For example, setting 1 (February) for the month
+ * when the day is 31, fails.
+ *
+ * Since: 4.14
+ */
+void
+gtk_calendar_set_month (GtkCalendar *self,
+                        int          month)
+{
+  GDateTime *date;
+
+  g_return_if_fail (GTK_IS_CALENDAR (self));
+  g_return_if_fail (month >= 0 && month <= 11);
+
+  if (month == g_date_time_get_month (self->date) - 1)
+    return;
+
+  date = g_date_time_new_local (g_date_time_get_year (self->date),
+                                month + 1,
+                                g_date_time_get_day_of_month (self->date),
+                                0, 0, 0.0);
+  g_return_if_fail (date != NULL);
+
+  calendar_select_day_internal (self, date, TRUE);
+  g_date_time_unref (date);
+
+  g_object_notify (G_OBJECT (self), "month");
+}
+
+/**
+ * gtk_calendar_get_month:
+ * @self: a `GtkCalendar`
+ *
+ * Gets the month of the selected date.
+ *
+ * Returns: The month of the selected date (as a number between 0 and 11).
+ *
+ * Since: 4.14
+ */
+int
+gtk_calendar_get_month (GtkCalendar *self)
+{
+  g_return_val_if_fail (GTK_IS_CALENDAR (self), -1);
+
+  return g_date_time_get_month (self->date) - 1;
+}
+
+/**
+ * gtk_calendar_set_year:
+ * @self: a `GtkCalendar`
+ * @year: The desired year for the selected date (within [struct@GLib.DateTime]
+ *   limits, i.e. from 0001 to 9999).
+ *
+ * Sets the year for the selected date.
+ *
+ * The new date must be valid. For example, setting 2023 for the year when then
+ * the date is 2024-02-29, fails.
+ *
+ * Since: 4.14
+ */
+void
+gtk_calendar_set_year (GtkCalendar *self,
+                       int          year)
+{
+  GDateTime *date;
+
+  g_return_if_fail (GTK_IS_CALENDAR (self));
+  g_return_if_fail (year >= 1 && year <= 9999);
+
+  if (year == g_date_time_get_year (self->date))
+    return;
+
+  date = g_date_time_new_local (year,
+                                g_date_time_get_month (self->date),
+                                g_date_time_get_day_of_month (self->date),
+                                0, 0, 0.0);
+  g_return_if_fail (date != NULL);
+
+  calendar_select_day_internal (self, date, TRUE);
+  g_date_time_unref (date);
+
+  g_object_notify (G_OBJECT (self), "year");
+}
+
+/**
+ * gtk_calendar_get_year:
+ * @self: a `GtkCalendar`
+ *
+ * Gets the year of the selected date.
+ *
+ * Returns: the year of the selected date.
+ *
+ * Since: 4.14
+ */
+int
+gtk_calendar_get_year (GtkCalendar *self)
+{
+  g_return_val_if_fail (GTK_IS_CALENDAR (self), -1);
+
+  return g_date_time_get_year (self->date);
 }

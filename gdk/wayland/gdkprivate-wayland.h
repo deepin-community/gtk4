@@ -34,6 +34,7 @@
 #include <gdk/wayland/gdkwayland.h>
 #include <gdk/wayland/gdkdisplay-wayland.h>
 #include <gdk/wayland/gdkseat-wayland.h>
+#include <gdk/wayland/gdkwaylandpresentationtime-private.h>
 
 #include <xkbcommon/xkbcommon.h>
 
@@ -115,13 +116,14 @@ void       gdk_wayland_display_system_bell (GdkDisplay *display,
 
 struct wl_buffer *_gdk_wayland_cursor_get_buffer (GdkWaylandDisplay *display,
                                                   GdkCursor         *cursor,
-                                                  guint              desired_scale,
+                                                  double             desired_scale,
+                                                  gboolean           use_viewporter,
                                                   guint              image_index,
                                                   int               *hotspot_x,
                                                   int               *hotspot_y,
                                                   int               *w,
                                                   int               *h,
-                                                  int               *scale);
+                                                  double            *scale);
 guint      _gdk_wayland_cursor_get_next_image_index (GdkWaylandDisplay *display,
                                                      GdkCursor         *cursor,
                                                      guint              scale,
@@ -129,6 +131,7 @@ guint      _gdk_wayland_cursor_get_next_image_index (GdkWaylandDisplay *display,
                                                      guint             *next_image_delay);
 
 void            gdk_wayland_surface_sync                   (GdkSurface           *surface);
+void            gdk_wayland_surface_handle_empty_frame     (GdkSurface           *surface);
 void            gdk_wayland_surface_commit                 (GdkSurface           *surface);
 void            gdk_wayland_surface_notify_committed       (GdkSurface           *surface);
 void            gdk_wayland_surface_request_frame          (GdkSurface           *surface);
@@ -164,8 +167,9 @@ void        _gdk_wayland_display_remove_seat    (GdkWaylandDisplay       *displa
                                                  guint32                  id);
 
 GdkKeymap *_gdk_wayland_device_get_keymap (GdkDevice *device);
-uint32_t _gdk_wayland_seat_get_implicit_grab_serial(GdkSeat  *seat,
-                                                    GdkEvent *event);
+uint32_t _gdk_wayland_seat_get_implicit_grab_serial (GdkSeat          *seat,
+                                                     GdkDevice        *event,
+                                                     GdkEventSequence *sequence);
 uint32_t _gdk_wayland_seat_get_last_implicit_grab_serial (GdkWaylandSeat     *seat,
                                                           GdkEventSequence **sequence);
 GdkSurface * gdk_wayland_device_get_focus (GdkDevice *device);
@@ -180,7 +184,8 @@ void gdk_wayland_device_unset_touch_grab (GdkDevice        *device,
                                           GdkEventSequence *sequence);
 
 void     _gdk_wayland_display_deliver_event (GdkDisplay *display, GdkEvent *event);
-GSource *_gdk_wayland_display_event_source_new (GdkDisplay *display);
+void     gdk_wayland_display_install_gsources (GdkWaylandDisplay *display_wayland);
+void     gdk_wayland_display_uninstall_gsources (GdkWaylandDisplay *display_wayland);
 void     _gdk_wayland_display_queue_events (GdkDisplay *display);
 
 GdkAppLaunchContext *_gdk_wayland_display_get_app_launch_context (GdkDisplay *display);
@@ -222,4 +227,3 @@ void gdk_wayland_surface_update_scale (GdkSurface *surface);
 
 GdkModifierType gdk_wayland_keymap_get_gdk_modifiers (GdkKeymap *keymap,
                                                       guint32    mods);
-

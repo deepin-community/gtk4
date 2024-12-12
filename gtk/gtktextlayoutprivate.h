@@ -124,14 +124,6 @@ struct _GtkTextLayout
   PangoContext *ltr_context;
   PangoContext *rtl_context;
 
-  /* A cache of one style; this is used to ensure
-   * we don't constantly regenerate the style
-   * over long runs with the same style. */
-  GtkTextAttributes *one_style_cache;
-
-  /* Whether we are allowed to wrap right now */
-  int wrap_loop_count;
-
   /* Whether to show the insertion cursor */
   guint cursor_visible : 1;
 
@@ -376,6 +368,7 @@ void gtk_text_layout_snapshot (GtkTextLayout        *layout,
                                GtkWidget            *widget,
                                GtkSnapshot          *snapshot,
                                const GdkRectangle   *clip,
+                               gboolean              selection_style_changed,
                                float                 cursor_alpha);
 
 void gtk_text_layout_set_mru_size (GtkTextLayout *layout,

@@ -84,6 +84,7 @@ gtk_event_controller_unset_widget (GtkEventController *self)
 {
   GtkEventControllerPrivate *priv = gtk_event_controller_get_instance_private (self);
 
+  gtk_event_controller_reset (self);
   priv->widget = NULL;
 }
 
@@ -196,7 +197,7 @@ gtk_event_controller_class_init (GtkEventControllerClass *klass)
   object_class->get_property = gtk_event_controller_get_property;
 
   /**
-   * GtkEventController:widget: (attributes org.gtk.Property.get=gtk_event_controller_get_widget)
+   * GtkEventController:widget:
    *
    * The widget receiving the `GdkEvents` that the controller will handle.
    */
@@ -206,7 +207,7 @@ gtk_event_controller_class_init (GtkEventControllerClass *klass)
                            GTK_PARAM_READABLE);
 
   /**
-   * GtkEventController:propagation-phase: (attributes org.gtk.Property.get=gtk_event_controller_get_propagation_phase org.gtk.Property.set=gtk_event_controller_set_propagation_phase)
+   * GtkEventController:propagation-phase:
    *
    * The propagation phase at which this controller will handle events.
    */
@@ -217,7 +218,7 @@ gtk_event_controller_class_init (GtkEventControllerClass *klass)
                          GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkEventController:propagation-limit: (attributes org.gtk.Property.get=gtk_event_controller_get_propagation_limit org.gtk.Property.set=gtk_event_controller_set_propagation_limit)
+   * GtkEventController:propagation-limit:
    *
    * The limit for which events this controller will handle.
    */
@@ -228,7 +229,7 @@ gtk_event_controller_class_init (GtkEventControllerClass *klass)
                          GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkEventController:name: (attributes org.gtk.Property.get=gtk_event_controller_get_name org.gtk.Property.set=gtk_event_controller_set_name)
+   * GtkEventController:name:
    *
    * The name for this controller, typically used for debugging purposes.
    */
@@ -400,12 +401,12 @@ gtk_event_controller_handle_crossing (GtkEventController    *controller,
 }
 
 /**
- * gtk_event_controller_get_widget: (attributes org.gtk.Method.get_property=widget)
+ * gtk_event_controller_get_widget:
  * @controller: a `GtkEventController`
  *
  * Returns the `GtkWidget` this controller relates to.
  *
- * Returns: (transfer none): a `GtkWidget`
+ * Returns: (nullable) (transfer none): a `GtkWidget`
  **/
 GtkWidget *
 gtk_event_controller_get_widget (GtkEventController *controller)
@@ -439,7 +440,7 @@ gtk_event_controller_reset (GtkEventController *controller)
 }
 
 /**
- * gtk_event_controller_get_propagation_phase: (attributes org.gtk.Method.get_property=propagation-phase)
+ * gtk_event_controller_get_propagation_phase:
  * @controller: a `GtkEventController`
  *
  * Gets the propagation phase at which @controller handles events.
@@ -459,7 +460,7 @@ gtk_event_controller_get_propagation_phase (GtkEventController *controller)
 }
 
 /**
- * gtk_event_controller_set_propagation_phase: (attributes org.gtk.Method.set_property=propagation-phase)
+ * gtk_event_controller_set_propagation_phase:
  * @controller: a `GtkEventController`
  * @phase: a propagation phase
  *
@@ -491,7 +492,7 @@ gtk_event_controller_set_propagation_phase (GtkEventController  *controller,
 }
 
 /**
- * gtk_event_controller_get_propagation_limit: (attributes org.gtk.Method.get_property=propagation-limit)
+ * gtk_event_controller_get_propagation_limit:
  * @controller: a `GtkEventController`
  *
  * Gets the propagation limit of the event controller.
@@ -511,7 +512,7 @@ gtk_event_controller_get_propagation_limit (GtkEventController *controller)
 }
 
 /**
- * gtk_event_controller_set_propagation_limit: (attributes org.gtk.Method.set_property=propagation-limit)
+ * gtk_event_controller_set_propagation_limit:
  * @controller: a `GtkEventController`
  * @limit: the propagation limit
  *
@@ -540,11 +541,11 @@ gtk_event_controller_set_propagation_limit (GtkEventController  *controller,
 }
 
 /**
- * gtk_event_controller_get_name: (attributes org.gtk.Method.get_property=name)
+ * gtk_event_controller_get_name:
  * @controller: a `GtkEventController`
  *
  * Gets the name of @controller.
- * 
+ *
  * Returns: (nullable): The controller name
  */
 const char *
@@ -558,7 +559,7 @@ gtk_event_controller_get_name (GtkEventController *controller)
 }
 
 /**
- * gtk_event_controller_set_name: (attributes org.gtk.Method.set_property=name)
+ * gtk_event_controller_set_name:
  * @controller: a `GtkEventController`
  * @name: (nullable): a name for @controller
  *

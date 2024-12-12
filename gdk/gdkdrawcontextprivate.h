@@ -22,7 +22,10 @@
 
 #include "gdkdrawcontext.h"
 
+#include "gdkcolorstateprivate.h"
 #include "gdkmemoryformatprivate.h"
+
+#include <graphene.h>
 
 G_BEGIN_DECLS
 
@@ -43,9 +46,12 @@ struct _GdkDrawContextClass
 
   void                  (* begin_frame)                         (GdkDrawContext         *context,
                                                                  GdkMemoryDepth          depth,
-                                                                 cairo_region_t         *update_area);
+                                                                 cairo_region_t         *update_area,
+                                                                 GdkColorState         **out_color_state,
+                                                                 GdkMemoryDepth         *out_depth);
   void                  (* end_frame)                           (GdkDrawContext         *context,
                                                                  cairo_region_t         *painted);
+  void                  (* empty_frame)                         (GdkDrawContext         *context);
   void                  (* surface_resized)                     (GdkDrawContext         *context);
 };
 
@@ -53,6 +59,17 @@ void                    gdk_draw_context_surface_resized        (GdkDrawContext 
 
 void                    gdk_draw_context_begin_frame_full       (GdkDrawContext         *context,
                                                                  GdkMemoryDepth          depth,
-                                                                 const cairo_region_t   *region);
+                                                                 const cairo_region_t   *region,
+                                                                 const graphene_rect_t  *opaque);
+void                    gdk_draw_context_end_frame_full         (GdkDrawContext         *context);
+
+void                    gdk_draw_context_empty_frame            (GdkDrawContext         *context);
+
+#define gdk_draw_context_get_frame_region(...) _gdk_draw_context_get_frame_region(__VA_ARGS__)
+const cairo_region_t *  _gdk_draw_context_get_frame_region      (GdkDrawContext         *self);
+GdkColorState *         gdk_draw_context_get_color_state        (GdkDrawContext         *self);
+GdkMemoryDepth          gdk_draw_context_get_depth              (GdkDrawContext         *self);
+
+
 G_END_DECLS
 

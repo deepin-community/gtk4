@@ -31,17 +31,21 @@
  * ![An example GtkSwitch](switch.png)
  *
  * The user can control which state should be active by clicking the
- * empty area, or by dragging the handle.
+ * empty area, or by dragging the slider.
  *
- * `GtkSwitch` can also handle situations where the underlying state
- * changes with a delay. In this case, the slider position indicates
- * the user's recent change (as indicated by the [property@Gtk.Switch:active]
- * property), and the color indicates whether the underlying state (represented
- * by the [property@Gtk.Switch:state] property) has been updated yet.
+ * `GtkSwitch` can also express situations where the underlying state changes
+ * with a delay. In this case, the slider position indicates the user's recent
+ * change (represented by the [property@Gtk.Switch:active] property), while the
+ * trough color indicates the present underlying state (represented by the
+ * [property@Gtk.Switch:state] property).
  *
  * ![GtkSwitch with delayed state change](switch-state.png)
  *
  * See [signal@Gtk.Switch::state-set] for details.
+ *
+ * # Shortcuts and Gestures
+ *
+ * `GtkSwitch` supports pan and drag gestures to move the slider.
  *
  * # CSS nodes
  *
@@ -549,6 +553,18 @@ state_set (GtkSwitch *self,
   return TRUE;
 }
 
+static gboolean
+translate_switch_shapes_to_opacity (GBinding     *binding,
+                                    const GValue *from_value,
+                                    GValue       *to_value,
+                                    gpointer      user_data)
+{
+  gboolean visible = g_value_get_boolean (from_value);
+  g_value_set_double (to_value, visible ? 1.0 : 0.0);
+
+  return TRUE;
+}
+
 static void
 gtk_switch_class_init (GtkSwitchClass *klass)
 {
@@ -556,7 +572,7 @@ gtk_switch_class_init (GtkSwitchClass *klass)
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
 
   /**
-   * GtkSwitch:active: (attributes org.gtk.Property.get=gtk_switch_get_active org.gtk.Property.set=gtk_switch_set_active)
+   * GtkSwitch:active:
    *
    * Whether the `GtkSwitch` widget is in its on or off state.
    */
@@ -566,9 +582,13 @@ gtk_switch_class_init (GtkSwitchClass *klass)
                           GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkSwitch:state: (attributes org.gtk.Property.get=gtk_switch_get_state org.gtk.Property.set=gtk_switch_set_state)
+   * GtkSwitch:state:
    *
    * The backend state that is controlled by the switch.
+   *
+   * Applications should usually set the [property@Gtk.Switch:active] property,
+   * except when indicating a change to the backend state which occurs
+   * separately from the user's interaction.
    *
    * See [signal@Gtk.Switch::state-set] for details.
    */
@@ -617,18 +637,14 @@ gtk_switch_class_init (GtkSwitchClass *klass)
    * Emitted to change the underlying state.
    *
    * The ::state-set signal is emitted when the user changes the switch
-   * position. The default handler keeps the state in sync with the
-   * [property@Gtk.Switch:active] property.
+   * position. The default handler calls [method@Gtk.Switch.set_state] with the
+   * value of @state.
    *
    * To implement delayed state change, applications can connect to this
    * signal, initiate the change of the underlying state, and call
    * [method@Gtk.Switch.set_state] when the underlying state change is
    * complete. The signal handler should return %TRUE to prevent the
    * default handler from running.
-   *
-   * Visually, the underlying state is represented by the trough color of
-   * the switch, while the [property@Gtk.Switch:active] property is
-   * represented by the position of the switch.
    *
    * Returns: %TRUE to stop the signal emission
    */
@@ -658,6 +674,7 @@ gtk_switch_init (GtkSwitch *self)
 {
   GtkLayoutManager *layout;
   GtkGesture *gesture;
+  GtkSettings *gtk_settings;
 
   gtk_widget_set_focusable (GTK_WIDGET (self), TRUE);
 
@@ -690,17 +707,31 @@ gtk_switch_init (GtkSwitch *self)
                                   gtk_switch_allocate);
   gtk_widget_set_layout_manager (GTK_WIDGET (self), layout);
 
+  gtk_settings = gtk_settings_get_default ();
+
   self->on_image = g_object_new (GTK_TYPE_IMAGE,
                                  "accessible-role", GTK_ACCESSIBLE_ROLE_NONE,
                                  "icon-name", "switch-on-symbolic",
                                  NULL);
   gtk_widget_set_parent (self->on_image, GTK_WIDGET (self));
 
+  g_object_bind_property_full (gtk_settings, "gtk-show-status-shapes",
+                               self->on_image, "opacity",
+                               G_BINDING_SYNC_CREATE,
+                               translate_switch_shapes_to_opacity,
+                               NULL, NULL, NULL);
+
   self->off_image = g_object_new (GTK_TYPE_IMAGE,
                                   "accessible-role", GTK_ACCESSIBLE_ROLE_NONE,
                                   "icon-name", "switch-off-symbolic",
                                   NULL);
   gtk_widget_set_parent (self->off_image, GTK_WIDGET (self));
+
+  g_object_bind_property_full (gtk_settings, "gtk-show-status-shapes",
+                               self->off_image, "opacity",
+                               G_BINDING_SYNC_CREATE,
+                               translate_switch_shapes_to_opacity,
+                               NULL, NULL, NULL);
 
   self->slider = gtk_gizmo_new_with_role ("slider",
                                           GTK_ACCESSIBLE_ROLE_NONE,
@@ -730,7 +761,7 @@ gtk_switch_new (void)
 }
 
 /**
- * gtk_switch_set_active: (attributes org.gtk.Method.set_property=active)
+ * gtk_switch_set_active:
  * @self: a `GtkSwitch`
  * @is_active: %TRUE if @self should be active, and %FALSE otherwise
  *
@@ -770,7 +801,7 @@ gtk_switch_set_active (GtkSwitch *self,
 }
 
 /**
- * gtk_switch_get_active: (attributes org.gtk.Method.get_property=active)
+ * gtk_switch_get_active:
  * @self: a `GtkSwitch`
  *
  * Gets whether the `GtkSwitch` is in its “on” or “off” state.
@@ -786,7 +817,7 @@ gtk_switch_get_active (GtkSwitch *self)
 }
 
 /**
- * gtk_switch_set_state: (attributes org.gtk.Method.set_property=state)
+ * gtk_switch_set_state:
  * @self: a `GtkSwitch`
  * @state: the new state
  *
@@ -819,7 +850,7 @@ gtk_switch_set_state (GtkSwitch *self,
 }
 
 /**
- * gtk_switch_get_state: (attributes org.gtk.Method.get_property=state)
+ * gtk_switch_get_state:
  * @self: a `GtkSwitch`
  *
  * Gets the underlying state of the `GtkSwitch`.

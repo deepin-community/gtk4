@@ -27,8 +27,13 @@
 #include "gtkalertdialog.h"
 #include <glib/gi18n-lib.h>
 
+#ifdef G_OS_WIN32
+#include "gtkshowwin32.h"
+#endif
+
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 
+#ifndef G_OS_WIN32
 typedef struct {
   GtkWindow *parent;
   char *handle;
@@ -86,20 +91,37 @@ window_handle_exported (GtkWindow  *window,
                                            data);
 }
 
+#else /* G_OS_WIN32 */
+static void
+show_win32_done (GObject      *source,
+                 GAsyncResult *result,
+                 gpointer      user_data)
+{
+  GTask *task = user_data;
+  GError *error = NULL;
+
+  if (gtk_show_uri_win32_finish (GTK_WINDOW (source), result, &error))
+    g_task_return_boolean (task, TRUE);
+  else
+     g_task_return_error (task, error);
+
+  g_object_unref (task);
+}
+#endif
+
 /**
  * gtk_show_uri_full:
  * @parent: (nullable): parent window
  * @uri: the uri to show
  * @timestamp: timestamp from the event that triggered this call, or %GDK_CURRENT_TIME
  * @cancellable: (nullable): a `GCancellable` to cancel the launch
- * @callback: (scope async): a callback to call when the action is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (scope async) (closure user_data): a callback to call when the action is complete
+ * @user_data: data to pass to @callback
  *
  * This function launches the default application for showing
  * a given uri.
  *
  * The @callback will be called when the launch is completed.
- * It should call gtk_show_uri_full_finish() to obtain the result.
  *
  * This is the recommended call to be used as it passes information
  * necessary for sandbox helpers to parent their dialogs properly.
@@ -115,6 +137,7 @@ gtk_show_uri_full (GtkWindow           *parent,
                    GAsyncReadyCallback  callback,
                    gpointer             user_data)
 {
+#ifndef G_OS_WIN32
   GtkShowUriData *data;
   GdkAppLaunchContext *context;
   GdkDisplay *display;
@@ -139,6 +162,17 @@ gtk_show_uri_full (GtkWindow           *parent,
 
   if (!parent || !gtk_window_export_handle (parent, window_handle_exported, data))
     window_handle_exported (parent, NULL, data);
+
+#else /* G_OS_WIN32 */
+  GTask *task;
+
+  g_return_if_fail (parent == NULL || GTK_IS_WINDOW (parent));
+  g_return_if_fail (uri != NULL);
+
+  task = g_task_new (parent, cancellable, callback, user_data);
+  g_task_set_source_tag (task, gtk_show_uri_full);
+  gtk_show_uri_win32 (parent, uri, FALSE, cancellable, show_win32_done, task);
+#endif
 }
 
 /**
@@ -153,8 +187,8 @@ gtk_show_uri_full (GtkWindow           *parent,
  * Returns: %TRUE if the URI was shown successfully.
  *   Otherwise, %FALSE is returned and @error is set
  *
- * Deprecated: 4.10: Use [method@Gtk.FileLauncher.launch_finish] or
- *   [method@Gtk.UriLauncher.launch_finish] instead
+ * Deprecated: 4.10: Use [method@Gtk.FileLauncher.launch] or
+ *   [method@Gtk.UriLauncher.launch] instead
  */
 gboolean
 gtk_show_uri_full_finish (GtkWindow     *parent,

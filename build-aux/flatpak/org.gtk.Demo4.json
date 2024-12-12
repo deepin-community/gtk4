@@ -185,9 +185,8 @@
             "builddir" : true,
             "config-opts" : [
                 "--libdir=/app/lib",
-                "-Dvulkan=disabled",
                 "-Dbuildtype=debugoptimized",
-                "-Ddemo-profile=devel"
+                "-Dprofile=devel"
             ],
             "sources" : [
                 {

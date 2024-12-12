@@ -39,6 +39,7 @@
 #include "gtkprivate.h"
 #include "gtkmarshalers.h"
 #include "gtkeventcontrollerkey.h"
+#include "gtktypebuiltins.h"
 #include "gtkwidgetprivate.h"
 #include "gtkcssnodeprivate.h"
 #include "gtkcsspositionvalueprivate.h"
@@ -77,6 +78,15 @@
  * `GtkSearchEntry` provides only minimal API and should be used with
  * the [iface@Gtk.Editable] API.
  *
+ * ## Shortcuts and Gestures
+ *
+ * The following signals have default keybindings:
+ *
+ * - [signal@Gtk.SearchEntry::activate]
+ * - [signal@Gtk.SearchEntry::next-match]
+ * - [signal@Gtk.SearchEntry::previous-match]
+ * - [signal@Gtk.SearchEntry::stop-search]
+ *
  * ## CSS Nodes
  *
  * ```
@@ -105,6 +115,8 @@ enum {
 enum {
   PROP_0,
   PROP_PLACEHOLDER_TEXT,
+  PROP_INPUT_PURPOSE,
+  PROP_INPUT_HINTS,
   PROP_ACTIVATES_DEFAULT,
   PROP_SEARCH_DELAY,
   NUM_PROPERTIES,
@@ -216,6 +228,14 @@ gtk_search_entry_set_property (GObject      *object,
                                       -1);
       break;
 
+    case PROP_INPUT_PURPOSE:
+      gtk_search_entry_set_input_purpose (entry, g_value_get_enum (value));
+      break;
+
+    case PROP_INPUT_HINTS:
+      gtk_search_entry_set_input_hints (entry, g_value_get_flags (value));
+      break;
+
     case PROP_ACTIVATES_DEFAULT:
       if (gtk_text_get_activates_default (GTK_TEXT (entry->entry)) != g_value_get_boolean (value))
         {
@@ -248,6 +268,14 @@ gtk_search_entry_get_property (GObject    *object,
     {
     case PROP_PLACEHOLDER_TEXT:
       g_value_set_string (value, gtk_text_get_placeholder_text (GTK_TEXT (entry->entry)));
+      break;
+
+    case PROP_INPUT_PURPOSE:
+      g_value_set_enum (value, gtk_text_get_input_purpose (GTK_TEXT (entry->entry)));
+      break;
+
+    case PROP_INPUT_HINTS:
+      g_value_set_flags (value, gtk_text_get_input_hints (GTK_TEXT (entry->entry)));
       break;
 
     case PROP_ACTIVATES_DEFAULT:
@@ -450,6 +478,34 @@ gtk_search_entry_class_init (GtkSearchEntryClass *klass)
                            GTK_PARAM_READWRITE);
 
   /**
+   * GtkSearchEntry:input-purpose:
+   *
+   * The purpose for the `GtkSearchEntry` input used to alter the
+   * behaviour of input methods.
+   *
+   * Since: 4.14
+   */
+  props[PROP_INPUT_PURPOSE] =
+      g_param_spec_enum ("input-purpose", NULL, NULL,
+                         GTK_TYPE_INPUT_PURPOSE,
+                         GTK_INPUT_PURPOSE_FREE_FORM,
+                         GTK_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+  /**
+   * GtkSearchEntry:input-hints:
+   *
+   * The hints about input for the `GtkSearchEntry` used to alter the
+   * behaviour of input methods.
+   *
+   * Since: 4.14
+   */
+  props[PROP_INPUT_HINTS] =
+      g_param_spec_flags ("input-hints", NULL, NULL,
+                          GTK_TYPE_INPUT_HINTS,
+                          GTK_INPUT_HINT_NONE,
+                          GTK_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+  /**
    * GtkSearchEntry:activates-default:
    *
    * Whether to activate the default widget when Enter is pressed.
@@ -481,7 +537,7 @@ gtk_search_entry_class_init (GtkSearchEntryClass *klass)
    *
    * Emitted when the entry is activated.
    *
-   * The keybindings for this signal are all forms of the Enter key.
+   * The keybindings for this signal are all forms of the <kbd>Enter</kbd> key.
    */
   signals[ACTIVATE] =
     g_signal_new (I_("activate"),
@@ -521,7 +577,7 @@ gtk_search_entry_class_init (GtkSearchEntryClass *klass)
    * Applications should connect to it, to implement moving
    * between matches.
    *
-   * The default bindings for this signal is Ctrl-g.
+   * The default bindings for this signal is <kbd>Ctrl</kbd>+<kbd>g</kbd>.
    */
   signals[NEXT_MATCH] =
     g_signal_new (I_("next-match"),
@@ -544,7 +600,8 @@ gtk_search_entry_class_init (GtkSearchEntryClass *klass)
    * Applications should connect to it, to implement moving
    * between matches.
    *
-   * The default bindings for this signal is Ctrl-Shift-g.
+   * The default bindings for this signal is
+   * <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>g</kbd>.
    */
   signals[PREVIOUS_MATCH] =
     g_signal_new (I_("previous-match"),
@@ -566,7 +623,7 @@ gtk_search_entry_class_init (GtkSearchEntryClass *klass)
    * Applications should connect to it, to implement hiding
    * the search entry in this case.
    *
-   * The default bindings for this signal is Escape.
+   * The default bindings for this signal is <kbd>Escape</kbd>.
    */
   signals[STOP_SEARCH] =
     g_signal_new (I_("stop-search"),
@@ -591,6 +648,16 @@ gtk_search_entry_class_init (GtkSearchEntryClass *klass)
                   NULL,
                   G_TYPE_NONE, 0);
 
+#ifdef __APPLE__
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_g, GDK_META_MASK,
+                                       "next-match",
+                                       NULL);
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_g, GDK_SHIFT_MASK | GDK_META_MASK,
+                                       "previous-match",
+                                       NULL);
+#else
   gtk_widget_class_add_binding_signal (widget_class,
                                        GDK_KEY_g, GDK_CONTROL_MASK,
                                        "next-match",
@@ -599,6 +666,8 @@ gtk_search_entry_class_init (GtkSearchEntryClass *klass)
                                        GDK_KEY_g, GDK_SHIFT_MASK | GDK_CONTROL_MASK,
                                        "previous-match",
                                        NULL);
+#endif
+
   gtk_widget_class_add_binding_signal (widget_class,
                                        GDK_KEY_Escape, 0,
                                        "stop-search",
@@ -926,7 +995,7 @@ gtk_search_entry_get_key_capture_widget (GtkSearchEntry *entry)
 }
 
 /**
- * gtk_search_entry_set_search_delay: (attributes org.gtk.Property.set_property=search-delay)
+ * gtk_search_entry_set_search_delay:
  * @entry: a `GtkSearchEntry`
  * @delay: a delay in milliseconds
  *
@@ -953,7 +1022,7 @@ gtk_search_entry_set_search_delay (GtkSearchEntry *entry,
 }
 
 /**
- * gtk_search_entry_get_search_delay: (attributes org.gtk.Property.get_property=search-delay)
+ * gtk_search_entry_get_search_delay:
  * @entry: a `GtkSearchEntry`
  *
  * Get the delay to be used between the last keypress and the
@@ -1011,6 +1080,88 @@ gtk_search_entry_set_placeholder_text (GtkSearchEntry *entry,
   g_return_if_fail (GTK_IS_SEARCH_ENTRY (entry));
 
   gtk_text_set_placeholder_text (GTK_TEXT (entry->entry), text);
+}
+
+/**
+ * gtk_search_entry_get_input_purpose:
+ * @entry: a `GtkSearchEntry`
+ *
+ * Gets the input purpose of @entry.
+ *
+ * Returns: The input hints
+ *
+ * Since: 4.14
+ */
+GtkInputPurpose
+gtk_search_entry_get_input_purpose (GtkSearchEntry *entry)
+{
+  g_return_val_if_fail (GTK_IS_SEARCH_ENTRY (entry), GTK_INPUT_PURPOSE_FREE_FORM);
+
+  return gtk_text_get_input_purpose (GTK_TEXT (entry->entry));
+}
+
+/**
+ * gtk_search_entry_set_input_purpose:
+ * @entry: a `GtkSearchEntry`
+ * @purpose: the new input purpose
+ *
+ * Sets the input purpose of @entry.
+ *
+ * Since: 4.14
+ */
+void
+gtk_search_entry_set_input_purpose (GtkSearchEntry  *entry,
+                                    GtkInputPurpose  purpose)
+{
+  g_return_if_fail (GTK_IS_SEARCH_ENTRY (entry));
+
+  if (purpose != gtk_search_entry_get_input_purpose (entry))
+    {
+      gtk_text_set_input_purpose (GTK_TEXT (entry->entry), purpose);
+
+      g_object_notify_by_pspec (G_OBJECT (entry), props[PROP_INPUT_PURPOSE]);
+    }
+}
+
+/**
+ * gtk_search_entry_get_input_hints:
+ * @entry: a `GtkSearchEntry`
+ *
+ * Gets the input purpose for @entry.
+ *
+ * Returns: The input hints
+ *
+ * Since: 4.14
+ */
+GtkInputHints
+gtk_search_entry_get_input_hints (GtkSearchEntry *entry)
+{
+  g_return_val_if_fail (GTK_IS_SEARCH_ENTRY (entry), GTK_INPUT_HINT_NONE);
+
+  return gtk_text_get_input_hints (GTK_TEXT (entry->entry));
+}
+
+/**
+ * gtk_search_entry_set_input_hints:
+ * @entry: a `GtkSearchEntry`
+ * @hints: the new input hints
+ *
+ * Sets the input hints for @entry.
+ *
+ * Since: 4.14
+ */
+void
+gtk_search_entry_set_input_hints (GtkSearchEntry *entry,
+                                  GtkInputHints   hints)
+{
+  g_return_if_fail (GTK_IS_SEARCH_ENTRY (entry));
+
+  if (hints != gtk_search_entry_get_input_hints (entry))
+    {
+      gtk_text_set_input_hints (GTK_TEXT (entry->entry), hints);
+
+      g_object_notify_by_pspec (G_OBJECT (entry), props[PROP_INPUT_HINTS]);
+    }
 }
 
 GtkText *

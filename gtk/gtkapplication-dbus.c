@@ -334,7 +334,10 @@ gtk_application_impl_dbus_startup (GtkApplicationImpl *impl,
   dbus->unique_name = g_dbus_connection_get_unique_name (dbus->session);
 
   if (gdk_should_use_portal ())
-    goto out;
+    {
+      g_debug ("Not using session manager");
+      goto out;
+    }
 
   dbus->cancellable = g_cancellable_new ();
 
@@ -509,7 +512,7 @@ gtk_application_impl_dbus_startup (GtkApplicationImpl *impl,
                   "gtk-shell-shows-menubar", FALSE,
                   NULL);
 
-  if (dbus->sm_proxy == NULL && dbus->session)
+  if (dbus->sm_proxy == NULL && dbus->session != NULL && gdk_should_use_portal ())
     {
       dbus->inhibit_proxy = gtk_application_get_proxy_if_service_present (dbus->session,
                                                                           G_DBUS_PROXY_FLAGS_NONE,
@@ -754,6 +757,13 @@ gtk_application_impl_dbus_inhibit (GtkApplicationImpl         *impl,
   else if (dbus->inhibit_proxy)
     {
       GVariantBuilder options;
+
+      if (reason == NULL)
+        /* Translators: This is the 'reason' given when inhibiting
+         * suspend or screen locking, and the caller hasn't specified
+         * a reason.
+         */
+        reason = _("Reason not specified");
 
       g_variant_builder_init (&options, G_VARIANT_TYPE_VARDICT);
       g_variant_builder_add (&options, "{sv}", "reason", g_variant_new_string (reason));

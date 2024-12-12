@@ -48,6 +48,8 @@ struct _GdkDrawContextPrivate {
   GdkSurface *surface;
 
   cairo_region_t *frame_region;
+  GdkColorState *color_state;
+  GdkMemoryDepth depth;
 };
 
 enum {
@@ -66,6 +68,12 @@ G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (GdkDrawContext, gdk_draw_context, G_TYPE_OB
 static void
 gdk_draw_context_default_surface_resized (GdkDrawContext *context)
 {
+}
+
+static void
+gdk_draw_context_default_empty_frame (GdkDrawContext *context)
+{
+  g_warning ("FIXME: Implement GdkDrawContext.empty_frame in %s", G_OBJECT_TYPE_NAME (context));
 }
 
 static void
@@ -161,9 +169,10 @@ gdk_draw_context_class_init (GdkDrawContextClass *klass)
   gobject_class->dispose = gdk_draw_context_dispose;
 
   klass->surface_resized = gdk_draw_context_default_surface_resized;
+  klass->empty_frame = gdk_draw_context_default_empty_frame;
 
   /**
-   * GdkDrawContext:display: (attributes org.gtk.Property.get=gdk_draw_context_get_display)
+   * GdkDrawContext:display:
    *
    * The `GdkDisplay` used to create the `GdkDrawContext`.
    */
@@ -175,7 +184,7 @@ gdk_draw_context_class_init (GdkDrawContextClass *klass)
                          G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkDrawContext:surface: (attributes org.gtk.Property.get=gdk_draw_context_get_surface)
+   * GdkDrawContext:surface:
    *
    * The `GdkSurface` the context is bound to.
    */
@@ -194,8 +203,12 @@ static guint pixels_counter;
 static void
 gdk_draw_context_init (GdkDrawContext *self)
 {
+  GdkDrawContextPrivate *priv = gdk_draw_context_get_instance_private (self);
+
   if (pixels_counter == 0)
     pixels_counter = gdk_profiler_define_int_counter ("frame pixels", "Pixels drawn per frame");
+
+  priv->depth = GDK_N_DEPTHS;
 }
 
 /**
@@ -210,6 +223,9 @@ gdk_draw_context_init (GdkDrawContext *self)
  *
  * Returns: %TRUE if the context is between [method@Gdk.DrawContext.begin_frame]
  *   and [method@Gdk.DrawContext.end_frame] calls.
+ *
+ * Deprecated: 4.16: Drawing directly to the surface is no longer recommended.
+ *   Use `GskRenderNode` and `GskRenderer`.
  */
 gboolean
 gdk_draw_context_is_in_frame (GdkDrawContext *context)
@@ -235,7 +251,7 @@ gdk_draw_context_surface_resized (GdkDrawContext *context)
 }
 
 /**
- * gdk_draw_context_get_display: (attributes org.gtk.Method.get_property=display)
+ * gdk_draw_context_get_display:
  * @context: a `GdkDrawContext`
  *
  * Retrieves the `GdkDisplay` the @context is created for
@@ -253,7 +269,7 @@ gdk_draw_context_get_display (GdkDrawContext *context)
 }
 
 /**
- * gdk_draw_context_get_surface: (attributes org.gtk.Method.get_property=surface)
+ * gdk_draw_context_get_surface:
  * @context: a `GdkDrawContext`
  *
  * Retrieves the surface that @context is bound to.
@@ -298,8 +314,11 @@ gdk_draw_context_get_surface (GdkDrawContext *context)
  *
  * When using GTK, the widget system automatically places calls to
  * gdk_draw_context_begin_frame() and gdk_draw_context_end_frame() via the
- * use of [class@Gsk.Renderer]s, so application code does not need to call
- * these functions explicitly.
+ * use of [GskRenderer](../gsk4/class.Renderer.html)s, so application code
+ * does not need to call these functions explicitly.
+ *
+ * Deprecated: 4.16: Drawing directly to the surface is no longer recommended.
+ *   Use `GskRenderNode` and `GskRenderer`.
  */
 void
 gdk_draw_context_begin_frame (GdkDrawContext       *context,
@@ -311,11 +330,12 @@ gdk_draw_context_begin_frame (GdkDrawContext       *context,
   g_return_if_fail (priv->surface != NULL);
   g_return_if_fail (region != NULL);
 
-  gdk_draw_context_begin_frame_full (context, GDK_MEMORY_U8, region);
+  gdk_draw_context_begin_frame_full (context, GDK_MEMORY_U8, region, NULL);
 }
 
 /*
  * @depth: best depth to render in
+ * @opaque: (nullable): opaque region of the rendering
  *
  * If the given depth is not `GDK_MEMORY_U8`, GDK will see about providing a
  * rendering target that supports a higher bit depth than 8 bits per channel.
@@ -324,7 +344,7 @@ gdk_draw_context_begin_frame (GdkDrawContext       *context,
  *
  * This is only a request and if the GDK backend does not support HDR rendering
  * or does not consider it worthwhile, it may choose to not honor the request.
- * It may also choose to provide a differnet depth even if it was not requested.
+ * It may also choose to provide a different depth even if it was not requested.
  * Typically the steps undertaken by a backend are:
  * 1. Check if high depth is supported by this drawing backend.
  * 2. Check if the compositor supports high depth.
@@ -338,9 +358,10 @@ gdk_draw_context_begin_frame (GdkDrawContext       *context,
  * to choose.
  */
 void
-gdk_draw_context_begin_frame_full (GdkDrawContext       *context,
-                                   GdkMemoryDepth        depth,
-                                   const cairo_region_t *region)
+gdk_draw_context_begin_frame_full (GdkDrawContext        *context,
+                                   GdkMemoryDepth         depth,
+                                   const cairo_region_t  *region,
+                                   const graphene_rect_t *opaque)
 {
   GdkDrawContextPrivate *priv = gdk_draw_context_get_instance_private (context);
 
@@ -365,13 +386,25 @@ gdk_draw_context_begin_frame_full (GdkDrawContext       *context,
       return;
     }
 
+  gdk_surface_set_opaque_rect (priv->surface, opaque);
+
   if (gdk_display_get_debug_flags (priv->display) & GDK_DEBUG_HIGH_DEPTH)
     depth = GDK_MEMORY_FLOAT32;
 
   priv->frame_region = cairo_region_copy (region);
   priv->surface->paint_context = g_object_ref (context);
 
-  GDK_DRAW_CONTEXT_GET_CLASS (context)->begin_frame (context, depth, priv->frame_region);
+  g_assert (priv->color_state == NULL);
+
+  GDK_DRAW_CONTEXT_GET_CLASS (context)->begin_frame (context,
+                                                     depth,
+                                                     priv->frame_region,
+                                                     &priv->color_state,
+                                                     &priv->depth);
+
+  /* The callback is meant to set them. Note that it does not return a ref */
+  g_assert (priv->color_state != NULL);
+  g_assert (priv->depth < GDK_N_DEPTHS);
 
   cairo_region_intersect_rectangle (priv->frame_region,
                                     &(cairo_rectangle_int_t) {
@@ -399,6 +432,21 @@ region_get_pixels (cairo_region_t *region)
 }
 #endif
 
+void
+gdk_draw_context_end_frame_full (GdkDrawContext *context)
+{
+  GdkDrawContextPrivate *priv = gdk_draw_context_get_instance_private (context);
+
+  GDK_DRAW_CONTEXT_GET_CLASS (context)->end_frame (context, priv->frame_region);
+
+  gdk_profiler_set_int_counter (pixels_counter, region_get_pixels (priv->frame_region));
+
+  priv->color_state = NULL;
+  g_clear_pointer (&priv->frame_region, cairo_region_destroy);
+  g_clear_object (&priv->surface->paint_context);
+  priv->depth = GDK_N_DEPTHS;
+}
+
 /**
  * gdk_draw_context_end_frame:
  * @context: a `GdkDrawContext`
@@ -411,6 +459,9 @@ region_get_pixels (cairo_region_t *region)
  * When using a [class@Gdk.GLContext], this function may call `glFlush()`
  * implicitly before returning; it is not recommended to call `glFlush()`
  * explicitly before calling this function.
+ *
+ * Deprecated: 4.16: Drawing directly to the surface is no longer recommended.
+ *   Use `GskRenderNode` and `GskRenderer`.
  */
 void
 gdk_draw_context_end_frame (GdkDrawContext *context)
@@ -438,12 +489,7 @@ gdk_draw_context_end_frame (GdkDrawContext *context)
       return;
     }
 
-  GDK_DRAW_CONTEXT_GET_CLASS (context)->end_frame (context, priv->frame_region);
-
-  gdk_profiler_set_int_counter (pixels_counter, region_get_pixels (priv->frame_region));
-
-  g_clear_pointer (&priv->frame_region, cairo_region_destroy);
-  g_clear_object (&priv->surface->paint_context);
+  gdk_draw_context_end_frame_full (context);
 }
 
 /**
@@ -460,13 +506,68 @@ gdk_draw_context_end_frame (GdkDrawContext *context)
  * and [method@Gdk.DrawContext.end_frame], %NULL will be returned.
  *
  * Returns: (transfer none) (nullable): a Cairo region
+ *
+ * Deprecated: 4.16: Drawing directly to the surface is no longer recommended.
+ *   Use `GskRenderNode` and `GskRenderer`.
  */
 const cairo_region_t *
-gdk_draw_context_get_frame_region (GdkDrawContext *context)
+_gdk_draw_context_get_frame_region (GdkDrawContext *context)
 {
   GdkDrawContextPrivate *priv = gdk_draw_context_get_instance_private (context);
 
+  return priv->frame_region;
+}
+
+const cairo_region_t *
+(gdk_draw_context_get_frame_region) (GdkDrawContext *context)
+{
   g_return_val_if_fail (GDK_IS_DRAW_CONTEXT (context), NULL);
 
-  return priv->frame_region;
+  return _gdk_draw_context_get_frame_region (context);
+}
+
+/*<private>
+ * gdk_draw_context_get_color_state:
+ * @self: a `GdkDrawContext`
+ *
+ * Gets the target color state while rendering. If no rendering is going on, %NULL is returned.
+ *
+ * Returns: (transfer none) (nullable): the target color state
+ **/
+GdkColorState *
+gdk_draw_context_get_color_state (GdkDrawContext *self)
+{
+  GdkDrawContextPrivate *priv = gdk_draw_context_get_instance_private (self);
+
+  return priv->color_state;
+}
+
+/*<private>
+ * gdk_draw_context_get_depth:
+ * @self: a `GdkDrawContext`
+ *
+ * Gets the target depth while rendering. If no rendering is going on, the return value is undefined.
+ *
+ * Returns: the target depth
+ **/
+GdkMemoryDepth
+gdk_draw_context_get_depth (GdkDrawContext *self)
+{
+  GdkDrawContextPrivate *priv = gdk_draw_context_get_instance_private (self);
+
+  return priv->depth;
+}
+
+void
+gdk_draw_context_empty_frame (GdkDrawContext *context)
+{
+  GdkDrawContextPrivate *priv = gdk_draw_context_get_instance_private (context);
+
+  g_return_if_fail (GDK_IS_DRAW_CONTEXT (context));
+  g_return_if_fail (priv->surface != NULL);
+
+  if (GDK_SURFACE_DESTROYED (priv->surface))
+    return;
+
+  GDK_DRAW_CONTEXT_GET_CLASS (context)->empty_frame (context);
 }

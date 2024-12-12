@@ -42,6 +42,19 @@
  * [signal@Gtk.LinkButton::activate-link] signal and returning %TRUE from
  * the signal handler.
  *
+ * # Shortcuts and Gestures
+ *
+ * `GtkLinkButton` supports the following keyboard shortcuts:
+ *
+ * - <kbd>Shift</kbd>+<kbd>F10</kbd> or <kbd>Menu</kbd> opens the context menu.
+ *
+ * # Actions
+ *
+ * `GtkLinkButton` defines a set of built-in actions:
+ *
+ * - `clipboard.copy` copies the url to the clipboard.
+ * - `menu.popup` opens the context menu.
+ *
  * # CSS nodes
  *
  * `GtkLinkButton` has a single CSS node with name button. To differentiate
@@ -170,7 +183,7 @@ gtk_link_button_class_init (GtkLinkButtonClass *klass)
   klass->activate_link = gtk_link_button_activate_link;
 
   /**
-   * GtkLinkButton:uri: (attributes org.gtk.Property.get=gtk_link_button_get_uri org.gtk.Property.set=gtk_link_button_set_uri)
+   * GtkLinkButton:uri:
    *
    * The URI bound to this button.
    */
@@ -181,7 +194,7 @@ gtk_link_button_class_init (GtkLinkButtonClass *klass)
                                                         GTK_PARAM_READWRITE));
 
   /**
-   * GtkLinkButton:visited: (attributes org.gtk.Property.get=gtk_link_button_get_visited org.gtk.Property.set=gtk_link_button_set_visited)
+   * GtkLinkButton:visited:
    *
    * The 'visited' state of this button.
    *
@@ -480,6 +493,28 @@ gtk_link_button_pressed_cb (GtkGestureClick *gesture,
     }
 }
 
+static void
+launch_done (GObject      *source,
+             GAsyncResult *result,
+             gpointer      data)
+{
+  GError *error = NULL;
+  gboolean success;
+
+  if (GTK_IS_FILE_LAUNCHER (source))
+    success = gtk_file_launcher_launch_finish (GTK_FILE_LAUNCHER (source), result, &error);
+  else if (GTK_IS_URI_LAUNCHER (source))
+    success = gtk_uri_launcher_launch_finish (GTK_URI_LAUNCHER (source), result, &error);
+  else
+    g_assert_not_reached ();
+
+  if (!success)
+    {
+      g_warning ("Failed to launch handler: %s", error->message);
+      g_error_free (error);
+    }
+}
+
 static gboolean
 gtk_link_button_activate_link (GtkLinkButton *link_button)
 {
@@ -496,7 +531,7 @@ gtk_link_button_activate_link (GtkLinkButton *link_button)
 
       launcher = gtk_file_launcher_new (file);
 
-      gtk_file_launcher_launch (launcher, GTK_WINDOW (toplevel), NULL, NULL, NULL);
+      gtk_file_launcher_launch (launcher, GTK_WINDOW (toplevel), NULL, launch_done, NULL);
 
       g_object_unref (launcher);
       g_object_unref (file);
@@ -505,7 +540,7 @@ gtk_link_button_activate_link (GtkLinkButton *link_button)
     {
       GtkUriLauncher *launcher = gtk_uri_launcher_new (link_button->uri);
 
-      gtk_uri_launcher_launch (launcher, GTK_WINDOW (toplevel), NULL, NULL, NULL);
+      gtk_uri_launcher_launch (launcher, GTK_WINDOW (toplevel), NULL, launch_done, NULL);
 
       g_object_unref (launcher);
     }
@@ -635,7 +670,7 @@ gtk_link_button_query_tooltip_cb (GtkWidget    *widget,
 }
 
 /**
- * gtk_link_button_set_uri: (attributes org.gtk.Method.set_property=uri)
+ * gtk_link_button_set_uri:
  * @link_button: a `GtkLinkButton`
  * @uri: a valid URI
  *
@@ -659,7 +694,7 @@ gtk_link_button_set_uri (GtkLinkButton *link_button,
 }
 
 /**
- * gtk_link_button_get_uri: (attributes org.gtk.Method.get_property=uri)
+ * gtk_link_button_get_uri:
  * @link_button: a `GtkLinkButton`
  *
  * Retrieves the URI of the `GtkLinkButton`.
@@ -676,7 +711,7 @@ gtk_link_button_get_uri (GtkLinkButton *link_button)
 }
 
 /**
- * gtk_link_button_set_visited: (attributes org.gtk.Method.set_property=visited)
+ * gtk_link_button_set_visited:
  * @link_button: a `GtkLinkButton`
  * @visited: the new “visited” state
  *
@@ -716,7 +751,7 @@ gtk_link_button_set_visited (GtkLinkButton *link_button,
 }
 
 /**
- * gtk_link_button_get_visited: (attributes org.gtk.Method.get_property=visited)
+ * gtk_link_button_get_visited:
  * @link_button: a `GtkLinkButton`
  *
  * Retrieves the “visited” state of the `GtkLinkButton`.

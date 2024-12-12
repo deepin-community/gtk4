@@ -1,7 +1,8 @@
-#ifndef __GTK_SHADER_BIN_H__
-#define __GTK_SHADER_BIN_H__
+#pragma once
 
 #include <gtk/gtk.h>
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 
 G_BEGIN_DECLS
 
@@ -20,4 +21,4 @@ GtkWidget *gtk_shader_bin_get_child   (GtkShaderBin *self);
 
 G_END_DECLS
 
-#endif /* __GTK_SHADER_BIN_H__ */
+G_GNUC_END_IGNORE_DEPRECATIONS

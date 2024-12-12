@@ -1,8 +1,606 @@
-gtk4 (4.12.3+ds-1deepin1) unstable; urgency=medium
+gtk4 (4.16.7+ds-1deepin1) unstable; urgency=medium
 
-  * skip gdk image test.
+  * Skip gdk image test
 
- -- LiChengGang <lichenggang@uniontech.com>  Fri, 17 Nov 2023 15:30:27 +0800
+ -- Woomeeme <2968606874@qq.com>  Thu, 12 Dec 2024 15:34:42 +0800
+
+gtk4 (4.16.7+ds-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Mon, 25 Nov 2024 18:37:54 -0500
+
+gtk4 (4.16.5+ds-2) unstable; urgency=medium
+
+  * d/watch: Only watch for stable (4.even.x) releases
+  * d/gbp.conf: Use upstream/4.16.x branch.
+    4.17.0 has been released, but it's a development release and not
+    suitable for testing/unstable yet.
+  * Release to unstable
+
+ -- Simon McVittie <smcv@debian.org>  Mon, 11 Nov 2024 21:24:58 +0000
+
+gtk4 (4.16.5+ds-1) experimental; urgency=medium
+
+  [ Simon McVittie ]
+  * New upstream release
+  * d/p/printing-If-we-cannot-contact-Avahi-debug-log-the-error-m.patch,
+    d/p/printing-Treat-any-G_DBUS_ERROR-contacting-Avahi-as-non-p.patch:
+    Drop patches that were applied upstream
+  * d/tests/run-with-display: Send xvfb-run output to stderr
+    (helps: #1082659, #1084230)
+
+  [ Jeremy Bícha ]
+  * Quote cpdb dependency to fix Ubuntu build
+
+ -- Simon McVittie <smcv@debian.org>  Tue, 05 Nov 2024 12:25:51 +0000
+
+gtk4 (4.16.3+ds-2) unstable; urgency=high
+
+  [ Simon McVittie ]
+  * Re-enable the older CUPS print backend and disable CPDB, except
+    on Ubuntu.
+    CPDB is not yet available in Debian in a useful form: the CPDB backend
+    requires cups-filters 2.x, which conflicts with the 1.x version
+    of cups-filters that is currently used by the CUPS daemon. There
+    is conflicting information in #1079457 about the extent to which
+    cups-filters 2.x is or is not suitable for use with CUPS v2 in trixie.
+    Continue to build-depend on CPDB, so that we can continue to
+    build that backend on Ubuntu, on the assumption that the Canonical
+    developers who made that change know what's considered to be right
+    for Ubuntu.
+    (Mitigates: #1079457, #1084195) (Closes: #1084916)
+  * d/p/printing-If-we-cannot-contact-Avahi-debug-log-the-error-m.patch,
+    d/p/printing-Treat-any-G_DBUS_ERROR-contacting-Avahi-as-non-p.patch:
+    Add proposed patches to fix autopkgtest failure with cups print backend
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Thu, 17 Oct 2024 08:45:22 -0400
+
+gtk4 (4.16.3+ds-1) unstable; urgency=medium
+
+  * New upstream release (LP: #2083714)
+  * Revert "Fix cursor sizes under Plasma/Wayland when using (fractional) scaling"
+    The backported patches caused cursor size regressions with scaling on GNOME.
+    (Closes: #1083055) (Reopens: #1083115)
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Fri, 04 Oct 2024 15:27:50 -0400
+
+gtk4 (4.16.2+ds-4) unstable; urgency=high
+
+  [ Michael Biebl ]
+  * Fix cursor sizes under Plasma/Wayland when using scaling
+    (Closes: #1083055) (LP: #2083274)
+
+  [ Jeremy Bícha ]
+  * Bump urgency to high since this includes multiple 4.16 regression fixes
+    (Closes: #1083019)
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Mon, 30 Sep 2024 15:16:37 -0400
+
+gtk4 (4.16.2+ds-3) unstable; urgency=medium
+
+  * Release to unstable (Mitigates: #1081962)
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Sun, 29 Sep 2024 10:25:23 -0400
+
+gtk4 (4.16.2+ds-2) experimental; urgency=medium
+
+  [ Alessandro Astone ]
+  * d/patches: Change default renderer back to ngl (LP: #2082017)
+
+ -- Sebastien Bacher <seb128@ubuntu.com>  Fri, 27 Sep 2024 17:42:30 +0200
+
+gtk4 (4.16.2+ds-1) unstable; urgency=high
+
+  * New upstream release
+  * Remove patch applied in new release
+  * Bump urgency to high since this includes 4.16 regression fixes
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Tue, 24 Sep 2024 09:59:19 -0400
+
+gtk4 (4.16.1+ds-5) unstable; urgency=medium
+
+  * d/*.lintian-overrides, d/source/lintian-overrides:
+    Silence some false positives
+
+ -- Simon McVittie <smcv@debian.org>  Sun, 22 Sep 2024 15:41:26 +0100
+
+gtk4 (4.16.1+ds-4) unstable; urgency=medium
+
+  * d/p/wayland-Don-t-call-gdk_display_sync.patch:
+    Add patch from upstream to fix crashes under kwin-wayland
+    (Closes: #1081957)
+  * d/p/gdk-Check-some-assertions-on-our-architectures.patch:
+    Drop a patch that only added static assertions.
+    These are now checked in gdk/gdkcolorprivate.h.
+  * d/p/workarounds/testsuite-tools-validate-Use-softpipe-driver-for-validate.patch:
+    Work around additional messages on stderr from llvmpipe now that Mesa
+    is using LLVM 19
+  * d/p/insttests:
+    Split restoration of installed-tests into a topic directory
+  * d/p/gstplayer:
+    Split vendoring of gstplayer into a topic subdirectory
+  * d/p/workarounds:
+    Move all workarounds into a topic subdirectory
+  * Release to unstable
+
+ -- Simon McVittie <smcv@debian.org>  Sun, 22 Sep 2024 13:48:17 +0100
+
+gtk4 (4.16.1+ds-3) experimental; urgency=medium
+
+  [ Aurelien Jarno ]
+  * Revert "d/rules: Use softpipe to run tests on riscv64".
+    llvmpipe should work now that #1080475 has been fixed in
+    llvm-toolchain-18. (Closes: #1081678)
+
+  [ Simon McVittie ]
+  * d/rules: Be more selective about disabling tests that fail with
+    softpipe.
+    If they succeed with llvmpipe, then we should be able to enable them
+    on most architectures now.
+  * d/rules: Mention status of llvmpipe on mips*, powerpc, sparc*.
+    As of 2024-09-16, we still need to disable use of llvmpipe by forcing
+    use of softpipe on these architectures, otherwise many tests crash.
+  * Upload to experimental to avoid disrupting testing migration of 4.16.1
+    if this doesn't work on buildds.
+
+ -- Simon McVittie <smcv@debian.org>  Mon, 16 Sep 2024 13:40:42 +0100
+
+gtk4 (4.16.1+ds-2) unstable; urgency=medium
+
+  * Release to unstable (Closes: #1079548)
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Sun, 15 Sep 2024 17:11:16 -0400
+
+gtk4 (4.16.1+ds-1) experimental; urgency=medium
+
+  * New upstream release
+    - d/patches: Drop patches that were applied upstream
+  * d/run-tests.sh: Ensure temporary XDG_RUNTIME_DIR is mode 0700.
+    This avoids warnings from e.g. weston.
+  * Upload to experimental to check that this is buildable on all release
+    architectures. If all goes well, the next upload can be to unstable.
+
+ -- Simon McVittie <smcv@debian.org>  Sun, 15 Sep 2024 16:07:02 +0100
+
+gtk4 (4.16.0+ds-2) experimental; urgency=medium
+
+  [ Simon McVittie ]
+  * d/p/Revert-css-Simplify-theme-loading.patch:
+    Add a regression fix from upstream
+  * d/p/gdkgltexture-Avoid-use-after-free-when-switching-GdkGLCon.patch:
+    Add patch to fix a use-after-free when using softpipe
+  * d/rules: Ignore label-shadows reftest failure whenever we are using
+    softpipe.
+    Temporarily switching from llvmpipe to softpipe on an architecture
+    where this previously worked (armel) causes this reftest to fail,
+    which seems like evidence that the different result is a softpipe
+    rendering difference.
+  * d/p/testsuite-If-validation-result-is-not-as-expected-log-the.patch:
+    Add proposed patch to improve diagnostics if the validate test fails
+  * d/p/workarounds/scaling-test-Skip-floating-point-pixel-formats-with-Cairo.patch:
+    Add a proposed patch to skip test-cases that have intermittent failures
+  * d/p/workarounds/tests-Skip-floating-point-texture-scaling-tests-on-softpi.patch:
+    Add a workaround for test failures on architectures that use softpipe
+  * d/p/workarounds/memorytexture-test-Ignore-failures-with-FP-softpipe-ngl-o.patch:
+    Add a patch to work around floating point textures not working on mips64el
+    (Mitigates: #1081275)
+  * d/p/debian/reftests-Allow-minor-differences-to-be-tolerated.patch:
+    Fix a compiler warning
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Tue, 10 Sep 2024 10:15:12 -0400
+
+gtk4 (4.16.0+ds-1) experimental; urgency=medium
+
+  [ Simon McVittie ]
+  * New upstream release
+  * d/rules: Use softpipe to run tests on riscv*, similar to mips*,
+    powerpc and sparc*.
+    The ORCJIT implementation of llvmpipe used on these architectures
+    does not seem to be ready yet, and now that Mesa 24.2.1-4 has
+    re-enabled softpipe (#1080475) we can use it to avoid llvmpipe issues.
+    (Mitigates: #1080435)
+  * d/copyright: Update
+  * Refresh patch series
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Tue, 10 Sep 2024 09:59:45 -0400
+
+gtk4 (4.15.6+ds-1) experimental; urgency=medium
+
+  [ Jeremy Bícha ]
+  * Remove memorytexture patch: test should pass now on big-endian
+    (Closes: #1077757)
+
+  [ Simon McVittie ]
+  * New upstream development release
+  * d/copyright: Update
+  * d/patches: Update patch series
+  * d/p/gtkcssvariableset-Fix-listing-IDs-on-big-endian-machines.patch,
+    d/p/gtkcssprovider-Fix-sorting-of-custom-property-IDs-on-64-b.patch:
+    Fix crashes on 64-bit big-endian since 4.15.x (Closes: #1079546)
+  * d/p/testsuite-Add-a-suite-for-tests-that-require-dev-udmabuf.patch,
+    d/rules:
+    Skip tests that require /dev/udmabuf, which is not currently available
+    on Debian kernels, and unlikely to become available on buildds
+  * d/p/gtkcssnumbervalue-Don-t-use-fesetround-on-ARM-softfloat.patch:
+    Add a patch to work around fesetround() not working on armel
+    (Closes: #1079545)
+  * d/tests: Run templates.test again.
+    This is believed to be reliable on all architectures supported by
+    ci.debian.net now.
+  * d/tests/installed-tests: Quote more defensively
+
+ -- Simon McVittie <smcv@debian.org>  Sun, 01 Sep 2024 21:42:40 +0100
+
+gtk4 (4.15.5+ds-2) experimental; urgency=medium
+
+  * Replace disable vulkan patch with alternative fix pushed upstream
+  * Update list of sysprof enabled architectures
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Sat, 24 Aug 2024 08:03:46 -0400
+
+gtk4 (4.15.5+ds-1) experimental; urgency=medium
+
+  [ Jeremy Bícha ]
+  * New upstream release
+    - Fix large mouse cursor when using scaling (LP: #2076652)
+  * debian/libgtk-4-1.symbols.in: Add new symbols
+  * Remove 2 patches applied in new release
+  * Refresh patches
+
+  [ Nathan Pratta Teodosio ]
+  * Add patch to disable vulkan in memorytexture, scaling & dmabufformats tests
+    (LP: #2077313)
+
+  [ Marco Trevisan (Treviño) ]
+  * Update gstreamer subproject patches
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Mon, 19 Aug 2024 14:24:57 -0400
+
+gtk4 (4.15.4+ds-2) experimental; urgency=medium
+
+  * Fix arch:all only build
+  * Bump Standards Version to 4.7.0
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Wed, 07 Aug 2024 20:01:23 -0400
+
+gtk4 (4.15.4+ds-1) experimental; urgency=medium
+
+  [ Jeremy Bícha ]
+  * New upstream release
+  * debian/libgtk-4-1.symbols.in: Add new symbols
+  * Bump minimum cairo to 1.18 & wayland-protocols to 1.36
+  * libgtk-4-bin: Install gtk4-image-tool
+  * Fix installing update-icon-caches manpage
+  * Add patch to fix css parser autopkgtest
+  * Add patch to skip broken color-mix test
+  * Add the doc-check tests to skipped_suites since they don't pass yet
+  * Remove 5 patches applied in new release
+  * autopkgtest: Set GTK_DEBUG=css as was done upstream
+
+  [ Simon McVittie ]
+  * Take over gtk-update-icon-cache from src:gtk+3.0
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Wed, 07 Aug 2024 12:09:56 -0400
+
+gtk4 (4.14.4+ds-8) unstable; urgency=medium
+
+  * d/p/debian/tests-Mark-memorytexture-as-expected-to-fail-on-big-endian.patch:
+    Update patch to also not install its .test file on big-endian
+    architectures.
+    This seems the easiest way to avoid running it as an autopkgtest,
+    which we know won't work, for the same reasons it doesn't work
+    at build-time. (Mitigates: #1077757)
+  * d/rules: Export DEB_*_MAINT_APPEND instead of appending to CFLAGS,
+    LDFLAGS (see #1077732 for a request to document the intended pattern)
+
+ -- Simon McVittie <smcv@debian.org>  Thu, 01 Aug 2024 15:28:56 +0100
+
+gtk4 (4.14.4+ds-7) unstable; urgency=medium
+
+  * d/rules: Append to CFLAGS for i386 the same way we append to LDFLAGS.
+    Using DEB_CFLAGS_MAINT_APPEND here worked a few days ago, but does not
+    seem to work now, possibly affected by the changes in dpkg 1.22.10.
+    (Closes: #1077690)
+  * d/changelog: Mention #1077675 in previous changelog entry
+
+ -- Simon McVittie <smcv@debian.org>  Wed, 31 Jul 2024 23:27:57 +0100
+
+gtk4 (4.14.4+ds-6) unstable; urgency=medium
+
+  [ Jeremy Bícha ]
+  * Add patch to fix build tests on the 31st day of the month
+    (Closes: #1077675)
+
+  [ Simon McVittie ]
+  * Add a missing item to the previous changelog entry
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Wed, 31 Jul 2024 16:18:23 -0400
+
+gtk4 (4.14.4+ds-5) unstable; urgency=medium
+
+  [ Simon McVittie ]
+  * d/rules: Add bug reference for #1077289
+  * d/changelog: Previous release only mitigated #1077178 rather than
+    fixing it
+  * d/rules: Use softpipe instead of llvmpipe on powerpc, sparc64.
+    Most tests crash with a LLVM assertion failure on these -ports
+    architectures. Maybe llvmpipe is broken on these architectures,
+    and if so, maybe softpipe will have better success?
+
+  [ Jeremy Bícha ]
+  * Release to unstable (Closes: #1072395)
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Wed, 31 Jul 2024 14:30:30 -0400
+
+gtk4 (4.14.4+ds-4) experimental; urgency=medium
+
+  [ Matthias Geiger ]
+  * d/rules: Skip label-shadows reftest on mips64el and riscv64.
+    The rendering differences are minor enough to not reflect a real problem
+    for applications. (Mitigates: #1077178)
+
+  [ Simon McVittie ]
+  * d/patches: Improve patch metadata
+  * d/patches: Rearrange patch series, closest-to-upstream first.
+    No functional change.
+  * d/p/tests-Fix-signature-of-GtkTestATContext-update-selection-.patch:
+    Add patch to fix a11y/text, a11y/textview tests instead of skipping them
+    (Closes: #1077181)
+  * d/p/gskpathop-Introduce-a-type-to-represent-an-aligned-graphe.patch:
+    Align GskPath points to an 8-byte boundary where necessary
+    (Closes: #1077192, #1077288)
+  * d/rules: Skip headless test suite explicitly, rather than via a patch.
+    It's equally easy to skip these tests this way, and less delta vs.
+    upstream in our patch series makes it easier to manage.
+  * d/rules: Reduce test suites specifically skipped on big-endian.
+    We now skip these test suites unconditionally on all architectures,
+    because upstream say they are very sensitive to small behaviour
+    changes in the GL driver. Given that, there's no need to skip them a
+    second time on big-endian systems.
+  * d/p/gskvulkanmemory.c-Use-VK_NULL_HANDLE-for-VkDeviceMemory.patch,
+    d/p/gdkvulkancontext.c-Use-pointers-to-hash-VkShaderModule.patch,
+    d/p/gskvulkandevice.c-Put-Vk-Pipeline-RenderPass-in-structure.patch:
+    Add patches from upstream 4.14.x branch to fix build on i386.
+    The Vulkan renderer in the previous i386 package built successfully with
+    gcc 13, but probably didn't actually work. gcc 14 is stricter about
+    implicit integer/pointer conversions, so it failed to build.
+  * d/rules: Build with -ffloat-store on i386.
+    Some of the tests (and more in 4.15.x) fail if this is not done,
+    because i387 excess precision results in numeric values being
+    calculated differently. Because few GTK developers run it on i386
+    (and in particular, upstream do not), running the test suite and not
+    skipping more of it than strictly necessary is important, because
+    that's the only mechanism available to discover whether the library
+    has regressed on less-used architectures.
+    (Closes: #1077289)
+  * d/p/gdk-Check-some-assertions-on-our-architectures.patch:
+    Check some assertions for the GTK upstream maintainers.
+    This has no runtime impact, but will fail the build if some reasonable
+    assumptions turn out to be untrue.
+  * d/control: Depend on libgles2.
+    This is used by default since 4.14. It isn't strictly mandatory because
+    another backend can be chosen via environment variables, but the
+    failure mode if it is missing is very bad (applications crash) so it
+    seems proportionate to make it a Depends. (Closes: #1077287)
+
+ -- Simon McVittie <smcv@debian.org>  Sun, 28 Jul 2024 19:24:05 +0100
+
+gtk4 (4.14.4+ds-3) experimental; urgency=medium
+
+  * Extra workarounds for tests issues in the new version
+  * debian/ignore.keyfile:
+    - increase tolerated-diff-pixels to workaround some reftests still
+      failing the build on s390x despite being in the ignore list
+  * debian/patches/ignore_a11ytext_i386.patch:
+    - ignore a11y/text and a11y/textview tests on i386 for now, they
+      are failing on the builders for some reason
+  * d/p/d/tests-Mark-memorytexture-as-expected-to-fail-on-big-endian.patch:
+    - mark also memorytexture as expected to fail on big endian
+  * debian/rules:
+    - disable gsk tests on i386 and arm since they are currently buggy
+    - ignore extra reftests that are now failing on s390x
+
+ -- Sebastien Bacher <seb128@ubuntu.com>  Sun, 14 Jul 2024 10:04:09 -0400
+
+gtk4 (4.14.4+ds-2) experimental; urgency=medium
+
+  * Increase general build test timeout. Thanks to Matthias Geiger.
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Sun, 14 Jul 2024 07:54:18 -0400
+
+gtk4 (4.14.4+ds-1) experimental; urgency=medium
+
+  * New upstream release
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Fri, 03 May 2024 18:03:37 -0400
+
+gtk4 (4.14.3+ds-1) experimental; urgency=medium
+
+  * New upstream release
+  * Switch from cups backend to cpdb
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Tue, 23 Apr 2024 11:11:01 -0400
+
+gtk4 (4.14.2+ds-1) experimental; urgency=medium
+
+  * New upstream release. Upload to experimental but the tests situation
+    is not ideal. Skip some of testsuites to allow building since it seems
+    the gsk tests can hit rounding differences depending of the renderer
+    in use an the software rendering stack version and build options.
+    We saw tests issue also on Ubuntu for s390x and 32 bits architectures
+    but I'm not applying workaround for those in Debian yet because they
+    are somehow wrong (especially on 32 bits which seems to have real
+    upstream issues) and to see if we get the same errors on the Debian
+    builders.
+  * Update the packaging to no refer to the ffmpeg experimental backend
+    which has been removed upstream now
+  * debian/rules:
+    - skip the gsk compare suites those seem to be giving inconsistant
+      results depending on the rendering stack
+    - update for the new convert-emoji syntax
+
+  [ Nathan Pratta Teodosio ]
+  * debian/rules:
+    - Make Bash scripts in installed-tests/gtk-4.0/tools/ executable
+      to fix autopkgtests.
+
+  [ Jeremy Bícha ]
+  * New upstream release
+
+ -- Sebastien Bacher <seb128@ubuntu.com>  Thu, 04 Apr 2024 18:09:08 +0200
+
+gtk4 (4.12.5+ds-6) unstable; urgency=medium
+
+  * d/control, d/rules: Reinstate colord integration on 32-bit
+  * d/control, d/rules: Reinstate build-time tests on 32-bit
+  * d/control, d/tests/build: Prefer pkgconf over pkg-config
+  * d/control, d/rules: Make it more obvious that we use the correct
+    pkgconf.
+    We intentionally compile convert-emoji with the build architecture
+    pkgconf, because we need to run it during build, but we do not need
+    to install it.
+  * d/control, d/rules: Only enable sysprof on architectures that have it.
+    See #1067577.
+
+ -- Simon McVittie <smcv@debian.org>  Mon, 25 Mar 2024 14:45:21 +0000
+
+gtk4 (4.12.5+ds-5) unstable; urgency=medium
+
+  * d/rules: Replace deprecated -Ddemos with -Dbuild-demos
+  * d/control: Don't build-depend on ffmpeg if we are not going to use it.
+    The experimental ffmpeg plugin is only built if selected
+    by a build-profile, so put an equivalent condition on the
+    build-dependencies.
+  * d/control, d/rules: Add a pkg.gtk4.nocolord build-profile.
+    This is not a reproducible (or "safe") build profile, because it
+    changes the contents of the library rather than merely disabling
+    whole binary packages, but it cuts off some long dependency chains
+    that can be useful during bootstrapping.
+  * Temporarily disable colord integration on 32-bit non-x86.
+    For the 64-bit time_t transition. colord is a non-essential feature,
+    and has not yet been built because it is stuck behind a dependency
+    chain: colord, sane-backends, libgphoto2, graphviz.
+  * Temporarily disable build-time tests on 32-bit non-x86.
+    weston, among others, has not yet been rebuilt for the 64-bit time_t
+    transition.
+
+ -- Simon McVittie <smcv@debian.org>  Thu, 21 Mar 2024 13:34:59 +0000
+
+gtk4 (4.12.5+ds-4) unstable; urgency=medium
+
+  * Add patch to adapt build tests to pango 1.52.0
+  * Bump Build-Depend pango to 1.52.0 to match
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Sat, 09 Mar 2024 20:18:57 -0500
+
+gtk4 (4.12.5+ds-3) unstable; urgency=medium
+
+  * d/rules: Always use Mesa software rendering during the build.
+    We do not expect autobuilders to have hardware GPUs available, and
+    forcing software rendering makes build-time tests run by developers
+    consistent with build-time tests run on autobuilders.
+    This also avoids using Zink, which is not usually available on
+    autobuilders either (because there is no hardware Vulkan driver),
+    but produces messages on stderr that will make some of our tests fail.
+    (Closes: #1064704)
+
+ -- Simon McVittie <smcv@debian.org>  Mon, 26 Feb 2024 13:12:57 +0000
+
+gtk4 (4.12.5+ds-2) unstable; urgency=medium
+
+  * Allow stderr for python3-gi autopkgtests to not fail
+    tests for zink warnings emitted by mesa
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Fri, 26 Jan 2024 15:19:36 -0500
+
+gtk4 (4.12.5+ds-1) unstable; urgency=medium
+
+  * New upstream release
+    - Update emoji chooser for Unicode 15.1
+  * missing-sources: Update emojibase
+  * missing-sources: Copy emoji 15.1 files from Debian's unicode-data package
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Fri, 19 Jan 2024 15:20:15 -0500
+
+gtk4 (4.12.4+ds-4) unstable; urgency=medium
+
+  [ Dandan Zhang ]
+  * Add loong64 to the list of architectures that have librsvg
+    (Closes: #1059613)
+  * Extend test timeout on loong64
+
+  [ Jeremy Bícha ]
+  * Remove references to obsolete mipsel
+
+  [ Simon McVittie ]
+  * d/control: Use dh-sequence-gir to activate debhelper addon
+  * d/control: Rely on ${gir:Provides} for gir1.2-gtk-4.0's Provides.
+    The version of gobject-introspection in testing now supports this.
+  * d/rules: Disable GObject-Introspection in the udeb build.
+    debian-installer does not use GTK from an interpreted language and
+    is unlikely to do so any time soon.
+  * d/control, d/rules: Use a cross g-ir-scanner if cross-compiled
+  * d/control: Stop build-depending on libgirepository1.0-dev.
+    This package is problematic because it cannot be Multi-Arch
+    co-installable, but with recent changes to the Build-Depends, we no
+    longer need it.
+  * d/control: Don't require python3-gi when not running tests.
+    This makes the build-dependencies satisfiable during cross-builds.
+
+ -- Simon McVittie <smcv@debian.org>  Wed, 17 Jan 2024 11:43:08 +0000
+
+gtk4 (4.12.4+ds-3) unstable; urgency=medium
+
+  * d/control: Remove pandoc build-dependency.
+    It isn't needed any more, and pandoc is currently uninstallable in
+    unstable (#1057309, #1053686).
+
+ -- Simon McVittie <smcv@debian.org>  Sat, 09 Dec 2023 01:33:26 +0000
+
+gtk4 (4.12.4+ds-2) unstable; urgency=medium
+
+  [ Jeremy Bícha ]
+  * Reinstate Build-Depends on dh-sequence-gnome.
+    This is used by Ubuntu to pull in dh_translations.
+
+  [ Simon McVittie ]
+  * d/p/gsk-Always-use-RGBA-on-big-endian-architectures.patch:
+    Add proposed patch to fix test failure on big-endian CPUs
+    (Closes: #1057782)
+
+ -- Simon McVittie <smcv@debian.org>  Fri, 08 Dec 2023 17:36:22 +0000
+
+gtk4 (4.12.4+ds-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Mon, 27 Nov 2023 10:58:51 -0500
+
+gtk4 (4.12.3+ds-3) unstable; urgency=medium
+
+  * d/control: Build-depend on relevant gir1.2-*-dev virtual packages.
+    This will help with eventually converting some or all of them into real
+    packages, to allow GIR XML to be omitted when cross-compiling or
+    bootstrapping.
+  * d/control: Add ${gir:Depends} to -dev package.
+    This will add dependencies on gir1.2-pango-1.0-dev and so on.
+  * d/control: Use ${gir:Provides} to generate virtual package names
+
+ -- Simon McVittie <smcv@debian.org>  Fri, 17 Nov 2023 11:06:27 +0000
+
+gtk4 (4.12.3+ds-2) unstable; urgency=medium
+
+  * d/rules: Stop generating d/control.in from d/control.
+    The variable substitutions obscured more than they really helped.
+  * d/rules: Substitute GTK_BINVER_DEP as a substvar rather than using sed
+  * lbgtk-4-dev: Add Provides for included GIR XML files.
+    Representing these by systematic names gir1.2-*-dev, and perhaps
+    eventually separating them into their own binary package, will help
+    to enable cross-compilation with GObject-Introspection removed by
+    a build profile. (Helps: #1030223)
+
+ -- Simon McVittie <smcv@debian.org>  Thu, 02 Nov 2023 14:47:44 +0000
 
 gtk4 (4.12.3+ds-1) unstable; urgency=medium
 

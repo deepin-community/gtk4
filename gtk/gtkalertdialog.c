@@ -33,8 +33,7 @@
  * are needed to present a message to the user.
  *
  * The message is shown with the [method@Gtk.AlertDialog.choose]
- * function. This API follows the GIO async pattern, and the result can
- * be obtained by calling [method@Gtk.AlertDialog.choose_finish].
+ * function.
  *
  * If you don't need to wait for a button to be clicked, you can use
  * [method@Gtk.AlertDialog.show].
@@ -186,7 +185,7 @@ gtk_alert_dialog_class_init (GtkAlertDialogClass *class)
   object_class->set_property = gtk_alert_dialog_set_property;
 
   /**
-   * GtkAlertDialog:modal: (attributes org.gtk.Property.get=gtk_alert_dialog_get_modal org.gtk.Property.set=gtk_alert_dialog_set_modal)
+   * GtkAlertDialog:modal:
    *
    * Whether the alert is modal.
    *
@@ -198,7 +197,7 @@ gtk_alert_dialog_class_init (GtkAlertDialogClass *class)
                             G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkAlertDialog:message: (attributes org.gtk.Property.get=gtk_alert_dialog_get_message org.gtk.Property.set=gtk_alert_dialog_set_message)
+   * GtkAlertDialog:message:
    *
    * The message for the alert.
    *
@@ -210,7 +209,7 @@ gtk_alert_dialog_class_init (GtkAlertDialogClass *class)
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkAlertDialog:detail: (attributes org.gtk.Property.get=gtk_alert_dialog_get_detail org.gtk.Property.set=gtk_alert_dialog_set_detail)
+   * GtkAlertDialog:detail:
    *
    * The detail text for the alert.
    *
@@ -222,7 +221,7 @@ gtk_alert_dialog_class_init (GtkAlertDialogClass *class)
                            G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkAlertDialog:buttons: (attributes org.gtk.Property.get=gtk_alert_dialog_get_buttons org.gtk.Property.set=gtk_alert_dialog_set_buttons)
+   * GtkAlertDialog:buttons:
    *
    * Labels for buttons to show in the alert.
    *
@@ -240,7 +239,7 @@ gtk_alert_dialog_class_init (GtkAlertDialogClass *class)
                           G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkAlertDialog:cancel-button: (attributes org.gtk.Property.get=gtk_alert_dialog_get_cancel_button org.gtk.Property.set=gtk_alert_dialog_set_cancel_button)
+   * GtkAlertDialog:cancel-button:
    *
    * This property determines what happens when the Escape key is
    * pressed while the alert is shown.
@@ -260,7 +259,7 @@ gtk_alert_dialog_class_init (GtkAlertDialogClass *class)
                         G_PARAM_READWRITE|G_PARAM_STATIC_STRINGS|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
-   * GtkAlertDialog:default-button: (attributes org.gtk.Property.get=gtk_alert_dialog_get_default_button org.gtk.Property.set=gtk_alert_dialog_set_default_button)
+   * GtkAlertDialog:default-button:
    *
    * This property determines what happens when the Return key is
    * pressed while the alert is shown.
@@ -682,14 +681,11 @@ G_GNUC_END_IGNORE_DEPRECATIONS
  * @self: a `GtkAlertDialog`
  * @parent: (nullable): the parent `GtkWindow`
  * @cancellable: (nullable): a `GCancellable` to cancel the operation
- * @callback: (nullable) (scope async): a callback to call when the operation is complete
- * @user_data: (closure callback): data to pass to @callback
+ * @callback: (nullable) (scope async) (closure user_data): a callback to call
+ *   when the operation is complete
+ * @user_data: data to pass to @callback
  *
  * This function shows the alert to the user.
- *
- * The @callback will be called when the alert is dismissed.
- * It should call [method@Gtk.AlertDialog.choose_finish]
- * to obtain the result.
  *
  * It is ok to pass `NULL` for the callback if the alert
  * does not have more than one button. A simpler API for

@@ -40,9 +40,12 @@
 #include <glib/gi18n-lib.h>
 #include "gdkmarshalers.h"
 #include "gdkpopupprivate.h"
-#include "gdkrectangle.h"
+#include "gdkrectangleprivate.h"
 #include "gdktoplevelprivate.h"
 #include "gdkvulkancontext.h"
+#include "gdksubsurfaceprivate.h"
+
+#include "gsk/gskrectprivate.h"
 
 #include <math.h>
 
@@ -56,7 +59,7 @@
  * A `GdkSurface` is a rectangular region on the screen.
  *
  * It’s a low-level object, used to implement high-level objects
- * such as [class@Gtk.Window] or [class@Gtk.Dialog] in GTK.
+ * such as [GtkWindow](../gtk4/class.Window.html).
  *
  * The surfaces you see in practice are either [iface@Gdk.Toplevel] or
  * [iface@Gdk.Popup], and those interfaces provide much of the required
@@ -71,10 +74,15 @@ struct _GdkSurfacePrivate
   gpointer egl_native_window;
 #ifdef HAVE_EGL
   EGLSurface egl_surface;
-  gboolean egl_surface_high_depth;
+  GdkMemoryDepth egl_surface_depth;
 #endif
 
+  cairo_region_t *opaque_region;
+  cairo_rectangle_int_t opaque_rect; /* This is different from the region */
+
   gpointer widget;
+
+  GdkColorState *color_state;
 };
 
 enum {
@@ -254,7 +262,7 @@ maybe_flip_position (int       bounds_pos,
   *flipped = TRUE;
   secondary = rect_pos + (1 - rect_sign) * rect_size / 2 - offset - (1 - surface_sign) * surface_size / 2;
 
-  if (secondary >= bounds_pos && secondary + surface_size <= bounds_pos + bounds_size)
+  if ((secondary >= bounds_pos && secondary + surface_size <= bounds_pos + bounds_size) || primary > bounds_pos + bounds_size)
     return secondary;
 
   *flipped = FALSE;
@@ -474,6 +482,8 @@ gdk_surface_event_marshallerv (GClosure *closure,
 static void
 gdk_surface_init (GdkSurface *surface)
 {
+  GdkSurfacePrivate *priv = gdk_surface_get_instance_private (surface);
+
   /* 0-initialization is good for all other fields. */
 
   surface->state = 0;
@@ -485,12 +495,30 @@ gdk_surface_init (GdkSurface *surface)
 
   surface->device_cursor = g_hash_table_new_full (NULL, NULL,
                                                  NULL, g_object_unref);
+
+  surface->subsurfaces = g_ptr_array_new ();
+
+  priv->color_state = gdk_color_state_ref (gdk_color_state_get_srgb ());
 }
 
 static double
 gdk_surface_real_get_scale (GdkSurface *surface)
 {
   return 1.0;
+}
+
+static GdkSubsurface *
+gdk_surface_real_create_subsurface (GdkSurface *surface)
+{
+  GDK_DISPLAY_DEBUG (gdk_surface_get_display (surface), OFFLOAD,
+                     "Subsurfaces not supported for %s", G_OBJECT_TYPE_NAME (surface));
+  return NULL;
+}
+
+static void
+gdk_surface_default_set_opaque_region (GdkSurface     *surface,
+                                       cairo_region_t *region)
+{
 }
 
 static void
@@ -515,9 +543,11 @@ gdk_surface_class_init (GdkSurfaceClass *klass)
 
   klass->beep = gdk_surface_real_beep;
   klass->get_scale = gdk_surface_real_get_scale;
+  klass->create_subsurface = gdk_surface_real_create_subsurface;
+  klass->set_opaque_region = gdk_surface_default_set_opaque_region;
 
   /**
-   * GdkSurface:cursor: (attributes org.gtk.Property.get=gdk_surface_get_cursor org.gtk.Property.set=gdk_surface_set_cursor)
+   * GdkSurface:cursor:
    *
    * The mouse pointer for the `GdkSurface`.
    */
@@ -527,7 +557,7 @@ gdk_surface_class_init (GdkSurfaceClass *klass)
                            G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkSurface:display: (attributes org.gtk.Property.get=gdk_surface_get_display)
+   * GdkSurface:display:
    *
    * The `GdkDisplay` connection of the surface.
    */
@@ -537,7 +567,7 @@ gdk_surface_class_init (GdkSurfaceClass *klass)
                            G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkSurface:frame-clock: (attributes org.gtk.Property.get=gdk_surface_get_frame_clock)
+   * GdkSurface:frame-clock:
    *
    * The `GdkFrameClock` of the surface.
    */
@@ -547,7 +577,7 @@ gdk_surface_class_init (GdkSurfaceClass *klass)
                            G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkSurface:mapped: (attributes org.gtk.Property.get=gdk_surface_get_mapped)
+   * GdkSurface:mapped:
    *
    * Whether the surface is mapped.
    */
@@ -557,7 +587,7 @@ gdk_surface_class_init (GdkSurfaceClass *klass)
                             G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkSurface:width: (attributes org.gtk.Property.get=gdk_surface_get_width)
+   * GdkSurface:width:
    *
    * The width of the surface in pixels.
    */
@@ -567,7 +597,7 @@ gdk_surface_class_init (GdkSurfaceClass *klass)
                         G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkSurface:height: (attributes org.gtk.Property.get=gdk_surface_get_height)
+   * GdkSurface:height:
    *
    * The height of the surface, in pixels.
    */
@@ -577,7 +607,7 @@ gdk_surface_class_init (GdkSurfaceClass *klass)
                         G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkSurface:scale-factor: (attributes org.gtk.Property.get=gdk_surface_get_scale_factor)
+   * GdkSurface:scale-factor:
    *
    * The scale factor of the surface.
    *
@@ -590,7 +620,7 @@ gdk_surface_class_init (GdkSurfaceClass *klass)
                         G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GdkSurface:scale: (attributes org.gtk.Property.get=gdk_surface_get_scale)
+   * GdkSurface:scale:
    *
    * The scale of the surface.
    *
@@ -733,6 +763,7 @@ static void
 gdk_surface_finalize (GObject *object)
 {
   GdkSurface *surface = GDK_SURFACE (object);
+  GdkSurfacePrivate *priv = gdk_surface_get_instance_private (surface);
 
   g_clear_handle_id (&surface->request_motion_id, g_source_remove);
 
@@ -752,10 +783,16 @@ gdk_surface_finalize (GObject *object)
 
   g_clear_object (&surface->display);
 
-  g_clear_pointer (&surface->opaque_region, cairo_region_destroy);
+  g_clear_pointer (&priv->opaque_region, cairo_region_destroy);
 
   if (surface->parent)
     surface->parent->children = g_list_remove (surface->parent->children, surface);
+
+  g_assert (surface->subsurfaces->len == 0);
+
+  g_ptr_array_unref (surface->subsurfaces);
+
+  g_clear_pointer (&priv->color_state, gdk_color_state_unref);
 
   G_OBJECT_CLASS (gdk_surface_parent_class)->finalize (object);
 }
@@ -1046,7 +1083,7 @@ gdk_surface_get_widget (GdkSurface *self)
 }
 
 /**
- * gdk_surface_get_display: (attributes org.gtk.Method.get_property=display)
+ * gdk_surface_get_display:
  * @surface: a `GdkSurface`
  *
  * Gets the `GdkDisplay` associated with a `GdkSurface`.
@@ -1075,7 +1112,7 @@ gdk_surface_is_destroyed (GdkSurface *surface)
 }
 
 /**
- * gdk_surface_get_mapped: (attributes org.gtk.Method.get_property=mapped)
+ * gdk_surface_get_mapped:
  * @surface: a `GdkSurface`
  *
  * Checks whether the surface has been mapped.
@@ -1099,6 +1136,7 @@ gdk_surface_set_egl_native_window (GdkSurface *self,
 {
 #ifdef HAVE_EGL
   GdkSurfacePrivate *priv = gdk_surface_get_instance_private (self);
+  GdkGLContext *current = NULL;
 
   /* This checks that all EGL platforms we support conform to the same struct sizes.
    * When this ever fails, there will be some fun times happening for whoever tries
@@ -1107,12 +1145,21 @@ gdk_surface_set_egl_native_window (GdkSurface *self,
 
   if (priv->egl_surface != NULL)
     {
-      gdk_gl_context_clear_current_if_surface (self);
-      eglDestroySurface (gdk_surface_get_display (self), priv->egl_surface);
+      GdkDisplay *display = gdk_surface_get_display (self);
+
+      current = gdk_gl_context_clear_current_if_surface (self);
+
+      eglDestroySurface (gdk_display_get_egl_display (display), priv->egl_surface);
       priv->egl_surface = NULL;
     }
 
   priv->egl_native_window = native_window;
+
+  if (current)
+    {
+      gdk_gl_context_make_current (current);
+      g_object_unref (current);
+    }
 }
 
 gpointer /* EGLSurface */
@@ -1123,34 +1170,75 @@ gdk_surface_get_egl_surface (GdkSurface *self)
   return priv->egl_surface;
 }
 
-void
-gdk_surface_ensure_egl_surface (GdkSurface *self,
-                                gboolean    high_depth)
+GdkMemoryDepth
+gdk_surface_ensure_egl_surface (GdkSurface     *self,
+                                GdkMemoryDepth  depth)
 {
   GdkSurfacePrivate *priv = gdk_surface_get_instance_private (self);
   GdkDisplay *display = gdk_surface_get_display (self);
 
-  g_return_if_fail (priv->egl_native_window != NULL);
+  g_return_val_if_fail (priv->egl_native_window != NULL, depth);
 
-  if (priv->egl_surface_high_depth != high_depth &&
-      priv->egl_surface != NULL &&
-      gdk_display_get_egl_config_high_depth (display) != gdk_display_get_egl_config (display))
+  if (depth == GDK_MEMORY_NONE)
     {
-      gdk_gl_context_clear_current_if_surface (self);
-      eglDestroySurface (gdk_display_get_egl_display (display), priv->egl_surface);
-      priv->egl_surface = NULL;
+      if (priv->egl_surface_depth == GDK_MEMORY_NONE)
+        depth = GDK_MEMORY_U8;
+      else
+        depth = priv->egl_surface_depth;
     }
 
-  if (priv->egl_surface == NULL)
+  if (priv->egl_surface == NULL ||
+      (priv->egl_surface != NULL &&
+       gdk_display_get_egl_config (display, priv->egl_surface_depth) != gdk_display_get_egl_config (display, depth)))
     {
+      GdkGLContext *cleared;
+      EGLint attribs[4];
+      int i;
+
+      cleared = gdk_gl_context_clear_current_if_surface (self);
+      if (priv->egl_surface != NULL)
+        eglDestroySurface (gdk_display_get_egl_display (display), priv->egl_surface);
+
+      i = 0;
+      if (depth == GDK_MEMORY_U8_SRGB && display->have_egl_gl_colorspace)
+        {
+          attribs[i++] = EGL_GL_COLORSPACE_KHR;
+          attribs[i++] = EGL_GL_COLORSPACE_SRGB_KHR;
+          self->is_srgb = TRUE;
+        }
+      g_assert (i < G_N_ELEMENTS (attribs));
+      attribs[i++] = EGL_NONE;
+
       priv->egl_surface = eglCreateWindowSurface (gdk_display_get_egl_display (display),
-                                                  high_depth ? gdk_display_get_egl_config_high_depth (display)
-                                                             : gdk_display_get_egl_config (display),
+                                                  gdk_display_get_egl_config (display, depth),
                                                   (EGLNativeWindowType) priv->egl_native_window,
-                                                  NULL);
-      priv->egl_surface_high_depth = high_depth;
+                                                  attribs);
+      if (priv->egl_surface == EGL_NO_SURFACE)
+        {
+          /* just assume the error is no srgb support and try again without */
+          self->is_srgb = FALSE;
+          priv->egl_surface = eglCreateWindowSurface (gdk_display_get_egl_display (display),
+                                                      gdk_display_get_egl_config (display, depth),
+                                                      (EGLNativeWindowType) priv->egl_native_window,
+                                                      NULL);
+        }
+      priv->egl_surface_depth = depth;
+
+      if (cleared)
+        {
+          gdk_gl_context_make_current (cleared);
+          g_object_unref (cleared);
+        }
     }
+
+  return priv->egl_surface_depth;
 #endif
+}
+
+gboolean
+gdk_surface_get_gl_is_srgb (GdkSurface *self)
+{
+  return self->is_srgb;
 }
 
 GdkGLContext *
@@ -1200,7 +1288,7 @@ gdk_surface_create_gl_context (GdkSurface   *surface,
   if (!gdk_display_prepare_gl (surface->display, error))
     return NULL;
 
-  return gdk_gl_context_new (surface->display, surface);
+  return gdk_gl_context_new (surface->display, surface, FALSE);
 }
 
 /**
@@ -1230,43 +1318,20 @@ gdk_surface_create_cairo_context (GdkSurface *surface)
  * @surface: a `GdkSurface`
  * @error: return location for an error
  *
- * Creates a new `GdkVulkanContext` for rendering on @surface.
+ * Sets an error and returns %NULL.
  *
- * If the creation of the `GdkVulkanContext` failed, @error will be set.
+ * Returns: (transfer full): %NULL
  *
- * Returns: (transfer full): the newly created `GdkVulkanContext`, or
- *   %NULL on error
+ * Deprecated: 4.14: GTK does not expose any Vulkan internals. This
+ *   function is a leftover that was accidentally exposed.
  */
 GdkVulkanContext *
 gdk_surface_create_vulkan_context (GdkSurface  *surface,
                                    GError    **error)
 {
-  GdkDisplay *display;
-
-  g_return_val_if_fail (GDK_IS_SURFACE (surface), NULL);
-  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
-
-  if (gdk_display_get_debug_flags (surface->display) & GDK_DEBUG_VULKAN_DISABLE)
-    {
-      g_set_error_literal (error, GDK_VULKAN_ERROR, GDK_VULKAN_ERROR_NOT_AVAILABLE,
-                           _("Vulkan support disabled via GDK_DEBUG"));
-      return NULL;
-    }
-
-  display = surface->display;
-
-  if (GDK_DISPLAY_GET_CLASS (display)->vk_extension_name == NULL)
-    {
-      g_set_error (error, GDK_VULKAN_ERROR, GDK_VULKAN_ERROR_UNSUPPORTED,
-                   "The %s backend has no Vulkan support.", G_OBJECT_TYPE_NAME (display));
-      return FALSE;
-    }
-
-  return g_initable_new (GDK_DISPLAY_GET_CLASS (display)->vk_context_type,
-                         NULL,
-                         error,
-                         "surface", surface,
-                         NULL);
+  g_set_error (error, GDK_VULKAN_ERROR, GDK_VULKAN_ERROR_UNSUPPORTED,
+               "GTK does not expose Vulkan internals.");
+  return FALSE;
 }
 
 static gboolean
@@ -1700,7 +1765,7 @@ gdk_surface_get_device_position (GdkSurface       *surface,
  * For toplevel surfaces, withdraws them, so they will no longer be
  * known to the window manager; for all surfaces, unmaps them, so
  * they won’t be displayed. Normally done automatically as
- * part of [method@Gtk.Widget.hide].
+ * part of [gtk_widget_hide()](../gtk4/method.Widget.hide.html).
  */
 void
 gdk_surface_hide (GdkSurface *surface)
@@ -1780,7 +1845,7 @@ gdk_surface_set_cursor_internal (GdkSurface *surface,
 }
 
 /**
- * gdk_surface_get_cursor: (attributes org.gtk.Method.get_property=cursor)
+ * gdk_surface_get_cursor:
  * @surface: a `GdkSurface`
  *
  * Retrieves a `GdkCursor` pointer for the cursor currently set on the
@@ -1802,7 +1867,7 @@ gdk_surface_get_cursor (GdkSurface *surface)
 }
 
 /**
- * gdk_surface_set_cursor: (attributes org.gtk.Method.set_property=cursor)
+ * gdk_surface_set_cursor:
  * @surface: a `GdkSurface`
  * @cursor: (nullable): a `GdkCursor`
  *
@@ -1962,7 +2027,7 @@ gdk_surface_get_geometry (GdkSurface *surface,
 }
 
 /**
- * gdk_surface_get_width: (attributes org.gtk.Method.get_property=width)
+ * gdk_surface_get_width:
  * @surface: a `GdkSurface`
  *
  * Returns the width of the given @surface.
@@ -1981,7 +2046,7 @@ gdk_surface_get_width (GdkSurface *surface)
 }
 
 /**
- * gdk_surface_get_height: (attributes org.gtk.Method.get_property=height)
+ * gdk_surface_get_height:
  * @surface: a `GdkSurface`
  *
  * Returns the height of the given @surface.
@@ -2525,7 +2590,7 @@ gdk_surface_set_frame_clock (GdkSurface     *surface,
 }
 
 /**
- * gdk_surface_get_frame_clock: (attributes org.gtk.Method.get_property=frame-clock)
+ * gdk_surface_get_frame_clock:
  * @surface: surface to get frame clock for
  *
  * Gets the frame clock for the surface.
@@ -2544,7 +2609,7 @@ gdk_surface_get_frame_clock (GdkSurface *surface)
 }
 
 /**
- * gdk_surface_get_scale_factor: (attributes org.gtk.Method.get_property=scale-factor)
+ * gdk_surface_get_scale_factor:
  * @surface: surface to get scale factor for
  *
  * Returns the internal scale factor that maps from surface coordinates
@@ -2570,7 +2635,7 @@ gdk_surface_get_scale_factor (GdkSurface *surface)
 }
 
 /**
- * gdk_surface_get_scale: (attributes org.gtk.Method.get_property=scale)
+ * gdk_surface_get_scale:
  * @surface: surface to get scale for
  *
  * Returns the internal scale that maps from surface coordinates
@@ -2600,6 +2665,35 @@ gdk_surface_get_scale (GdkSurface *surface)
   return GDK_SURFACE_GET_CLASS (surface)->get_scale (surface);
 }
 
+static void
+gdk_surface_update_opaque_region (GdkSurface *self)
+{
+  GdkSurfacePrivate *priv = gdk_surface_get_instance_private (self);
+  cairo_region_t *region;
+
+  if (priv->opaque_region == NULL)
+    {
+      if (priv->opaque_rect.width <= 0)
+        region = NULL;
+      else
+        region = cairo_region_create_rectangle (&priv->opaque_rect);
+    }
+  else
+    {
+      if (priv->opaque_rect.width <= 0)
+        region = cairo_region_reference (priv->opaque_region);
+      else
+        {
+          region = cairo_region_copy (priv->opaque_region);
+          cairo_region_union_rectangle (region, &priv->opaque_rect);
+        }
+    }
+
+  GDK_SURFACE_GET_CLASS (self)->set_opaque_region (self, region);
+
+  g_clear_pointer (&region, cairo_region_destroy);
+}
+
 /**
  * gdk_surface_set_opaque_region:
  * @surface: a top-level `GdkSurface`
@@ -2620,28 +2714,78 @@ gdk_surface_get_scale (GdkSurface *surface)
  * GTK will update this property automatically if the @surface background
  * is opaque, as we know where the opaque regions are. If your surface
  * background is not opaque, please update this property in your
- * [vfunc@Gtk.Widget.css_changed] handler.
+ * [GtkWidgetClass.css_changed](../gtk4/vfunc.Widget.css_changed.html) handler.
+ *
+ * Deprecated: 4.16: GDK can figure out the opaque parts of a window itself
+ *   by inspecting the contents that are drawn.
  */
 void
 gdk_surface_set_opaque_region (GdkSurface      *surface,
                                cairo_region_t *region)
 {
-  GdkSurfaceClass *class;
+  GdkSurfacePrivate *priv = gdk_surface_get_instance_private (surface);
 
   g_return_if_fail (GDK_IS_SURFACE (surface));
   g_return_if_fail (!GDK_SURFACE_DESTROYED (surface));
 
-  if (cairo_region_equal (surface->opaque_region, region))
+  if (cairo_region_equal (priv->opaque_region, region))
     return;
 
-  g_clear_pointer (&surface->opaque_region, cairo_region_destroy);
+  g_clear_pointer (&priv->opaque_region, cairo_region_destroy);
 
   if (region != NULL)
-    surface->opaque_region = cairo_region_reference (region);
+    priv->opaque_region = cairo_region_reference (region);
 
-  class = GDK_SURFACE_GET_CLASS (surface);
-  if (class->set_opaque_region)
-    class->set_opaque_region (surface, region);
+  gdk_surface_update_opaque_region (surface);
+}
+
+/* Sets the opaque rect from the rendernode via end_frame() */
+void
+gdk_surface_set_opaque_rect (GdkSurface            *self,
+                             const graphene_rect_t *rect)
+{
+  GdkSurfacePrivate *priv = gdk_surface_get_instance_private (self);
+  cairo_rectangle_int_t opaque;
+
+  if (rect)
+    gsk_rect_to_cairo_shrink (rect, &opaque);
+  else
+    opaque = (cairo_rectangle_int_t) { 0, 0, 0, 0 };
+
+  if (gdk_rectangle_equal (&priv->opaque_rect, &opaque))
+    return;
+
+  priv->opaque_rect = opaque;
+
+  gdk_surface_update_opaque_region (self);
+}
+
+/*
+ * gdk_surface_is_opaque:
+ * @self: a surface
+ *
+ * Checks if the whole surface is known to be opaque.
+ * This allows using an RGBx buffer instead of RGBA.
+ *
+ * This function works for the currently rendered frame inside
+ * begin_frame() implementations.
+ *
+ * Returns: %TRUE if the whole surface is provably opaque
+ **/
+gboolean
+gdk_surface_is_opaque (GdkSurface *self)
+{
+  GdkSurfacePrivate *priv = gdk_surface_get_instance_private (self);
+  cairo_rectangle_int_t whole = { 0, 0, self->width, self->height };
+
+  if (gdk_rectangle_contains (&priv->opaque_rect, &whole))
+    return TRUE;
+
+  if (priv->opaque_region &&
+      cairo_region_contains_rectangle (priv->opaque_region, &whole) == CAIRO_REGION_OVERLAP_IN)
+    return TRUE;
+
+  return FALSE;
 }
 
 void
@@ -2846,7 +2990,7 @@ add_event_mark (GdkEvent *event,
   class = g_type_class_ref (GDK_TYPE_EVENT_TYPE);
   value = g_enum_get_value (class, event_type);
   g_type_class_unref (class);
-  kind = value ? value->value_nick : "event";
+  kind = value ? value->value_nick : "Event";
 
   switch ((int) event_type)
     {
@@ -2916,7 +3060,7 @@ add_event_mark (GdkEvent *event,
       break;
     }
 
-  gdk_profiler_add_mark (time, end_time - time, "event", message ? message : kind);
+  gdk_profiler_add_mark (time, end_time - time, "Event", message ? message : kind);
 
   g_free (message);
 #endif
@@ -3053,4 +3197,56 @@ gdk_surface_leave_monitor (GdkSurface *surface,
                            GdkMonitor *monitor)
 {
   g_signal_emit (surface, signals[LEAVE_MONITOR], 0, monitor);
+}
+
+GdkSubsurface *
+gdk_surface_create_subsurface (GdkSurface *surface)
+{
+  GdkSubsurface *subsurface;
+
+  subsurface = GDK_SURFACE_GET_CLASS (surface)->create_subsurface (surface);
+
+  if (subsurface)
+    {
+      subsurface->parent = g_object_ref (surface);
+      g_ptr_array_add (surface->subsurfaces, subsurface);
+    }
+
+  return subsurface;
+}
+
+gsize
+gdk_surface_get_n_subsurfaces (GdkSurface *surface)
+{
+  return surface->subsurfaces->len;
+}
+
+GdkSubsurface *
+gdk_surface_get_subsurface (GdkSurface *surface,
+                            gsize       idx)
+{
+  return g_ptr_array_index (surface->subsurfaces, idx);
+}
+
+GdkColorState *
+gdk_surface_get_color_state (GdkSurface *surface)
+{
+  GdkSurfacePrivate *priv = gdk_surface_get_instance_private (surface);
+
+  return priv->color_state;
+}
+
+void
+gdk_surface_set_color_state (GdkSurface    *surface,
+                             GdkColorState *color_state)
+{
+  GdkSurfacePrivate *priv = gdk_surface_get_instance_private (surface);
+
+  if (gdk_color_state_equal (priv->color_state, color_state))
+    return;
+
+  gdk_color_state_unref (priv->color_state);
+  priv->color_state = gdk_color_state_ref (color_state);
+
+  gdk_surface_invalidate_rect (surface, NULL);
 }

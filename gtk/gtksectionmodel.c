@@ -66,6 +66,7 @@ gtk_section_model_default_get_section (GtkSectionModel *self,
     {
       *out_start = n_items;
       *out_end = G_MAXUINT;
+      return;
     }
 
   *out_start = 0;
@@ -187,12 +188,12 @@ gtk_list_model_get_section (GListModel *self,
 }
 
 /**
- * gtk_section_model_section_changed:
+ * gtk_section_model_sections_changed:
  * @self: a `GtkSectionModel`
  * @position: the first changed item
  * @n_items: the number of changed items
  *
- * This function emits the [signal@Gtk.SectionModel::section-changed]
+ * This function emits the [signal@Gtk.SectionModel::sections-changed]
  * signal to notify about changes to sections.
  *
  * It must cover all positions that used to be a section start or that
@@ -200,7 +201,7 @@ gtk_list_model_get_section (GListModel *self,
  * which the section has changed.
  *
  * The [signal@Gio.ListModel::items-changed] implies the effect of the
- * [signal@Gtk.SectionModel::section-changed] signal for all the items
+ * [signal@Gtk.SectionModel::sections-changed] signal for all the items
  * it covers.
  *
  * It is recommended that when changes to the items cause section changes
