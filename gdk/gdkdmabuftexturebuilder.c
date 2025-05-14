@@ -56,8 +56,7 @@ struct _GdkDmabufTextureBuilderClass
 /**
  * GdkDmabufTextureBuilder:
  *
- * `GdkDmabufTextureBuilder` is a builder used to construct [class@Gdk.Texture]
- * objects from DMA buffers.
+ * Constructs [class@Gdk.Texture] objects from DMA buffers.
  *
  * DMA buffers are commonly called **_dma-bufs_**.
  *
@@ -876,7 +875,7 @@ gdk_dmabuf_texture_builder_set_offset (GdkDmabufTextureBuilder *self,
  *
  * Gets the color state previously set via gdk_dmabuf_texture_builder_set_color_state().
  *
- * Returns: (nullable): the color state
+ * Returns: (nullable) (transfer none): the color state
  *
  * Since: 4.16
  */

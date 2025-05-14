@@ -49,10 +49,12 @@
 /**
  * GtkDropDown:
  *
- * `GtkDropDown` is a widget that allows the user to choose an item
- * from a list of options.
+ * Allows the user to choose an item from a list of options.
  *
- * ![An example GtkDropDown](drop-down.png)
+ * <picture>
+ *   <source srcset="drop-down-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkDropDown" src="drop-down.png">
+ * </picture>
  *
  * The `GtkDropDown` displays the [selected][property@Gtk.DropDown:selected]
  * choice.
@@ -104,7 +106,7 @@
  *
  * ## Accessibility
  *
- * `GtkDropDown` uses the %GTK_ACCESSIBLE_ROLE_COMBO_BOX role.
+ * `GtkDropDown` uses the [enum@Gtk.AccessibleRole.combo_box] role.
  */
 
 struct _GtkDropDown
@@ -1149,7 +1151,7 @@ gtk_drop_down_set_selected (GtkDropDown *self,
  * Gets the position of the selected item.
  *
  * Returns: the position of the selected item, or %GTK_INVALID_LIST_POSITION
- *   if not item is selected
+ *   if no item is selected
  */
 guint
 gtk_drop_down_get_selected (GtkDropDown *self)

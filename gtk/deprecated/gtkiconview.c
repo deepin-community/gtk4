@@ -56,6 +56,11 @@ G_GNUC_BEGIN_IGNORE_DEPRECATIONS
  *
  * `GtkIconView` is a widget which displays data in a grid of icons.
  *
+ * <picture>
+ *   <source srcset="icon-view-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkIconView" src="icon-view.png">
+ * </picture>
+ *
  * `GtkIconView` provides an alternative view on a `GtkTreeModel`.
  * It displays the model as a grid of icons with labels. Like
  * [class@Gtk.TreeView], it allows to select one or multiple items
@@ -5055,7 +5060,8 @@ gtk_icon_view_unselect_path (GtkIconView *icon_view,
  * To do this, you can use gtk_tree_row_reference_new().
  *
  * To free the return value, use `g_list_free_full`:
- * |[<!-- language="C" -->
+ *
+ * ```c
  * GtkWidget *icon_view = gtk_icon_view_new ();
  * // Use icon_view
  *
@@ -5064,7 +5070,7 @@ gtk_icon_view_unselect_path (GtkIconView *icon_view,
  * // use list
  *
  * g_list_free_full (list, (GDestroyNotify) gtk_tree_path_free);
- * ]|
+ * ```
  *
  * Returns: (element-type GtkTreePath) (transfer full): A `GList` containing a `GtkTreePath` for each selected row.
  *

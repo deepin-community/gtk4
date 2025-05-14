@@ -15,8 +15,9 @@
 #include "gskgpucolormatrixopprivate.h"
 #include "gskgpucoloropprivate.h"
 #include "gskgpuconicgradientopprivate.h"
-#include "gskgpuconvertopprivate.h"
+#include "gskgpuconvertbuiltinopprivate.h"
 #include "gskgpuconvertcicpopprivate.h"
+#include "gskgpuconvertopprivate.h"
 #include "gskgpucrossfadeopprivate.h"
 #include "gskgpudeviceprivate.h"
 #include "gskgpuframeprivate.h"
@@ -119,6 +120,11 @@ typedef enum {
    * and images must not be contained in an atlas.
    */
   GSK_GPU_AS_IMAGE_SAMPLED_OUT_OF_BOUNDS = (1 << 0),
+  /* The returned image needs to be the exact size of the given clip
+   * rect, for example because it will be repeated.
+   * In detail: out_bounds must equal clip_bounds
+   */
+  GSK_GPU_AS_IMAGE_EXACT_SIZE = (1 << 1),
 } GskGpuAsImageFlags;
 
 typedef enum {
@@ -306,7 +312,8 @@ gsk_gpu_node_processor_init_draw (GskGpuNodeProcessor   *self,
 
   image = gsk_gpu_device_create_offscreen_image (gsk_gpu_frame_get_device (frame),
                                                  FALSE,
-                                                 depth,
+                                                 gdk_memory_depth_get_format (depth),
+                                                 gdk_memory_depth_is_srgb (depth),
                                                  area.width, area.height);
   if (image == NULL)
     return NULL;
@@ -465,6 +472,7 @@ gsk_gpu_node_processor_rect_device_to_clip (GskGpuNodeProcessor   *self,
     case GSK_FINE_TRANSFORM_CATEGORY_2D_TRANSLATE:
       {
         GskTransform *inverse = gsk_transform_invert (gsk_transform_ref (self->modelview));
+        g_return_val_if_fail (inverse != NULL, FALSE);
         gsk_transform_transform_bounds (inverse, src, &transformed);
         gsk_transform_unref (inverse);
         src = &transformed;
@@ -531,7 +539,7 @@ gsk_gpu_node_processor_get_clip_bounds (GskGpuNodeProcessor *self,
     {
       if (!gsk_rect_intersection (&scissor, &self->clip.rect.bounds, out_bounds))
         {
-          g_warning ("Clipping is broken, everything is clipped, but we didn't early-exit.\n");
+          g_warning ("Clipping is broken, everything is clipped, but we didn't early-exit.");
           *out_bounds = self->clip.rect.bounds;
         }
     }
@@ -573,7 +581,22 @@ gsk_gpu_node_processor_image_op (GskGpuNodeProcessor   *self,
 
   straight_alpha = gsk_gpu_image_get_flags (image) & GSK_GPU_IMAGE_STRAIGHT_ALPHA;
 
-  if (!GDK_IS_DEFAULT_COLOR_STATE (image_color_state))
+  if (GDK_IS_BUILTIN_COLOR_STATE (image_color_state))
+    {
+      gsk_gpu_convert_from_builtin_op (self->frame,
+                                       gsk_gpu_clip_get_shader_clip (&self->clip, &self->offset, rect),
+                                       self->ccs,
+                                       image_color_state,
+                                       self->opacity,
+                                       &self->offset,
+                                       &(GskGpuShaderImage) {
+                                         image,
+                                         sampler,
+                                         rect,
+                                         tex_rect
+                                       });
+    }
+  else if (!GDK_IS_DEFAULT_COLOR_STATE (image_color_state))
     {
       const GdkCicp *cicp = gdk_color_state_get_cicp (image_color_state);
 
@@ -635,16 +658,20 @@ gsk_gpu_node_processor_create_offscreen (GskGpuFrame           *frame,
 {
   GskGpuImage *image;
   cairo_rectangle_int_t area;
+  GdkMemoryDepth depth;
 
   area.x = 0;
   area.y = 0;
   area.width = MAX (1, ceilf (graphene_vec2_get_x (scale) * viewport->size.width - EPSILON));
   area.height = MAX (1, ceilf (graphene_vec2_get_y (scale) * viewport->size.height - EPSILON));
 
+  depth = gdk_memory_depth_merge (gdk_color_state_get_depth (ccs),
+                                  gsk_render_node_get_preferred_depth (node));
+
   image = gsk_gpu_device_create_offscreen_image (gsk_gpu_frame_get_device (frame),
                                                  FALSE,
-                                                 gdk_memory_depth_merge (gdk_color_state_get_depth (ccs),
-                                                                         gsk_render_node_get_preferred_depth (node)),
+                                                 gdk_memory_depth_get_format (depth),
+                                                 gdk_memory_depth_is_srgb (depth),
                                                  area.width, area.height);
   if (image == NULL)
     return NULL;
@@ -716,7 +743,8 @@ gsk_gpu_copy_image (GskGpuFrame   *frame,
 
   copy = gsk_gpu_device_create_offscreen_image (gsk_gpu_frame_get_device (frame),
                                                 prepare_mipmap,
-                                                depth,
+                                                gdk_memory_depth_get_format (depth),
+                                                gdk_memory_depth_is_srgb (depth),
                                                 width, height);
 
   if (gsk_gpu_frame_should_optimize (frame, GSK_GPU_OPTIMIZE_BLIT) &&
@@ -798,17 +826,27 @@ gsk_gpu_node_processor_get_node_as_image (GskGpuNodeProcessor   *self,
 {
   graphene_rect_t clip;
 
-  if (clip_bounds == NULL)
+  if (flags & GSK_GPU_AS_IMAGE_EXACT_SIZE)
     {
-      if (!gsk_gpu_node_processor_clip_node_bounds (self, node, &clip))
-        return NULL;
+      if (clip_bounds == NULL)
+        clip = node->bounds;
+      else
+        clip = *clip_bounds;
     }
   else
     {
-      if (!gsk_rect_intersection (clip_bounds, &node->bounds, &clip))
-        return NULL;
+      if (clip_bounds == NULL)
+        {
+          if (!gsk_gpu_node_processor_clip_node_bounds (self, node, &clip))
+            return NULL;
+        }
+      else
+        {
+          if (!gsk_rect_intersection (clip_bounds, &node->bounds, &clip))
+            return NULL;
+        }
+      gsk_rect_snap_to_grid (&clip, &self->scale, &self->offset, &clip);
     }
-  gsk_rect_snap_to_grid (&clip, &self->scale, &self->offset, &clip);
 
   return gsk_gpu_get_node_as_image (self->frame,
                                     flags,
@@ -922,6 +960,9 @@ gsk_gpu_node_processor_add_cairo_node (GskGpuNodeProcessor *self,
     return;
 
   gsk_rect_snap_to_grid (&clipped_bounds, &self->scale, &self->offset, &clipped_bounds);
+
+  if (graphene_rect_get_height (&clipped_bounds) <= 0.0 || graphene_rect_get_width (&clipped_bounds) <= 0.0)
+    return;
 
   gsk_gpu_node_processor_sync_globals (self, 0);
 
@@ -1391,22 +1432,6 @@ gsk_gpu_node_processor_add_first_rounded_clip_node (GskGpuNodeProcessor *self,
                                                         info,
                                                         &cover,
                                                         gsk_rounded_clip_node_get_child (node));
-}
-
-static GskTransform *
-gsk_transform_dihedral (GskTransform *transform,
-                        GdkDihedral   dihedral)
-{
-  int rotate = dihedral & 3;
-  int flip = dihedral & 4;
-
-  if (flip)
-      transform = gsk_transform_scale (transform, -1.0, 1.0);
-
-  if (rotate)
-      transform = gsk_transform_rotate (transform, rotate * 90.0f);
-
-  return transform;
 }
 
 static void
@@ -2178,6 +2203,30 @@ gsk_gpu_node_processor_add_texture_node (GskGpuNodeProcessor *self,
   g_object_unref (image);
 }
 
+static gboolean
+gsk_gpu_node_processor_add_first_node_no_blend (GskGpuNodeProcessor *self,
+                                                GskGpuFirstNodeInfo *info,
+                                                GskRenderNode       *node)
+{
+  if (!node->fully_opaque)
+    return FALSE;
+
+  if (!gsk_gpu_node_processor_clip_first_node (self, info, &node->bounds))
+    return FALSE;
+
+  gsk_gpu_first_node_begin_rendering (self, info, NULL);
+
+  self->blend = GSK_GPU_BLEND_NONE;
+  self->pending_globals |= GSK_GPU_GLOBAL_BLEND;
+
+  gsk_gpu_node_processor_add_node (self, node);
+
+  self->blend = GSK_GPU_BLEND_OVER;
+  self->pending_globals |= GSK_GPU_GLOBAL_BLEND;
+
+  return TRUE;
+}
+
 static GskGpuImage *
 gsk_gpu_get_texture_node_as_image (GskGpuFrame           *frame,
                                    GskGpuAsImageFlags     flags,
@@ -2191,6 +2240,10 @@ gsk_gpu_get_texture_node_as_image (GskGpuFrame           *frame,
   GdkColorState *image_cs;
   GskGpuImage *image;
   gboolean should_mipmap;
+
+  if ((flags & GSK_GPU_AS_IMAGE_EXACT_SIZE) &&
+      !gsk_rect_equal (clip_bounds, &node->bounds))
+    return gsk_gpu_get_node_as_image_via_offscreen (frame, flags, ccs, clip_bounds, scale, node, out_bounds);
 
   should_mipmap = texture_node_should_mipmap (node, frame, scale);
   image = gsk_gpu_lookup_texture (frame, ccs, texture, FALSE, &image_cs);
@@ -2262,7 +2315,7 @@ gsk_gpu_node_processor_add_texture_scale_node (GskGpuNodeProcessor *self,
       /* now intersect with actual node bounds */
       if (!gsk_rect_intersection (&clip_bounds, &node->bounds, &clip_bounds))
         {
-          g_object_unref (image);
+          g_clear_object (&image);
           return;
         }
       clip_bounds.size.width = ceilf (clip_bounds.size.width);
@@ -2458,37 +2511,28 @@ gsk_gpu_node_processor_add_outset_shadow_node (GskGpuNodeProcessor *self,
 }
 
 typedef void (* GradientOpFunc) (GskGpuNodeProcessor  *self,
+                                 GdkColorState        *target,
                                  GskRenderNode        *node,
-                                 const GskColorStop   *stops,
+                                 const GskColorStop2  *stops,
                                  gsize                 n_stops);
 
 static void
 gsk_gpu_node_processor_add_gradient_node (GskGpuNodeProcessor *self,
                                           GskRenderNode       *node,
-                                          const GskColorStop  *stops,
+                                          GdkColorState       *ics,
+                                          const GskColorStop2 *stops,
                                           gsize                n_stops,
                                           GradientOpFunc       func)
 {
-  GskColorStop real_stops[7];
+  GskColorStop2 real_stops[7];
   GskGpuNodeProcessor other;
   graphene_rect_t bounds;
   gsize i, j;
   GskGpuImage *image;
 
-  if (n_stops < 8)
+  if (n_stops < 8 && GDK_IS_DEFAULT_COLOR_STATE (ics))
     {
-      if (self->opacity < 1.0)
-        {
-          for (i = 0; i < n_stops; i++)
-            {
-              real_stops[i].offset = stops[i].offset;
-              real_stops[i].color = GDK_RGBA_INIT_ALPHA (&stops[i].color, self->opacity);
-            }
-          stops = real_stops;
-        }
-      
-      func (self, node, stops, n_stops);
-
+      func (self, self->ccs, node, stops, n_stops);
       return;
     }
 
@@ -2498,7 +2542,7 @@ gsk_gpu_node_processor_add_gradient_node (GskGpuNodeProcessor *self,
 
   image = gsk_gpu_node_processor_init_draw (&other,
                                             self->frame,
-                                            self->ccs,
+                                            ics,
                                             gdk_memory_depth_merge (gdk_color_state_get_depth (self->ccs),
                                                                     gsk_render_node_get_preferred_depth (node)),
                                             &self->scale,
@@ -2507,73 +2551,76 @@ gsk_gpu_node_processor_add_gradient_node (GskGpuNodeProcessor *self,
   other.blend = GSK_GPU_BLEND_ADD;
   other.pending_globals |= GSK_GPU_GLOBAL_BLEND;
   gsk_gpu_node_processor_sync_globals (&other, 0);
-  
+
   for (i = 0; i < n_stops; /* happens inside the loop */)
     {
       if (i == 0)
         {
           real_stops[0].offset = stops[i].offset;
-          real_stops[0].color = GDK_RGBA_INIT_ALPHA (&stops[i].color, self->opacity);
+          gdk_color_init_copy (&real_stops[i].color, &stops[i].color);
           i++;
         }
       else
         {
           real_stops[0].offset = stops[i-1].offset;
-          real_stops[0].color = GDK_RGBA_INIT_ALPHA (&stops[i-1].color, 0);
+          gdk_color_init_copy (&real_stops[0].color, &stops[i - 1].color);
+          real_stops[0].color.alpha *= 0;
         }
       for (j = 1; j < 6 && i < n_stops; j++)
         {
           real_stops[j].offset = stops[i].offset;
-          real_stops[j].color = GDK_RGBA_INIT_ALPHA (&stops[i].color, self->opacity);
+          gdk_color_init_copy (&real_stops[j].color, &stops[i].color);
           i++;
         }
       if (i == n_stops - 1)
         {
           g_assert (j == 6);
           real_stops[j].offset = stops[i].offset;
-          real_stops[j].color = GDK_RGBA_INIT_ALPHA (&stops[i].color, self->opacity);
+          gdk_color_init_copy (&real_stops[j].color, &stops[i].color);
           j++;
           i++;
         }
       else if (i < n_stops)
         {
           real_stops[j].offset = stops[i].offset;
-          real_stops[j].color = GDK_RGBA_INIT_ALPHA (&stops[i].color, 0);
+          gdk_color_init_copy (&real_stops[j].color, &stops[i].color);
+          real_stops[j].color.alpha *= 0;
           j++;
         }
 
-      func (&other, node, real_stops, j);
+      func (&other, NULL, node, real_stops, j);
     }
 
   gsk_gpu_node_processor_finish_draw (&other, image);
 
-  gsk_gpu_texture_op (self->frame,
-                      gsk_gpu_clip_get_shader_clip (&self->clip, &self->offset, &bounds),
-                      &self->offset,
-                      &(GskGpuShaderImage) {
-                          image,
-                          GSK_GPU_SAMPLER_DEFAULT,
-                          &node->bounds,
-                          &bounds
-                      });
+  gsk_gpu_node_processor_image_op (self,
+                                   image,
+                                   ics,
+                                   GSK_GPU_SAMPLER_DEFAULT,
+                                   &node->bounds,
+                                   &bounds);
 
   g_object_unref (image);
 }
 
 static void
 gsk_gpu_node_processor_linear_gradient_op (GskGpuNodeProcessor  *self,
+                                           GdkColorState        *target,
                                            GskRenderNode        *node,
-                                           const GskColorStop   *stops,
+                                           const GskColorStop2  *stops,
                                            gsize                 n_stops)
 {
   gsk_gpu_linear_gradient_op (self->frame,
                               gsk_gpu_clip_get_shader_clip (&self->clip, &self->offset, &node->bounds),
-                              gsk_gpu_node_processor_color_states_explicit (self, GDK_COLOR_STATE_SRGB, TRUE),
+                              target,
+                              self->opacity,
+                              &self->offset,
+                              gsk_linear_gradient_node_get_interpolation_color_state (node),
+                              gsk_linear_gradient_node_get_hue_interpolation (node),
                               GSK_RENDER_NODE_TYPE (node) == GSK_REPEATING_LINEAR_GRADIENT_NODE,
                               &node->bounds,
                               gsk_linear_gradient_node_get_start (node),
                               gsk_linear_gradient_node_get_end (node),
-                              &self->offset,
                               stops,
                               n_stops);
 }
@@ -2584,20 +2631,26 @@ gsk_gpu_node_processor_add_linear_gradient_node (GskGpuNodeProcessor *self,
 {
   gsk_gpu_node_processor_add_gradient_node (self,
                                             node,
-                                            gsk_linear_gradient_node_get_color_stops (node, NULL),
+                                            gsk_linear_gradient_node_get_interpolation_color_state (node),
+                                            gsk_linear_gradient_node_get_color_stops2 (node),
                                             gsk_linear_gradient_node_get_n_color_stops (node),
                                             gsk_gpu_node_processor_linear_gradient_op);
 }
 
 static void
 gsk_gpu_node_processor_radial_gradient_op (GskGpuNodeProcessor  *self,
+                                           GdkColorState        *target,
                                            GskRenderNode        *node,
-                                           const GskColorStop   *stops,
+                                           const GskColorStop2  *stops,
                                            gsize                 n_stops)
 {
   gsk_gpu_radial_gradient_op (self->frame,
                               gsk_gpu_clip_get_shader_clip (&self->clip, &self->offset, &node->bounds),
-                              gsk_gpu_node_processor_color_states_explicit (self, GDK_COLOR_STATE_SRGB, TRUE),
+                              target,
+                              self->opacity,
+                              &self->offset,
+                              gsk_radial_gradient_node_get_interpolation_color_state (node),
+                              gsk_radial_gradient_node_get_hue_interpolation (node),
                               GSK_RENDER_NODE_TYPE (node) == GSK_REPEATING_RADIAL_GRADIENT_NODE,
                               &node->bounds,
                               gsk_radial_gradient_node_get_center (node),
@@ -2607,7 +2660,6 @@ gsk_gpu_node_processor_radial_gradient_op (GskGpuNodeProcessor  *self,
                               ),
                               gsk_radial_gradient_node_get_start (node),
                               gsk_radial_gradient_node_get_end (node),
-                              &self->offset,
                               stops,
                               n_stops);
 }
@@ -2618,24 +2670,29 @@ gsk_gpu_node_processor_add_radial_gradient_node (GskGpuNodeProcessor *self,
 {
   gsk_gpu_node_processor_add_gradient_node (self,
                                             node,
-                                            gsk_radial_gradient_node_get_color_stops (node, NULL),
+                                            gsk_radial_gradient_node_get_interpolation_color_state (node),
+                                            gsk_radial_gradient_node_get_color_stops2 (node),
                                             gsk_radial_gradient_node_get_n_color_stops (node),
                                             gsk_gpu_node_processor_radial_gradient_op);
 }
 
 static void
 gsk_gpu_node_processor_conic_gradient_op (GskGpuNodeProcessor  *self,
+                                          GdkColorState        *target,
                                           GskRenderNode        *node,
-                                          const GskColorStop   *stops,
+                                          const GskColorStop2  *stops,
                                           gsize                 n_stops)
 {
   gsk_gpu_conic_gradient_op (self->frame,
                              gsk_gpu_clip_get_shader_clip (&self->clip, &self->offset, &node->bounds),
-                             gsk_gpu_node_processor_color_states_explicit (self, GDK_COLOR_STATE_SRGB, TRUE),
+                             target,
+                             self->opacity,
+                             &self->offset,
+                             gsk_conic_gradient_node_get_interpolation_color_state (node),
+                             gsk_conic_gradient_node_get_hue_interpolation (node),
                              &node->bounds,
                              gsk_conic_gradient_node_get_center (node),
                              gsk_conic_gradient_node_get_angle (node),
-                             &self->offset,
                              stops,
                              n_stops);
 }
@@ -2646,7 +2703,8 @@ gsk_gpu_node_processor_add_conic_gradient_node (GskGpuNodeProcessor *self,
 {
   gsk_gpu_node_processor_add_gradient_node (self,
                                             node,
-                                            gsk_conic_gradient_node_get_color_stops (node, NULL),
+                                            gsk_conic_gradient_node_get_interpolation_color_state (node),
+                                            gsk_conic_gradient_node_get_color_stops2 (node),
                                             gsk_conic_gradient_node_get_n_color_stops (node),
                                             gsk_gpu_node_processor_conic_gradient_op);
 }
@@ -2735,7 +2793,7 @@ gsk_gpu_node_processor_add_shadow_node (GskGpuNodeProcessor *self,
                                &(GskGpuShaderImage) {
                                    image,
                                    GSK_GPU_SAMPLER_TRANSPARENT,
-                                   &child->bounds,
+                                   &tex_rect,
                                    &tex_rect,
                                },
                                &shadow->color);
@@ -2763,7 +2821,7 @@ gsk_gpu_node_processor_add_shadow_node (GskGpuNodeProcessor *self,
                       &(GskGpuShaderImage) {
                           image,
                           GSK_GPU_SAMPLER_DEFAULT,
-                          &child->bounds,
+                          &tex_rect,
                           &tex_rect,
                       });
 
@@ -2947,6 +3005,7 @@ gsk_gpu_node_processor_add_mask_node (GskGpuNodeProcessor *self,
 
   if (!gsk_gpu_node_processor_clip_node_bounds (self, node, &bounds))
     return;
+  gsk_rect_snap_to_grid (&bounds, &self->scale, &self->offset, &bounds);
 
   mask_image = gsk_gpu_node_processor_get_node_as_image (self,
                                                          0,
@@ -2964,14 +3023,14 @@ gsk_gpu_node_processor_add_mask_node (GskGpuNodeProcessor *self,
       mask_mode == GSK_MASK_MODE_ALPHA)
     {
       gsk_gpu_colorize_op (self->frame,
-                           gsk_gpu_clip_get_shader_clip (&self->clip, &self->offset, &node->bounds),
+                           gsk_gpu_clip_get_shader_clip (&self->clip, &self->offset, &bounds),
                            self->ccs,
                            self->opacity,
                            &self->offset,
                            &(GskGpuShaderImage) {
                                mask_image,
                                GSK_GPU_SAMPLER_DEFAULT,
-                               &node->bounds,
+                               &bounds,
                                &mask_rect,
                            },
                            gsk_color_node_get_color2 (source_child));
@@ -2993,8 +3052,8 @@ gsk_gpu_node_processor_add_mask_node (GskGpuNodeProcessor *self,
         }
 
       gsk_gpu_mask_op (self->frame,
-                       gsk_gpu_clip_get_shader_clip (&self->clip, &self->offset, &node->bounds),
-                       &node->bounds,
+                       gsk_gpu_clip_get_shader_clip (&self->clip, &self->offset, &bounds),
+                       &bounds,
                        &self->offset,
                        self->opacity,
                        mask_mode,
@@ -3223,13 +3282,11 @@ gsk_gpu_node_processor_repeat_tile (GskGpuNodeProcessor    *self,
       return;
     }
 
-  GSK_DEBUG (FALLBACK, "Offscreening node '%s' for tiling", g_type_name_from_instance ((GTypeInstance *) child));
-  image = gsk_gpu_node_processor_create_offscreen (self->frame,
-                                                   self->ccs,
-                                                   &self->scale,
-                                                   &clipped_child_bounds,
-                                                   child);
-
+  image = gsk_gpu_node_processor_get_node_as_image (self,
+                                                    GSK_GPU_AS_IMAGE_EXACT_SIZE,
+                                                    &clipped_child_bounds,
+                                                    child,
+                                                    &clipped_child_bounds);
   g_return_if_fail (image);
 
   gsk_gpu_texture_op (self->frame,
@@ -3258,6 +3315,7 @@ gsk_gpu_node_processor_add_repeat_node (GskGpuNodeProcessor *self,
   const graphene_rect_t *child_bounds;
   graphene_rect_t bounds;
   float tile_left, tile_right, tile_top, tile_bottom;
+  gboolean avoid_offscreen;
 
   child = gsk_repeat_node_get_child (node);
   child_bounds = gsk_repeat_node_get_child_bounds (node);
@@ -3272,10 +3330,12 @@ gsk_gpu_node_processor_add_repeat_node (GskGpuNodeProcessor *self,
   tile_right = (bounds.origin.x + bounds.size.width - child_bounds->origin.x) / child_bounds->size.width;
   tile_top = (bounds.origin.y - child_bounds->origin.y) / child_bounds->size.height;
   tile_bottom = (bounds.origin.y + bounds.size.height - child_bounds->origin.y) / child_bounds->size.height;
+  avoid_offscreen = !gsk_gpu_frame_should_optimize (self->frame, GSK_GPU_OPTIMIZE_REPEAT);
 
   /* the 1st check tests that a tile fully fits into the bounds,
    * the 2nd check is to catch the case where it fits exactly */
-  if (ceilf (tile_left) < floorf (tile_right) &&
+  if (!avoid_offscreen &&
+      ceilf (tile_left) < floorf (tile_right) &&
       bounds.size.width > child_bounds->size.width)
     {
       if (ceilf (tile_top) < floorf (tile_bottom) &&
@@ -3313,7 +3373,8 @@ gsk_gpu_node_processor_add_repeat_node (GskGpuNodeProcessor *self,
             }
         }
     }
-  else if (ceilf (tile_top) < floorf (tile_bottom) &&
+  else if (!avoid_offscreen &&
+           ceilf (tile_top) < floorf (tile_bottom) &&
            bounds.size.height > child_bounds->size.height)
     {
       /* repeat horizontally, tile vertically */
@@ -3434,7 +3495,7 @@ gsk_gpu_node_processor_add_fill_node (GskGpuNodeProcessor *self,
                                         &self->scale,
                                         &clip_bounds,
                                         gsk_gpu_node_processor_fill_path,
-                                        g_memdup (&(FillData) {
+                                        g_memdup2 (&(FillData) {
                                             .path = gsk_path_ref (gsk_fill_node_get_path (node)),
                                             .color = color,
                                             .fill_rule = gsk_fill_node_get_fill_rule (node)
@@ -3537,7 +3598,7 @@ gsk_gpu_node_processor_add_stroke_node (GskGpuNodeProcessor *self,
                                         &self->scale,
                                         &clip_bounds,
                                         gsk_gpu_node_processor_stroke_path,
-                                        g_memdup (&(StrokeData) {
+                                        g_memdup2 (&(StrokeData) {
                                             .path = gsk_path_ref (gsk_stroke_node_get_path (node)),
                                             .color = color,
                                             .stroke = GSK_STROKE_INIT_COPY (gsk_stroke_node_get_stroke (node))
@@ -3703,7 +3764,7 @@ gsk_gpu_node_processor_add_container_node (GskGpuNodeProcessor *self,
                                            GskRenderNode       *node)
 {
   GskRenderNode **children;
-  guint n_children;
+  guint i, n_children;
 
   if (self->opacity < 1.0 && !gsk_container_node_is_disjoint (node))
     {
@@ -3712,7 +3773,23 @@ gsk_gpu_node_processor_add_container_node (GskGpuNodeProcessor *self,
     }
 
   children = gsk_container_node_get_children (node, &n_children);
-  for (guint i = 0; i < n_children; i++)
+
+  if (node->fully_opaque && !gsk_container_node_is_disjoint (node) && n_children > 0)
+    {
+      graphene_rect_t opaque;
+
+      /* Try to find a child that fully covers the container node */
+      for (i = n_children - 1; i > 0; i--)
+        {
+          if (gsk_render_node_get_opaque_rect (children[i], &opaque) &&
+              gsk_rect_equal (&opaque, &node->bounds))
+            break;
+        }
+    }
+  else
+    i = 0;
+
+  for (; i < n_children; i++)
     gsk_gpu_node_processor_add_node (self, children[i]);
 }
 
@@ -3734,14 +3811,14 @@ gsk_gpu_node_processor_add_first_container_node (GskGpuNodeProcessor *self,
       !gsk_gpu_node_processor_clip_first_node (self, info, &opaque))
     return FALSE;
 
-  for (i = n; i-->0; )
+  for (i = n; i-- > 0; )
     {
       if (gsk_gpu_node_processor_add_first_node (self, info, children[i]))
         break;
     }
 
   if (i < 0)
-    gsk_gpu_first_node_begin_rendering (self, info, NULL);
+    gsk_gpu_first_node_begin_rendering (self, info, GSK_VEC4_TRANSPARENT);
 
   for (i++; i < n; i++)
     gsk_gpu_node_processor_add_node (self, children[i]);
@@ -3823,7 +3900,7 @@ static const struct
     0,
     GSK_GPU_HANDLE_OPACITY,
     gsk_gpu_node_processor_add_cairo_node,
-    NULL,
+    gsk_gpu_node_processor_add_first_node_no_blend,
     gsk_gpu_get_cairo_node_as_image,
   },
   [GSK_COLOR_NODE] = {
@@ -3837,35 +3914,35 @@ static const struct
     0,
     GSK_GPU_HANDLE_OPACITY,
     gsk_gpu_node_processor_add_linear_gradient_node,
-    NULL,
+    gsk_gpu_node_processor_add_first_node_no_blend,
     NULL,
   },
   [GSK_REPEATING_LINEAR_GRADIENT_NODE] = {
     0,
     GSK_GPU_HANDLE_OPACITY,
     gsk_gpu_node_processor_add_linear_gradient_node,
-    NULL,
+    gsk_gpu_node_processor_add_first_node_no_blend,
     NULL,
   },
   [GSK_RADIAL_GRADIENT_NODE] = {
     0,
     GSK_GPU_HANDLE_OPACITY,
     gsk_gpu_node_processor_add_radial_gradient_node,
-    NULL,
+    gsk_gpu_node_processor_add_first_node_no_blend,
     NULL,
   },
   [GSK_REPEATING_RADIAL_GRADIENT_NODE] = {
     0,
     GSK_GPU_HANDLE_OPACITY,
     gsk_gpu_node_processor_add_radial_gradient_node,
-    NULL,
+    gsk_gpu_node_processor_add_first_node_no_blend,
     NULL,
   },
   [GSK_CONIC_GRADIENT_NODE] = {
     0,
     GSK_GPU_HANDLE_OPACITY,
     gsk_gpu_node_processor_add_conic_gradient_node,
-    NULL,
+    gsk_gpu_node_processor_add_first_node_no_blend,
     NULL,
   },
   [GSK_BORDER_NODE] = {
@@ -3879,7 +3956,7 @@ static const struct
     0,
     GSK_GPU_HANDLE_OPACITY,
     gsk_gpu_node_processor_add_texture_node,
-    NULL,
+    gsk_gpu_node_processor_add_first_node_no_blend,
     gsk_gpu_get_texture_node_as_image,
   },
   [GSK_INSET_SHADOW_NODE] = {
@@ -3991,7 +4068,7 @@ static const struct
     0,
     0,
     gsk_gpu_node_processor_add_texture_scale_node,
-    NULL,
+    gsk_gpu_node_processor_add_first_node_no_blend,
     NULL,
   },
   [GSK_MASK_NODE] = {
@@ -4100,7 +4177,7 @@ gsk_gpu_node_processor_add_first_node (GskGpuNodeProcessor *self,
   if (!gsk_gpu_node_processor_clip_first_node (self, info, &opaque))
     return FALSE;
 
-  gsk_gpu_first_node_begin_rendering (self, info, NULL);
+  gsk_gpu_first_node_begin_rendering (self, info, GSK_VEC4_TRANSPARENT);
   gsk_gpu_node_processor_add_node (self, node);
 
   return TRUE;
@@ -4282,6 +4359,7 @@ gsk_gpu_node_processor_render (GskGpuNodeProcessor   *self,
 
 static void
 gsk_gpu_node_processor_convert_to (GskGpuNodeProcessor   *self,
+                                   gboolean               target_premultiplied,
                                    GskGpuImage           *image,
                                    GdkColorState         *image_color_state,
                                    const graphene_rect_t *rect,
@@ -4289,7 +4367,23 @@ gsk_gpu_node_processor_convert_to (GskGpuNodeProcessor   *self,
 {
   gsk_gpu_node_processor_sync_globals (self, 0);
 
-  if (!GDK_IS_DEFAULT_COLOR_STATE (self->ccs))
+  if (GDK_IS_BUILTIN_COLOR_STATE (self->ccs))
+    {
+      gsk_gpu_convert_to_builtin_op (self->frame,
+                                     gsk_gpu_clip_get_shader_clip (&self->clip, &self->offset, rect),
+                                     self->ccs,
+                                     target_premultiplied,
+                                     image_color_state,
+                                     self->opacity,
+                                     &self->offset,
+                                     &(GskGpuShaderImage) {
+                                         image,
+                                         GSK_GPU_SAMPLER_DEFAULT,
+                                         rect,
+                                         tex_rect
+                                     });
+    }
+  else if (!GDK_IS_DEFAULT_COLOR_STATE (self->ccs))
     {
       const GdkCicp *cicp = gdk_color_state_get_cicp (self->ccs);
 
@@ -4298,7 +4392,7 @@ gsk_gpu_node_processor_convert_to (GskGpuNodeProcessor   *self,
       gsk_gpu_convert_to_cicp_op (self->frame,
                                   gsk_gpu_clip_get_shader_clip (&self->clip, &self->offset, rect),
                                   cicp,
-                                  gsk_gpu_color_states_create_cicp (image_color_state, TRUE, TRUE),
+                                  gsk_gpu_color_states_create_cicp (image_color_state, TRUE, target_premultiplied),
                                   self->opacity,
                                   FALSE,
                                   &self->offset,
@@ -4313,7 +4407,8 @@ gsk_gpu_node_processor_convert_to (GskGpuNodeProcessor   *self,
     {
       gsk_gpu_convert_op (self->frame,
                           gsk_gpu_clip_get_shader_clip (&self->clip, &self->offset, rect),
-                          gsk_gpu_node_processor_color_states_explicit (self, image_color_state, TRUE),
+                          gsk_gpu_color_states_create (self->ccs, target_premultiplied,
+                                                       image_color_state, TRUE),
                           self->opacity,
                           FALSE,
                           &self->offset,
@@ -4392,6 +4487,7 @@ gsk_gpu_node_processor_process (GskGpuFrame           *frame,
           self.pending_globals |= GSK_GPU_GLOBAL_BLEND;
 
           gsk_gpu_node_processor_convert_to (&self,
+                                             !(gsk_gpu_image_get_flags (target) & GSK_GPU_IMAGE_STRAIGHT_ALPHA),
                                              image,
                                              ccs,
                                              &clip_bounds,
@@ -4410,3 +4506,89 @@ gsk_gpu_node_processor_process (GskGpuFrame           *frame,
   cairo_region_destroy (clip);
 }
 
+GskGpuImage *
+gsk_gpu_node_processor_convert_image (GskGpuFrame     *frame,
+                                      GdkMemoryFormat  target_format,
+                                      GdkColorState   *target_color_state,
+                                      GskGpuImage     *image,
+                                      GdkColorState   *image_color_state)
+{
+  GskGpuNodeProcessor self;
+  GskGpuImage *target, *intermediate = NULL;
+  gsize width, height;
+  gboolean target_premultiplied, image_premultiplied;
+
+  width = gsk_gpu_image_get_width (image);
+  height = gsk_gpu_image_get_height (image);
+
+  target = gsk_gpu_device_create_offscreen_image (gsk_gpu_frame_get_device (frame),
+                                                  FALSE,
+                                                  target_format,
+                                                  gsk_gpu_image_get_flags (image) & GSK_GPU_IMAGE_SRGB,
+                                                  width,
+                                                  height);
+  if (target == NULL)
+    return NULL;
+
+  target_premultiplied = !(gsk_gpu_image_get_flags (target) & GSK_GPU_IMAGE_STRAIGHT_ALPHA);
+  image_premultiplied = !(gsk_gpu_image_get_flags (image) & GSK_GPU_IMAGE_STRAIGHT_ALPHA);
+
+  /* We need to go via an intermediate colorstate */
+  if (!(GDK_IS_DEFAULT_COLOR_STATE (image_color_state) && image_premultiplied) &&
+      !(GDK_IS_DEFAULT_COLOR_STATE (target_color_state) && target_premultiplied))
+    {
+      GdkColorState *ccs = gdk_color_state_get_rendering_color_state (image_color_state);
+
+      intermediate = gsk_gpu_copy_image (frame, ccs, image, image_color_state, FALSE);
+      if (intermediate == NULL)
+        return NULL;
+      image = intermediate;
+      image_color_state = ccs;
+      image_premultiplied = TRUE;
+    }
+
+  gsk_gpu_node_processor_init (&self,
+                               frame,
+                               target,
+                               target_color_state,
+                               &(cairo_rectangle_int_t) { 0, 0, width, height },
+                               &GRAPHENE_RECT_INIT (0, 0, width, height));
+  gsk_gpu_render_pass_begin_op (frame,
+                                target,
+                                &(cairo_rectangle_int_t) { 0, 0, width, height },
+                                GSK_GPU_LOAD_OP_DONT_CARE,
+                                NULL,
+                                GSK_RENDER_PASS_OFFSCREEN);
+
+  self.blend = GSK_GPU_BLEND_NONE;
+  self.pending_globals |= GSK_GPU_GLOBAL_BLEND;
+  gsk_gpu_node_processor_sync_globals (&self, 0);
+
+  if (GDK_IS_DEFAULT_COLOR_STATE (target_color_state) && target_premultiplied)
+    {
+      gsk_gpu_node_processor_image_op (&self,
+                                       image,
+                                       image_color_state,
+                                       GSK_GPU_SAMPLER_DEFAULT,
+                                       &GRAPHENE_RECT_INIT (0, 0, width, height),
+                                       &GRAPHENE_RECT_INIT (0, 0, width, height));
+    }
+  else
+    {
+      gsk_gpu_node_processor_convert_to (&self,
+                                         target_premultiplied,
+                                         image,
+                                         image_color_state,
+                                         &GRAPHENE_RECT_INIT (0, 0, width, height),
+                                         &GRAPHENE_RECT_INIT (0, 0, width, height));
+    }
+
+  gsk_gpu_render_pass_end_op (self.frame,
+                              target,
+                              GSK_RENDER_PASS_OFFSCREEN);
+  gsk_gpu_node_processor_finish (&self);
+
+  g_clear_object (&intermediate);
+
+  return target;
+}

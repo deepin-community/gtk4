@@ -26,7 +26,9 @@
 #include "gdkcontentformats.h"
 #include "gdkcontentserializer.h"
 #include "gdkcontentdeserializer.h"
+#include "gdkdisplay.h"
 #include "gdkdebugprivate.h"
+#include "gdkprivate.h"
 
 #include <gio/gio.h>
 
@@ -258,9 +260,9 @@ retrieve_files_done (GObject      *object,
       return;
     }
 
-  g_variant_get (ret, "(^a&s)", &files);
+  g_variant_get (ret, "(^as)", &files);
 
-  g_object_set_data_full (G_OBJECT (task), "files", g_strdupv (files), (GDestroyNotify)g_strfreev);
+  g_object_set_data_full (G_OBJECT (task), "files", files, (GDestroyNotify)g_strfreev);
 
   g_variant_unref (ret);
 
@@ -600,16 +602,18 @@ file_transfer_portal_register (void)
     {
       called = TRUE;
 
-      file_transfer_proxy = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SESSION,
-                                G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES
-                                | G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS
-                                | G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
-                                NULL,
-                                "org.freedesktop.portal.Documents",
-                                "/org/freedesktop/portal/documents",
-                                "org.freedesktop.portal.FileTransfer",
-                                NULL,
-                                NULL);
+      /* Cheating a bit, since the document portal is special */
+      if (gdk_display_should_use_portal (gdk_display_get_default (), NULL, 0))
+        file_transfer_proxy = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SESSION,
+                                  G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES
+                                  | G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS
+                                  | G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START,
+                                  NULL,
+                                  "org.freedesktop.portal.Documents",
+                                  "/org/freedesktop/portal/documents",
+                                  "org.freedesktop.portal.FileTransfer",
+                                  NULL,
+                                  NULL);
 
       if (file_transfer_proxy && !proxy_has_owner (file_transfer_proxy))
         g_clear_object (&file_transfer_proxy);

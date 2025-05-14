@@ -66,7 +66,7 @@
 /**
  * GtkIconTheme:
  *
- * `GtkIconTheme` provides a facility for loading themed icons.
+ * Loads themed icons.
  *
  * The main reason for using a name rather than simply providing a filename
  * is to allow different icons to be used depending on what “icon theme” is
@@ -654,10 +654,20 @@ icon_key_equal (gconstpointer _a,
 
 /****************** Icon cache ***********************
  *
- * The icon cache, this spans both GtkIconTheme and GtkIcon, so the locking is
- * a bit tricky. Never do block with the lock held, and never do any
- * callouts to other code. In particular, don't call theme or finalizers
- * because that will take the lock when removing from the icon cache.
+ * The icon cache, this spans both GtkIconTheme and GtkIconPaintable,
+ * so the locking is a bit tricky. Never do block with the lock held,
+ * and never do any callouts to other code. In particular, don't call
+ * theme or finalizers, because that will take the lock when removing
+ * from the icon cache.
+ */
+
+/* The LRU cache is a short list of GtkIconPaintables that are kept
+ * alive even though their IconInfo would otherwise have been freed,
+ * so that we can avoid reloading these constantly.
+ *
+ * We put paintables on the lru list when we get a cache hit. Once
+ * they fall off the lru list, finalizing the paintable will remove
+ * the icon from the cache.
  */
 
 /* This is called with icon_cache lock held so must not take any locks */
@@ -2267,9 +2277,13 @@ real_choose_icon (GtkIconTheme      *self,
           gdk_debug_message ("No icon found in %s (or fallbacks) for: %s", self->current_theme, s);
           g_free (s);
         }
-      icon = icon_paintable_new ("image-missing", size, scale);
-      icon->filename = g_strdup (IMAGE_MISSING_RESOURCE_PATH);
-      icon->is_resource = TRUE;
+      
+      return real_choose_icon (self,
+                               (const char*[2]) { "image-missing", NULL },
+                               size,
+                               scale,
+                               flags,
+                               non_blocking);
     }
 
  out:

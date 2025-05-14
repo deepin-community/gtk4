@@ -28,7 +28,7 @@
 /**
  * GtkExpression: (ref-func gtk_expression_ref) (unref-func gtk_expression_unref) (set-value-func gtk_value_set_expression) (get-value-func gtk_value_get_expression)
  *
- * `GtkExpression` provides a way to describe references to values.
+ * Provides a way to describe references to values.
  *
  * An important aspect of expressions is that the value can be obtained
  * from a source that is several steps away. For example, an expression
@@ -127,8 +127,9 @@
  *
  * To create a property expression, use the `<lookup>` element. It can have a `type`
  * attribute to specify the object type, and a `name` attribute to specify the property
- * to look up. The content of `<lookup>` can either be an element specifying the expression
- * to use the object, or a string that specifies the name of the object to use.
+ * to look up. The content of `<lookup>` can either be a string that specifies the name
+ * of the object to use, an element specifying an expression to provide an object, or
+ * empty to use the `this` object.
  *
  * Example:
  *

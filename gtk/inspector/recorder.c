@@ -47,6 +47,7 @@
 #include <gsk/gskroundedrectprivate.h>
 #include <gsk/gsktransformprivate.h>
 
+#include <cairo-gobject.h>
 #include <glib/gi18n-lib.h>
 #include <gdk/gdkdmabufprivate.h>
 #include <gdk/gdkdmabuftextureprivate.h>
@@ -60,6 +61,7 @@
 #include "gtk/gtkdebug.h"
 #include "gtk/gtkbuiltiniconprivate.h"
 #include "gtk/gtkrendernodepaintableprivate.h"
+#include "gdk/gdkcairoprivate.h"
 
 #include "recording.h"
 #include "renderrecording.h"
@@ -214,10 +216,13 @@ struct _GtkInspectorRecorder
   gboolean highlight_sequences;
   gboolean record_events;
   gboolean stop_after_next_frame;
+  gboolean dark;
 
   GdkEventSequence *selected_sequence;
 
   GtkInspectorEventRecording *last_event_recording;
+
+  GSettings *settings;
 };
 
 typedef struct _GtkInspectorRecorderClass
@@ -233,6 +238,8 @@ enum
   PROP_DEBUG_NODES,
   PROP_HIGHLIGHT_SEQUENCES,
   PROP_SELECTED_SEQUENCE,
+  PROP_RECORD_EVENTS,
+  PROP_DARK,
   LAST_PROP
 };
 
@@ -838,13 +845,14 @@ get_color2_texture (const GdkColor *color)
 
   texture = gdk_memory_texture_builder_build (builder);
 
+  g_object_unref (builder);
   g_bytes_unref (bytes);
 
   return texture;
 }
 
 static GdkTexture *
-get_linear_gradient_texture (gsize n_stops, const GskColorStop *stops)
+get_linear_gradient_texture (gsize n_stops, const GskColorStop2 *stops)
 {
   cairo_surface_t *surface;
   cairo_t *cr;
@@ -857,14 +865,7 @@ get_linear_gradient_texture (gsize n_stops, const GskColorStop *stops)
 
   pattern = cairo_pattern_create_linear (0, 0, 90, 0);
   for (i = 0; i < n_stops; i++)
-    {
-      cairo_pattern_add_color_stop_rgba (pattern,
-                                         stops[i].offset,
-                                         stops[i].color.red,
-                                         stops[i].color.green,
-                                         stops[i].color.blue,
-                                         stops[i].color.alpha);
-    }
+    gdk_cairo_pattern_add_color_stop_color (pattern, GDK_COLOR_STATE_SRGB, stops[i].offset, &stops[i].color);
 
   cairo_set_source (cr, pattern);
   cairo_pattern_destroy (pattern);
@@ -969,6 +970,14 @@ enum_to_nick (GType type,
   g_type_class_unref (class);
 
   return v->value_nick;
+}
+
+static const char *
+hue_interpolation_to_string (GskHueInterpolation value)
+{
+  const char *name[] = { "shorter", "longer", "increasing", "decreasing" };
+
+  return name[value];
 }
 
 static void
@@ -1114,18 +1123,22 @@ populate_render_node_properties (GListStore    *store,
         const graphene_point_t *start = gsk_linear_gradient_node_get_start (node);
         const graphene_point_t *end = gsk_linear_gradient_node_get_end (node);
         const gsize n_stops = gsk_linear_gradient_node_get_n_color_stops (node);
-        const GskColorStop *stops = gsk_linear_gradient_node_get_color_stops (node, NULL);
+        const GskColorStop2 *stops = gsk_linear_gradient_node_get_color_stops2 (node);
+        GdkColorState *interpolation = gsk_linear_gradient_node_get_interpolation_color_state (node);
+        GskHueInterpolation hue_interpolation = gsk_linear_gradient_node_get_hue_interpolation (node);
         int i;
         GString *s;
         GdkTexture *texture;
 
         add_text_row (store, "Direction", "%.2f %.2f ⟶ %.2f %.2f", start->x, start->y, end->x, end->y);
+        add_text_row (store, "Interpolation", "%s", gdk_color_state_get_name (interpolation));
+        add_text_row (store, "Hue Interpolation", "%s", hue_interpolation_to_string (hue_interpolation));
 
         s = g_string_new ("");
         for (i = 0; i < n_stops; i++)
           {
             g_string_append_printf (s, "%.2f, ", stops[i].offset);
-            gdk_rgba_print (&stops[i].color, s);
+            gdk_color_print (&stops[i].color, s);
             g_string_append_c (s, '\n');
           }
 
@@ -1146,7 +1159,9 @@ populate_render_node_properties (GListStore    *store,
         const float hradius = gsk_radial_gradient_node_get_hradius (node);
         const float vradius = gsk_radial_gradient_node_get_vradius (node);
         const gsize n_stops = gsk_radial_gradient_node_get_n_color_stops (node);
-        const GskColorStop *stops = gsk_radial_gradient_node_get_color_stops (node, NULL);
+        const GskColorStop2 *stops = gsk_radial_gradient_node_get_color_stops2 (node);
+        GdkColorState *interpolation = gsk_radial_gradient_node_get_interpolation_color_state (node);
+        GskHueInterpolation hue_interpolation = gsk_radial_gradient_node_get_hue_interpolation (node);
         int i;
         GString *s;
         GdkTexture *texture;
@@ -1154,12 +1169,14 @@ populate_render_node_properties (GListStore    *store,
         add_text_row (store, "Center", "%.2f, %.2f", center->x, center->y);
         add_text_row (store, "Direction", "%.2f ⟶  %.2f", start, end);
         add_text_row (store, "Radius", "%.2f, %.2f", hradius, vradius);
+        add_text_row (store, "Interpolation", "%s", gdk_color_state_get_name (interpolation));
+        add_text_row (store, "Hue Interpolation", "%s", hue_interpolation_to_string (hue_interpolation));
 
         s = g_string_new ("");
         for (i = 0; i < n_stops; i++)
           {
             g_string_append_printf (s, "%.2f, ", stops[i].offset);
-            gdk_rgba_print (&stops[i].color, s);
+            gdk_color_print (&stops[i].color, s);
             g_string_append_c (s, '\n');
           }
 
@@ -1176,19 +1193,23 @@ populate_render_node_properties (GListStore    *store,
         const graphene_point_t *center = gsk_conic_gradient_node_get_center (node);
         const float rotation = gsk_conic_gradient_node_get_rotation (node);
         const gsize n_stops = gsk_conic_gradient_node_get_n_color_stops (node);
-        const GskColorStop *stops = gsk_conic_gradient_node_get_color_stops (node, NULL);
+        const GskColorStop2 *stops = gsk_conic_gradient_node_get_color_stops2 (node);
+        GdkColorState *interpolation = gsk_conic_gradient_node_get_interpolation_color_state (node);
+        GskHueInterpolation hue_interpolation = gsk_conic_gradient_node_get_hue_interpolation (node);
         gsize i;
         GString *s;
         GdkTexture *texture;
 
         add_text_row (store, "Center", "%.2f, %.2f", center->x, center->y);
         add_text_row (store, "Rotation", "%.2f", rotation);
+        add_text_row (store, "Interpolation", "%s", gdk_color_state_get_name (interpolation));
+        add_text_row (store, "Hue Interpolation", "%s", hue_interpolation_to_string (hue_interpolation));
 
         s = g_string_new ("");
         for (i = 0; i < n_stops; i++)
           {
             g_string_append_printf (s, "%.2f, ", stops[i].offset);
-            gdk_rgba_print (&stops[i].color, s);
+            gdk_color_print (&stops[i].color, s);
             g_string_append_c (s, '\n');
           }
 
@@ -1207,12 +1228,29 @@ populate_render_node_properties (GListStore    *store,
         PangoFontDescription *desc;
         GString *s;
         gchar *tmp;
+        cairo_scaled_font_t *sf;
+        cairo_font_options_t *options;
+        cairo_hint_style_t hint_style;
+        cairo_antialias_t antialias;
+        cairo_hint_metrics_t hint_metrics;
 
         desc = pango_font_describe ((PangoFont *)font);
         tmp = pango_font_description_to_string (desc);
         add_text_row (store, "Font", "%s", tmp);
         g_free (tmp);
         pango_font_description_free (desc);
+
+        sf = pango_cairo_font_get_scaled_font (PANGO_CAIRO_FONT (font));
+        options = cairo_font_options_create ();
+        cairo_scaled_font_get_font_options (sf, options);
+        hint_style = cairo_font_options_get_hint_style (options);
+        antialias = cairo_font_options_get_antialias (options);
+        hint_metrics = cairo_font_options_get_hint_metrics (options);
+        cairo_font_options_destroy (options);
+
+        add_text_row (store, "Hint Style", "%s", enum_to_nick (CAIRO_GOBJECT_TYPE_HINT_STYLE, hint_style));
+        add_text_row (store, "Antialias", "%s", enum_to_nick (CAIRO_GOBJECT_TYPE_ANTIALIAS, antialias));
+        add_text_row (store, "Hint Metrics", "%s", enum_to_nick (CAIRO_GOBJECT_TYPE_HINT_METRICS, hint_metrics));
 
         s = g_string_sized_new (0);
         gsk_text_node_serialize_glyphs (node, s);
@@ -2077,25 +2115,6 @@ render_node_clip (GtkButton            *button,
 }
 
 static void
-toggle_dark_mode (GtkToggleButton *button,
-                  GParamSpec      *pspec,
-                  gpointer         data)
-{
-  GtkWidget *picture = data;
-
-  if (gtk_toggle_button_get_active (button))
-    {
-      gtk_widget_add_css_class (picture, "dark");
-      gtk_widget_remove_css_class (picture, "light");
-    }
-  else
-    {
-      gtk_widget_remove_css_class (picture, "dark");
-      gtk_widget_add_css_class (picture, "light");
-    }
-}
-
-static void
 setup_widget_for_recording (GtkListItemFactory *factory,
                             GtkListItem        *item,
                             gpointer            data)
@@ -2248,6 +2267,31 @@ bind_widget_for_recording (GtkListItemFactory *factory,
 }
 
 static void
+recorder_set_dark (GtkInspectorRecorder *recorder,
+                   gboolean              dark)
+{
+  GtkWidget *picture = recorder->render_node_view;
+
+  if (recorder->dark == dark)
+    return;
+
+  recorder->dark = dark;
+
+  if (dark)
+    {
+      gtk_widget_add_css_class (picture, "dark");
+      gtk_widget_remove_css_class (picture, "light");
+    }
+  else
+    {
+      gtk_widget_remove_css_class (picture, "dark");
+      gtk_widget_add_css_class (picture, "light");
+    }
+
+  g_object_notify_by_pspec (G_OBJECT (recorder), props[PROP_DARK]);
+}
+
+static void
 gtk_inspector_recorder_get_property (GObject    *object,
                                      guint       param_id,
                                      GValue     *value,
@@ -2261,6 +2305,10 @@ gtk_inspector_recorder_get_property (GObject    *object,
       g_value_set_boolean (value, recorder->recording != NULL);
       break;
 
+    case PROP_RECORD_EVENTS:
+      g_value_set_boolean (value, recorder->record_events);
+      break;
+
     case PROP_DEBUG_NODES:
       g_value_set_boolean (value, recorder->debug_nodes);
       break;
@@ -2271,6 +2319,10 @@ gtk_inspector_recorder_get_property (GObject    *object,
 
     case PROP_SELECTED_SEQUENCE:
       g_value_set_pointer (value, recorder->selected_sequence);
+      break;
+
+    case PROP_DARK:
+      g_value_set_boolean (value, recorder->dark);
       break;
 
     default:
@@ -2293,6 +2345,10 @@ gtk_inspector_recorder_set_property (GObject      *object,
       gtk_inspector_recorder_set_recording (recorder, g_value_get_boolean (value));
       break;
 
+    case PROP_RECORD_EVENTS:
+      recorder->record_events = g_value_get_boolean (value);
+      break;
+
     case PROP_DEBUG_NODES:
       gtk_inspector_recorder_set_debug_nodes (recorder, g_value_get_boolean (value));
       break;
@@ -2303,6 +2359,10 @@ gtk_inspector_recorder_set_property (GObject      *object,
 
     case PROP_SELECTED_SEQUENCE:
       recorder->selected_sequence = g_value_get_pointer (value);
+      break;
+
+    case PROP_DARK:
+      recorder_set_dark (recorder, g_value_get_boolean (value));
       break;
 
     default:
@@ -2322,6 +2382,8 @@ gtk_inspector_recorder_dispose (GObject *object)
 
   gtk_widget_dispose_template (GTK_WIDGET (recorder), GTK_TYPE_INSPECTOR_RECORDER);
 
+  g_clear_object (&recorder->settings);
+
   G_OBJECT_CLASS (gtk_inspector_recorder_parent_class)->dispose (object);
 }
 
@@ -2335,19 +2397,19 @@ gtk_inspector_recorder_class_init (GtkInspectorRecorderClass *klass)
   object_class->set_property = gtk_inspector_recorder_set_property;
   object_class->dispose = gtk_inspector_recorder_dispose;
 
-  props[PROP_RECORDING] =
-    g_param_spec_boolean ("recording", NULL, NULL,
-                          FALSE,
-                          G_PARAM_READWRITE);
-  props[PROP_DEBUG_NODES] =
-    g_param_spec_boolean ("debug-nodes", NULL, NULL,
-                          FALSE,
-                          G_PARAM_READWRITE);
-
+  props[PROP_RECORDING] = g_param_spec_boolean ("recording", NULL, NULL, FALSE, G_PARAM_READWRITE);
+  props[PROP_RECORD_EVENTS] = g_param_spec_boolean ("record-events", NULL, NULL, TRUE, G_PARAM_READWRITE);
+  props[PROP_DEBUG_NODES] = g_param_spec_boolean ("debug-nodes", NULL, NULL, FALSE, G_PARAM_READWRITE);
   props[PROP_HIGHLIGHT_SEQUENCES] = g_param_spec_boolean ("highlight-sequences", NULL, NULL, FALSE, G_PARAM_READWRITE);
   props[PROP_SELECTED_SEQUENCE] = g_param_spec_pointer ("selected-sequence", NULL, NULL, G_PARAM_READWRITE);
+  props[PROP_DARK] = g_param_spec_boolean ("dark", NULL, NULL, FALSE, G_PARAM_READWRITE);
 
   g_object_class_install_properties (object_class, LAST_PROP, props);
+
+  gtk_widget_class_install_property_action (widget_class, "record.record-events", "record-events");
+  gtk_widget_class_install_property_action (widget_class, "record.debug-nodes", "debug-nodes");
+  gtk_widget_class_install_property_action (widget_class, "record.highlight-sequences", "highlight-sequences");
+  gtk_widget_class_install_property_action (widget_class, "record.toggle-dark", "dark");
 
   gtk_widget_class_set_template_from_resource (widget_class, "/org/gtk/libgtk/inspector/recorder.ui");
 
@@ -2368,7 +2430,6 @@ gtk_inspector_recorder_class_init (GtkInspectorRecorderClass *klass)
   gtk_widget_class_bind_template_callback (widget_class, render_node_save);
   gtk_widget_class_bind_template_callback (widget_class, render_node_clip);
   //gtk_widget_class_bind_template_callback (widget_class, node_property_activated);
-  gtk_widget_class_bind_template_callback (widget_class, toggle_dark_mode);
 
   gtk_widget_class_set_layout_manager_type (widget_class, GTK_TYPE_BIN_LAYOUT);
 }
@@ -2379,6 +2440,9 @@ gtk_inspector_recorder_init (GtkInspectorRecorder *recorder)
   GtkListItemFactory *factory;
   GtkSelectionModel *model;
   GtkColumnViewColumn *column;
+  GSettingsSchema *schema;
+
+  recorder->record_events = TRUE;
 
   gtk_widget_init_template (GTK_WIDGET (recorder));
 
@@ -2455,6 +2519,21 @@ gtk_inspector_recorder_init (GtkInspectorRecorder *recorder)
   gtk_column_view_column_set_factory (column, factory);
   g_object_unref (factory);
   g_object_unref (column);
+
+  schema = g_settings_schema_source_lookup (g_settings_schema_source_get_default (),
+                                            "org.gtk.gtk4.Inspector.Recorder",
+                                            TRUE);
+  if (schema)
+    {
+      recorder->settings = g_settings_new_full (schema, NULL, NULL);
+
+      g_settings_bind (recorder->settings, "debug-nodes", recorder, "debug-nodes", G_SETTINGS_BIND_DEFAULT);
+      g_settings_bind (recorder->settings, "record-events", recorder, "record-events", G_SETTINGS_BIND_DEFAULT);
+     g_settings_bind (recorder->settings, "highlight-sequences", recorder, "highlight-sequences", G_SETTINGS_BIND_DEFAULT);
+     g_settings_bind (recorder->settings, "dark", recorder, "dark", G_SETTINGS_BIND_DEFAULT);
+
+     g_settings_schema_unref (schema);
+   }
 }
 
 static void
@@ -2475,7 +2554,6 @@ gtk_inspector_recorder_set_recording (GtkInspectorRecorder *recorder,
     {
       recorder->recording = gtk_inspector_start_recording_new ();
       recorder->start_time = 0;
-      recorder->record_events = TRUE;
       gtk_inspector_recorder_add_recording (recorder, recorder->recording);
     }
   else
@@ -2540,7 +2618,6 @@ gtk_inspector_recorder_record_render (GtkInspectorRecorder *recorder,
     }
 
   recording = gtk_inspector_render_recording_new (frame_time,
-                                                  gsk_renderer_get_profiler (renderer),
                                                   &(GdkRectangle) { 0, 0,
                                                     gdk_surface_get_width (surface),
                                                     gdk_surface_get_height (surface) },
@@ -2682,5 +2759,4 @@ gtk_inspector_recorder_set_selected_sequence (GtkInspectorRecorder *recorder,
   g_object_notify_by_pspec (G_OBJECT (recorder), props[PROP_SELECTED_SEQUENCE]);
 }
 
-/* vim:set foldmethod=marker expandtab: */
-
+/* vim:set foldmethod=marker: */

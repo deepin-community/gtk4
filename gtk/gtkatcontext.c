@@ -21,8 +21,7 @@
 /**
  * GtkATContext:
  *
- * `GtkATContext` is an abstract class provided by GTK to communicate to
- * platform-specific assistive technologies API.
+ * Communicates with platform-specific assistive technologies API.
  *
  * Each platform supported by GTK implements a `GtkATContext` subclass, and
  * is responsible for updating the accessible state in response to state
@@ -49,6 +48,9 @@
 #include "gtkscalebutton.h"
 #include "print/gtkprinteroptionwidgetprivate.h"
 
+#ifdef HAVE_ACCESSKIT
+#include "a11y/gtkaccesskitcontextprivate.h"
+#endif
 #if defined(GDK_WINDOWING_X11) || defined(GDK_WINDOWING_WAYLAND)
 #include "a11y/gtkatspicontextprivate.h"
 #endif
@@ -305,7 +307,7 @@ gtk_at_context_class_init (GtkATContextClass *klass)
 }
 
 #define N_PROPERTIES    (GTK_ACCESSIBLE_PROPERTY_VALUE_TEXT + 1)
-#define N_RELATIONS     (GTK_ACCESSIBLE_RELATION_SET_SIZE + 1)
+#define N_RELATIONS     (GTK_ACCESSIBLE_RELATION_FLOW_FROM + 1)
 #define N_STATES        (GTK_ACCESSIBLE_STATE_SELECTED + 1)
 
 static const char *property_attrs[] = {
@@ -368,6 +370,12 @@ static const char *relation_attrs[] = {
   [GTK_ACCESSIBLE_RELATION_ROW_INDEX_TEXT]      = "rowindextext",
   [GTK_ACCESSIBLE_RELATION_ROW_SPAN]            = "rowspan",
   [GTK_ACCESSIBLE_RELATION_SET_SIZE]            = "setsize",
+  [GTK_ACCESSIBLE_RELATION_LABEL_FOR]           = "labelfor",
+  [GTK_ACCESSIBLE_RELATION_DESCRIPTION_FOR]     = "descriptionfor",
+  [GTK_ACCESSIBLE_RELATION_CONTROLLED_BY]       = "controlledby",
+  [GTK_ACCESSIBLE_RELATION_DETAILS_FOR]         = "detailsfor",
+  [GTK_ACCESSIBLE_RELATION_ERROR_MESSAGE_FOR]   = "errormessagefor",
+  [GTK_ACCESSIBLE_RELATION_FLOW_FROM]           = "flowfrom",
 };
 
 /*< private >
@@ -382,7 +390,7 @@ const char *
 gtk_accessible_relation_get_attribute_name (GtkAccessibleRelation relation)
 {
   g_return_val_if_fail (relation >= GTK_ACCESSIBLE_RELATION_ACTIVE_DESCENDANT &&
-                        relation <= GTK_ACCESSIBLE_RELATION_SET_SIZE,
+                        relation <= GTK_ACCESSIBLE_RELATION_FLOW_FROM,
                         "<none>");
 
   return relation_attrs[relation];
@@ -673,6 +681,9 @@ static const struct {
 #if defined(GDK_WINDOWING_WAYLAND) || defined(GDK_WINDOWING_X11)
   { "AT-SPI", "atspi", gtk_at_spi_create_context },
 #endif
+#ifdef HAVE_ACCESSKIT
+  { "AccessKit", "accesskit", gtk_accesskit_create_context },
+#endif
   { "Test", "test", gtk_test_at_context_new },
 };
 
@@ -707,13 +718,19 @@ gtk_at_context_create (GtkAccessibleRole  accessible_role,
       if (g_ascii_strcasecmp (gtk_a11y_env, "help") == 0)
         {
           g_print ("Supported arguments for GTK_A11Y environment variable:\n");
-
-#if defined(GDK_WINDOWING_X11) || defined(GDK_WINDOWING_WAYLAND)
-          g_print ("   atspi - Use the AT-SPI accessibility backend\n");
+#ifdef HAVE_ACCESSKIT
+          g_print ("   accesskit - Use the AccessKit accessibility backend\n");
+#else
+          g_print ("   accesskit - Disabled during GTK build\n");
 #endif
-          g_print ("    test - Use the test accessibility backend\n");
-          g_print ("    none - Disable the accessibility backend\n");
-          g_print ("    help - Print this help\n\n");
+#if defined(GDK_WINDOWING_X11) || defined(GDK_WINDOWING_WAYLAND)
+          g_print ("       atspi - Use the AT-SPI accessibility backend\n");
+#else
+          g_print ("       atspi - Not available on this platform\n");
+#endif
+          g_print ("        test - Use the test accessibility backend\n");
+          g_print ("        none - Disable the accessibility backend\n");
+          g_print ("        help - Print this help\n\n");
           g_print ("Other arguments will cause a warning and be ignored.\n");
 
           gtk_a11y_env = "0";
@@ -1001,6 +1018,98 @@ gtk_at_context_get_accessible_property (GtkATContext          *self,
   return gtk_accessible_attribute_set_get_value (self->properties, property);
 }
 
+static void
+append_to_accessible_relation (GtkATContext          *self,
+                               GtkAccessibleRelation  relation,
+                               GtkAccessible         *accessible)
+{
+  g_return_if_fail (GTK_IS_AT_CONTEXT (self));
+  GtkAccessibleValue *target_value;
+
+  if (gtk_accessible_attribute_set_contains (self->relations, relation))
+    {
+      target_value = gtk_accessible_value_ref (gtk_accessible_attribute_set_get_value (self->relations, relation));
+    }
+  else
+    {
+      target_value = gtk_reference_list_accessible_value_new (NULL);
+      gtk_accessible_attribute_set_add (self->relations, relation, target_value);
+    }
+
+  gtk_reference_list_accessible_value_append (target_value, accessible);
+
+  gtk_accessible_value_unref (target_value);
+
+  self->updated_relations |= (1 << relation);
+}
+
+static void
+remove_from_accessible_relation (GtkATContext          *self,
+                                 GtkAccessibleRelation  relation,
+                                 GtkAccessible         *accessible)
+{
+  g_return_if_fail (GTK_IS_AT_CONTEXT (self));
+  GtkAccessibleValue * target_value;
+
+  if (!gtk_accessible_attribute_set_contains (self->relations, relation))
+    return;
+
+  target_value = gtk_accessible_attribute_set_get_value (self->relations, relation);
+  gtk_reference_list_accessible_value_remove (target_value, accessible);
+
+  self->updated_relations |= (1 << relation);
+}
+
+static void
+update_reverse_relation (GtkATContext *self, GtkAccessibleRelation relation, GtkAccessibleValue *value)
+{
+  struct {
+    GtkAccessibleRelation rel;
+    GtkAccessibleRelation reverse_rel;
+  } reverse_rels_map[] = {
+    { GTK_ACCESSIBLE_RELATION_LABELLED_BY, GTK_ACCESSIBLE_RELATION_LABEL_FOR },
+    { GTK_ACCESSIBLE_RELATION_DESCRIBED_BY, GTK_ACCESSIBLE_RELATION_DESCRIPTION_FOR },
+    { GTK_ACCESSIBLE_RELATION_CONTROLS, GTK_ACCESSIBLE_RELATION_CONTROLLED_BY },
+    { GTK_ACCESSIBLE_RELATION_DETAILS, GTK_ACCESSIBLE_RELATION_DETAILS_FOR },
+    { GTK_ACCESSIBLE_RELATION_ERROR_MESSAGE, GTK_ACCESSIBLE_RELATION_ERROR_MESSAGE_FOR },
+    { GTK_ACCESSIBLE_RELATION_FLOW_TO, GTK_ACCESSIBLE_RELATION_FLOW_FROM },
+  };
+
+  GList *l;
+  GtkATContext *related_context;
+  for (int i = 0; i < G_N_ELEMENTS (reverse_rels_map); i++)
+    {
+      if (relation == reverse_rels_map[i].rel)
+        {
+          if (value)
+            {
+              for (l = gtk_reference_list_accessible_value_get (value); l; l = l->next)
+                {
+                  related_context = gtk_accessible_get_at_context (l->data);
+                  append_to_accessible_relation (related_context, reverse_rels_map[i].reverse_rel, self->accessible);
+                  g_clear_object (&related_context);
+                }
+            }
+          else
+            {
+              if (gtk_accessible_attribute_set_contains (self->relations, relation))
+                {
+                  GtkAccessibleValue *val = gtk_accessible_attribute_set_get_value (self->relations, relation);
+                  for (l = gtk_reference_list_accessible_value_get (val); l; l = l->next)
+                    {
+                      related_context = gtk_accessible_get_at_context (l->data);
+                      if (!related_context)
+                        continue;
+                      remove_from_accessible_relation (related_context, reverse_rels_map[i].reverse_rel, self->accessible);
+                      g_clear_object (&related_context);
+                    }
+                }
+            }
+          break;
+        }
+    }
+}
+
 /*< private >
  * gtk_at_context_set_accessible_relation:
  * @self: a `GtkATContext`
@@ -1023,6 +1132,11 @@ gtk_at_context_set_accessible_relation (GtkATContext          *self,
 
   gboolean res = FALSE;
 
+  /* We update the reverse relation first, so we can still access
+  * the current value if we're removing it.
+  */
+  update_reverse_relation (self, relation, value);
+
   if (value != NULL)
     res = gtk_accessible_attribute_set_add (self->relations, relation, value);
   else
@@ -1030,6 +1144,7 @@ gtk_at_context_set_accessible_relation (GtkATContext          *self,
 
   if (res)
     self->updated_relations |= (1 << relation);
+
 }
 
 /*< private >
@@ -1215,8 +1330,8 @@ gtk_accessible_role_get_naming (GtkAccessibleRole role)
   return (GtkAccessibleNaming) (naming[role] & ~(NAME_FROM_AUTHOR|NAME_FROM_CONTENT));
 }
 
-static gboolean
-is_nested_button (GtkATContext *self)
+gboolean
+gtk_at_context_is_nested_button (GtkATContext *self)
 {
   GtkAccessible *accessible;
   GtkWidget *widget, *parent;
@@ -1464,11 +1579,11 @@ gboolean              check_duplicates)
    * ui file and carries all the a11y attributes, but the
    * focus ends up on the toggle button.
    */
-  if (is_nested_button (self))
+  if (gtk_at_context_is_nested_button (self))
     {
       parent = get_parent_context (self);
       self = parent;
-      if (is_nested_button (self))
+      if (gtk_at_context_is_nested_button (self))
         {
           parent = get_parent_context (parent);
           g_object_unref (self);

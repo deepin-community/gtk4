@@ -21,7 +21,7 @@
 /**
  * GskTransform: (ref-func gsk_transform_ref) (unref-func gsk_transform_unref)
  *
- * `GskTransform` is an object to describe transform matrices.
+ * Describes a 3D transform.
  *
  * Unlike `graphene_matrix_t`, `GskTransform` retains the steps in how
  * a transform was constructed, and allows inspecting them. It is modeled
@@ -290,7 +290,7 @@ gsk_matrix_transform_to_matrix (GskTransform      *transform,
   graphene_matrix_init_from_matrix (out_matrix, &self->matrix);
 }
 
-static void 
+static void
 gsk_matrix_transform_apply_2d (GskTransform *transform,
                                float        *out_xx,
                                float        *out_yx,
@@ -989,7 +989,8 @@ normalize_angle (float angle)
  * @next: (nullable) (transfer full): the next transform
  * @angle: the rotation angle, in degrees (clockwise)
  *
- * Rotates @next @angle degrees in 2D - or in 3D-speak, around the Z axis.
+ * Rotates @next by an angle around the Z axis.
+ *
  * The rotation happens around the origin point of (0, 0).
  *
  * This function consumes @next. Use [method@Gsk.Transform.ref] first
@@ -1003,6 +1004,7 @@ gsk_transform_rotate (GskTransform *next,
 {
   GskRotateTransform *result;
 
+  angle = normalize_angle (angle);
   if (angle == 0.0f)
     return next;
 
@@ -1019,7 +1021,7 @@ gsk_transform_rotate (GskTransform *next,
                                                     : GSK_FINE_TRANSFORM_CATEGORY_2D_DIHEDRAL,
                                 next);
 
-  result->angle = normalize_angle (angle);
+  result->angle = angle;
 
   return &result->parent;
 }
@@ -1137,17 +1139,18 @@ gsk_transform_rotate_3d (GskTransform          *next,
 {
   GskRotate3dTransform *result;
 
-  if (graphene_vec3_get_x (axis) == 0.0 && graphene_vec3_get_y (axis) == 0.0)
-    return gsk_transform_rotate (next, angle);
-
+  angle = normalize_angle (angle);
   if (angle == 0.0f)
     return next;
+
+  if (graphene_vec3_get_x (axis) == 0.0 && graphene_vec3_get_y (axis) == 0.0)
+    return gsk_transform_rotate (next, angle);
 
   result = gsk_transform_alloc (&GSK_ROTATE3D_TRANSFORM_CLASS,
                                 GSK_FINE_TRANSFORM_CATEGORY_3D,
                                 next);
 
-  result->angle = normalize_angle (angle);
+  result->angle = angle;
   graphene_vec3_init_from_vec3 (&result->axis, axis);
 
   return &result->parent;
@@ -1388,11 +1391,20 @@ gsk_scale_transform_apply_dihedral (GskTransform *transform,
 {
   GskScaleTransform *self = (GskScaleTransform *) transform;
   GdkDihedral dihedral;
-  float xx, xy, yx, yy;
+  float scale_x, scale_y;
 
   g_assert (self->factor_z == 1.0);
 
-  gdk_dihedral_get_mat2 (*out_dihedral, &xx, &xy, &yx, &yy);
+  if (gdk_dihedral_swaps_xy (*out_dihedral))
+    {
+      scale_x = fabs (self->factor_y);
+      scale_y = fabs (self->factor_x);
+    }
+  else
+    {
+      scale_x = fabs (self->factor_x);
+      scale_y = fabs (self->factor_y);
+    }
 
   if (self->factor_x >= 0)
     {
@@ -1408,9 +1420,10 @@ gsk_scale_transform_apply_dihedral (GskTransform *transform,
       else
         dihedral = GDK_DIHEDRAL_180;
     }
+
   *out_dihedral = gdk_dihedral_combine (dihedral, *out_dihedral);
-  *out_scale_x *= fabs (xx * self->factor_x + xy * self->factor_y);
-  *out_scale_y *= fabs (yx * self->factor_x + yy * self->factor_y);
+  *out_scale_x *= scale_x;
+  *out_scale_y *= scale_y;
 }
 
 static void
@@ -1717,11 +1730,11 @@ gsk_transform_perspective (GskTransform *next,
 
 /**
  * gsk_transform_ref:
- * @self: (nullable): a `GskTransform`
+ * @self: (nullable): a transform
  *
- * Acquires a reference on the given `GskTransform`.
+ * Acquires a reference on the given transform.
  *
- * Returns: (nullable) (transfer none): the `GskTransform` with an additional reference
+ * Returns: (nullable) (transfer none): the transform with an additional reference
  */
 GskTransform *
 gsk_transform_ref (GskTransform *self)
@@ -1734,9 +1747,9 @@ gsk_transform_ref (GskTransform *self)
 
 /**
  * gsk_transform_unref:
- * @self: (nullable): a `GskTransform`
+ * @self: (nullable): a transform
  *
- * Releases a reference on the given `GskTransform`.
+ * Releases a reference on the given transform.
  *
  * If the reference was the last, the resources associated to the @self are
  * freed.
@@ -1752,11 +1765,10 @@ gsk_transform_unref (GskTransform *self)
 
 /**
  * gsk_transform_print:
- * @self: (nullable): a `GskTransform`
+ * @self: (nullable): a transform
  * @string:  The string to print into
  *
- * Converts @self into a human-readable string representation suitable
- * for printing.
+ * Converts the transform into a human-readable representation.
  *
  * The result of this function can later be parsed with
  * [func@Gsk.Transform.parse].
@@ -1784,9 +1796,9 @@ gsk_transform_print (GskTransform *self,
 
 /**
  * gsk_transform_to_string:
- * @self: (nullable): a `GskTransform`
+ * @self: (nullable): a transform
  *
- * Converts a matrix into a string that is suitable for printing.
+ * Converts the transform into a human-readable string.
  *
  * The resulting string can be parsed with [func@Gsk.Transform.parse].
  *
@@ -1808,10 +1820,10 @@ gsk_transform_to_string (GskTransform *self)
 
 /**
  * gsk_transform_to_matrix:
- * @self: (nullable): a `GskTransform`
- * @out_matrix: (out caller-allocates): The matrix to set
+ * @self: (nullable): a transform
+ * @out_matrix: (out caller-allocates): return location for the matrix
  *
- * Computes the actual value of @self and stores it in @out_matrix.
+ * Computes the 4x4 matrix for the transform.
  *
  * The previous value of @out_matrix will be ignored.
  */
@@ -1834,7 +1846,7 @@ gsk_transform_to_matrix (GskTransform      *self,
 
 /**
  * gsk_transform_to_2d:
- * @self: a 2D `GskTransform`
+ * @self: a 2D transform
  * @out_xx: (out): return location for the xx member
  * @out_yx: (out): return location for the yx member
  * @out_xy: (out): return location for the xy member
@@ -1842,13 +1854,18 @@ gsk_transform_to_matrix (GskTransform      *self,
  * @out_dx: (out): return location for the x0 member
  * @out_dy: (out): return location for the y0 member
  *
- * Converts a `GskTransform` to a 2D transformation matrix.
+ * Converts a transform to a 2D transformation matrix.
  *
  * @self must be a 2D transformation. If you are not
- * sure, use gsk_transform_get_category() >=
- * %GSK_TRANSFORM_CATEGORY_2D to check.
+ * sure, use
  *
- * The returned values have the following layout:
+ *     gsk_transform_get_category() >= GSK_TRANSFORM_CATEGORY_2D
+ *
+ * to check.
+ *
+ * The returned values are a subset of the full 4x4 matrix that
+ * is computed by [method@Gsk.Transform.to_matrix] and have the
+ * following layout:
  *
  * ```
  *   | xx yx |   |  a  b  0 |
@@ -1900,7 +1917,7 @@ gsk_transform_to_2d (GskTransform *self,
 
 /**
  * gsk_transform_to_2d_components:
- * @self: a `GskTransform`
+ * @self: a transform
  * @out_skew_x: (out): return location for the skew factor
  *   in the  x direction
  * @out_skew_y: (out): return location for the skew factor
@@ -1915,7 +1932,7 @@ gsk_transform_to_2d (GskTransform *self,
  * @out_dy: (out): return location for the translation
  *   in the y direction
  *
- * Converts a `GskTransform` to 2D transformation factors.
+ * Converts a transform to 2D transformation factors.
  *
  * To recreate an equivalent transform from the factors returned
  * by this function, use
@@ -1930,7 +1947,7 @@ gsk_transform_to_2d (GskTransform *self,
  *
  * @self must be a 2D transformation. If you are not sure, use
  *
- *     gsk_transform_get_category() >= %GSK_TRANSFORM_CATEGORY_2D
+ *     gsk_transform_get_category() >= GSK_TRANSFORM_CATEGORY_2D
  *
  * to check.
  *
@@ -1989,7 +2006,7 @@ gsk_transform_to_2d_components (GskTransform *self,
 
 /**
  * gsk_transform_to_affine:
- * @self: a `GskTransform`
+ * @self: a transform
  * @out_scale_x: (out): return location for the scale
  *   factor in the x direction
  * @out_scale_y: (out): return location for the scale
@@ -1999,19 +2016,21 @@ gsk_transform_to_2d_components (GskTransform *self,
  * @out_dy: (out): return location for the translation
  *   in the y direction
  *
- * Converts a `GskTransform` to 2D affine transformation factors.
+ * Converts a transform to 2D affine transformation factors.
  *
  * To recreate an equivalent transform from the factors returned
  * by this function, use
  *
- *     gsk_transform_scale (gsk_transform_translate (NULL,
- *                                                   &GRAPHENE_POINT_T (dx, dy)),
- *                          sx, sy)
+ *     gsk_transform_scale (
+ *         gsk_transform_translate (
+ *             NULL,
+ *             &GRAPHENE_POINT_T (dx, dy)),
+ *         sx, sy)
  *
  * @self must be a 2D affine transformation. If you are not
  * sure, use
  *
- *     gsk_transform_get_category() >= %GSK_TRANSFORM_CATEGORY_2D_AFFINE
+ *     gsk_transform_get_category() >= GSK_TRANSFORM_CATEGORY_2D_AFFINE
  *
  * to check.
  */
@@ -2049,8 +2068,8 @@ gsk_transform_to_affine (GskTransform *self,
 
 /*<private>
  * gsk_transform_to_dihedral:
- * @self: a `GskTransform`
- * @out_dihedral: (out): return location for the 
+ * @self: a transform
+ * @out_dihedral: (out): return location for the dihedral transform
  * @out_scale_x: (out): return location for the scale
  *   factor in the x direction
  * @out_scale_y: (out): return location for the scale
@@ -2060,19 +2079,23 @@ gsk_transform_to_affine (GskTransform *self,
  * @out_dy: (out): return location for the translation
  *   in the y direction
  *
- * Converts a `GskTransform` to 2D affine transformation factors.
+ * Converts a transform to 2D dihedral transformation factors.
  *
  * To recreate an equivalent transform from the factors returned
  * by this function, use
  *
- *     gsk_transform_scale (gsk_transform_translate (NULL,
- *                                                   &GRAPHENE_POINT_T (dx, dy)),
- *                          sx, sy)
+ *     gsk_transform_dihedral (
+ *         gsk_transform_scale (
+ *             gsk_transform_translate (
+ *                 NULL,
+ *                 &GRAPHENE_POINT_T (dx, dy)),
+ *             sx, sy),
+ *         dihedral)
  *
- * @self must be a 2D affine transformation. If you are not
+ * @self must be a 2D dihedral transformation. If you are not
  * sure, use
  *
- *     gsk_transform_get_category() >= %GSK_TRANSFORM_CATEGORY_2D_AFFINE
+ *     gsk_transform_get_fine_category() >= GSK_FINE_TRANSFORM_CATEGORY_2D_DIHEDRAL
  *
  * to check.
  */
@@ -2107,20 +2130,48 @@ gsk_transform_to_dihedral (GskTransform *self,
                                          out_dx, out_dy);
 }
 
+/*< private >
+ * gsk_transform_dihedral:
+ * @next: (nullable) (transfer full): the next transform
+ * @dihedral: dihedral tansform to apply
+ *
+ * Applies a dihedral transform to @next.
+ *
+ * This function consumes @next. Use [method@Gsk.Transform.ref] first
+ * if you want to keep it around.
+ *
+ * Returns: (nullable): The new transform
+ **/
+GskTransform *
+gsk_transform_dihedral (GskTransform *next,
+                        GdkDihedral   dihedral)
+{
+  int rotate = dihedral & 3;
+  int flip = dihedral & 4;
+
+  if (flip)
+    next = gsk_transform_scale (next, -1.0, 1.0);
+
+  if (rotate)
+    next = gsk_transform_rotate (next, rotate * 90.0f);
+
+  return next;
+}
+
 /**
  * gsk_transform_to_translate:
- * @self: a `GskTransform`
+ * @self: a transform
  * @out_dx: (out): return location for the translation
  *   in the x direction
  * @out_dy: (out): return location for the translation
  *   in the y direction
  *
- * Converts a `GskTransform` to a translation operation.
+ * Converts a transform to a translation operation.
  *
  * @self must be a 2D transformation. If you are not
  * sure, use
  *
- *     gsk_transform_get_category() >= %GSK_TRANSFORM_CATEGORY_2D_TRANSLATE
+ *     gsk_transform_get_category() >= GSK_TRANSFORM_CATEGORY_2D_TRANSLATE
  *
  * to check.
  */
@@ -2151,8 +2202,8 @@ gsk_transform_to_translate (GskTransform *self,
 
 /**
  * gsk_transform_transform:
- * @next: (nullable) (transfer full): Transform to apply @other to
- * @other: (nullable):  Transform to apply
+ * @next: (nullable) (transfer full): transform to apply @other to
+ * @other: (nullable):  transform to apply
  *
  * Applies all the operations from @other to @next.
  *
@@ -2185,14 +2236,14 @@ gsk_transform_transform (GskTransform *next,
 
 /**
  * gsk_transform_invert:
- * @self: (nullable) (transfer full): Transform to invert
+ * @self: (nullable) (transfer full): transform to invert
  *
  * Inverts the given transform.
  *
- * If @self is not invertible, %NULL is returned.
- * Note that inverting %NULL also returns %NULL, which is
- * the correct inverse of %NULL. If you need to differentiate
- * between those cases, you should check @self is not %NULL
+ * If @self is not invertible, `NULL` is returned.
+ * Note that inverting `NULL` also returns `NULL`, which is
+ * the correct inverse of `NULL`. If you need to differentiate
+ * between those cases, you should check @self is not `NULL`
  * before calling this function.
  *
  * This function consumes @self. Use [method@Gsk.Transform.ref] first
@@ -2225,7 +2276,7 @@ gsk_transform_invert (GskTransform *self)
  *
  * Checks two transforms for equality.
  *
- * Returns: %TRUE if the two transforms perform the same operation
+ * Returns: true if the two transforms perform the same operation
  */
 gboolean
 gsk_transform_equal (GskTransform *first,
@@ -2251,7 +2302,7 @@ gsk_transform_equal (GskTransform *first,
 
 /**
  * gsk_transform_get_category:
- * @self: (nullable): A `GskTransform`
+ * @self: (nullable): a transform
  *
  * Returns the category this transform belongs to.
  *
@@ -2299,7 +2350,7 @@ gsk_transform_get_category (GskTransform *self)
  * Creates a new identity transform.
  *
  * This function is meant to be used by language
- * bindings. For C code, this is equivalent to using %NULL.
+ * bindings. For C code, this is equivalent to using `NULL`.
  *
  * Returns: A new identity transform
  */
@@ -2311,12 +2362,12 @@ gsk_transform_new (void)
 
 /**
  * gsk_transform_transform_bounds:
- * @self: a `GskTransform`
- * @rect: a `graphene_rect_t`
+ * @self: a transform
+ * @rect: the rectangle to transform
  * @out_rect: (out caller-allocates): return location for the bounds
  *   of the transformed rectangle
  *
- * Transforms a `graphene_rect_t` using the given transform @self.
+ * Transforms a rectangle using the given transform.
  *
  * The result is the bounding box containing the coplanar quad.
  */
@@ -2392,12 +2443,12 @@ gsk_transform_transform_bounds (GskTransform          *self,
 
 /**
  * gsk_transform_transform_point:
- * @self: a `GskTransform`
- * @point: a `graphene_point_t`
+ * @self: a transform
+ * @point: the point to transform
  * @out_point: (out caller-allocates): return location for
  *   the transformed point
  *
- * Transforms a `graphene_point_t` using the given transform @self.
+ * Transforms a point using the given transform.
  */
 void
 gsk_transform_transform_point (GskTransform           *self,
@@ -2688,18 +2739,17 @@ fail:
 /**
  * gsk_transform_parse:
  * @string: the string to parse
- * @out_transform: (out): The location to put the transform in
+ * @out_transform: (out): return location for the transform
  *
- * Parses the given @string into a transform and puts it in
- * @out_transform.
+ * Parses a given into a transform.
  *
  * Strings printed via [method@Gsk.Transform.to_string]
  * can be read in again successfully using this function.
  *
- * If @string does not describe a valid transform, %FALSE is
- * returned and %NULL is put in @out_transform.
+ * If @string does not describe a valid transform, false
+ * is returned and `NULL` is put in @out_transform.
  *
- * Returns: %TRUE if @string described a valid transform.
+ * Returns: true if @string described a valid transform
  */
 gboolean
 gsk_transform_parse (const char    *string,
@@ -2725,7 +2775,7 @@ gsk_transform_parse (const char    *string,
   gtk_css_parser_unref (parser);
   g_bytes_unref (bytes);
 
-  return result; 
+  return result;
 }
 
 /* Some of the graphene_matrix_transform apis yield unexpected
@@ -2808,4 +2858,4 @@ gsk_matrix_transform_bounds (const graphene_matrix_t *m,
 
 /* }}} */
 
-/* vim:set foldmethod=marker expandtab: */
+/* vim:set foldmethod=marker: */

@@ -29,6 +29,7 @@
 #include "gtkadjustment.h"
 #include "gtkadjustmentprivate.h"
 #include "gtkbuildable.h"
+#include "gtkbuilderprivate.h"
 #include "gtkdragsourceprivate.h"
 #include "gtkeventcontrollermotion.h"
 #include "gtkeventcontrollerscroll.h"
@@ -59,7 +60,12 @@
 /**
  * GtkScrolledWindow:
  *
- * `GtkScrolledWindow` is a container that makes its child scrollable.
+ * Makes its child scrollable.
+ *
+ * <picture>
+ *   <source srcset="scrolledwindow-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkScrolledWindow" src="scrolledwindow.png">
+ * </picture>
  *
  * It does so using either internally added scrollbars or externally
  * associated adjustments, and optionally draws a frame around the child.
@@ -130,9 +136,10 @@
  *
  * # Accessibility
  *
- * Until GTK 4.10, `GtkScrolledWindow` used the `GTK_ACCESSIBLE_ROLE_GROUP` role.
+ * Until GTK 4.10, `GtkScrolledWindow` used the [enum@Gtk.AccessibleRole.group] role.
  *
- * Starting from GTK 4.12, `GtkScrolledWindow` uses the `GTK_ACCESSIBLE_ROLE_GENERIC` role.
+ * Starting from GTK 4.12, `GtkScrolledWindow` uses the [enum@Gtk.AccessibleRole.generic]
+ * role.
  */
 
 /* scrolled window policy and size requisition handling:
@@ -417,9 +424,14 @@ gtk_scrolled_window_buildable_add_child (GtkBuildable *buildable,
                                          const char   *type)
 {
   if (GTK_IS_WIDGET (child))
-    gtk_scrolled_window_set_child (GTK_SCROLLED_WINDOW(buildable), GTK_WIDGET (child));
+    {
+      gtk_buildable_child_deprecation_warning (buildable, builder, NULL, "child");
+      gtk_scrolled_window_set_child (GTK_SCROLLED_WINDOW (buildable), GTK_WIDGET (child));
+    }
   else
-    parent_buildable_iface->add_child (buildable, builder, child, type);
+    {
+      parent_buildable_iface->add_child (buildable, builder, child, type);
+    }
 }
 
 static void
@@ -556,10 +568,23 @@ gtk_scrolled_window_get_request_mode (GtkWidget *widget)
   GtkScrolledWindow *scrolled_window = GTK_SCROLLED_WINDOW (widget);
   GtkScrolledWindowPrivate *priv = gtk_scrolled_window_get_instance_private (scrolled_window);
 
-  if (priv->child)
-    return gtk_widget_get_request_mode (priv->child);
-  else
+  if (!priv->child || !gtk_widget_get_visible (priv->child))
     return GTK_SIZE_REQUEST_CONSTANT_SIZE;
+
+  /* In many cases, we can actually get away with reporting constant-size,
+   * so try to do that unless our reported size actually depends on the
+   * child's size *and* the for_size we pass to the child depends on the
+   * for_size passed to us.
+   */
+  if ((priv->hscrollbar_policy == GTK_POLICY_NEVER &&
+       priv->vscrollbar_policy == GTK_POLICY_NEVER) ||
+      (priv->hscrollbar_policy == GTK_POLICY_NEVER &&
+       priv->propagate_natural_height) ||
+      (priv->vscrollbar_policy == GTK_POLICY_NEVER &&
+       priv->propagate_natural_width))
+    return gtk_widget_get_request_mode (priv->child);
+
+  return GTK_SIZE_REQUEST_CONSTANT_SIZE;
 }
 
 static void
@@ -1754,21 +1779,28 @@ gtk_scrolled_window_measure (GtkWidget      *widget,
   GtkScrolledWindowPrivate *priv = gtk_scrolled_window_get_instance_private (scrolled_window);
   int minimum_req = 0, natural_req = 0;
   GtkBorder sborder = { 0 };
+  gboolean need_child_size = FALSE;
 
   if (priv->child)
     gtk_scrollable_get_border (GTK_SCROLLABLE (priv->child), &sborder);
 
   /*
-   * First collect the child requisition
+   * First collect the child requisition, if we want to.
    */
-  if (priv->child && gtk_widget_get_visible (priv->child))
+  if (orientation == GTK_ORIENTATION_VERTICAL)
+    need_child_size = priv->propagate_natural_height || priv->vscrollbar_policy == GTK_POLICY_NEVER;
+  else
+    need_child_size = priv->propagate_natural_width || priv->hscrollbar_policy == GTK_POLICY_NEVER;
+
+  if (priv->child && gtk_widget_get_visible (priv->child) && need_child_size)
     {
       int min_child_size, nat_child_size;
       int child_for_size = -1;
 
       /* We can pass on the requested size if we have a scrollbar policy that prevents scrolling in that direction */
-      if ((orientation == GTK_ORIENTATION_VERTICAL && priv->hscrollbar_policy == GTK_POLICY_NEVER)
-          || (orientation == GTK_ORIENTATION_HORIZONTAL && priv->vscrollbar_policy == GTK_POLICY_NEVER))
+      if (for_size != -1 &&
+          ((orientation == GTK_ORIENTATION_VERTICAL && priv->hscrollbar_policy == GTK_POLICY_NEVER)
+           || (orientation == GTK_ORIENTATION_HORIZONTAL && priv->vscrollbar_policy == GTK_POLICY_NEVER)))
         {
           child_for_size = for_size;
 
@@ -1835,6 +1867,13 @@ gtk_scrolled_window_measure (GtkWidget      *widget,
               natural_req = CLAMP (natural_req, min, max);
             }
         }
+    }
+  else
+    {
+      if (orientation == GTK_ORIENTATION_HORIZONTAL)
+        minimum_req = MAX (0, priv->min_content_width);
+      else
+        minimum_req = MAX (0, priv->min_content_height);
     }
 
   /* Ensure we make requests with natural size >= minimum size */
@@ -3263,11 +3302,10 @@ scrolled_window_deceleration_cb (GtkWidget         *widget,
   GtkScrolledWindowPrivate *priv = gtk_scrolled_window_get_instance_private (scrolled_window);
   GtkAdjustment *hadjustment, *vadjustment;
   gint64 current_time;
-  double position, elapsed;
+  double position;
   gboolean retval = G_SOURCE_REMOVE;
 
   current_time = gdk_frame_clock_get_frame_time (frame_clock);
-  elapsed = (current_time - priv->last_deceleration_time) / (double)G_TIME_SPAN_SECOND;
   priv->last_deceleration_time = current_time;
 
   hadjustment = gtk_scrollbar_get_adjustment (GTK_SCROLLBAR (priv->hscrollbar));
@@ -3276,7 +3314,7 @@ scrolled_window_deceleration_cb (GtkWidget         *widget,
   gtk_scrolled_window_invalidate_overshoot (scrolled_window);
 
   if (priv->hscrolling &&
-      gtk_kinetic_scrolling_tick (priv->hscrolling, elapsed, &position, NULL))
+      gtk_kinetic_scrolling_tick (priv->hscrolling, current_time, &position, NULL))
     {
       priv->unclamped_hadj_value = position;
       gtk_adjustment_set_value (hadjustment, position);
@@ -3284,7 +3322,7 @@ scrolled_window_deceleration_cb (GtkWidget         *widget,
     }
 
   if (priv->vscrolling &&
-      gtk_kinetic_scrolling_tick (priv->vscrolling, elapsed, &position, NULL))
+      gtk_kinetic_scrolling_tick (priv->vscrolling, current_time, &position, NULL))
     {
       priv->unclamped_vadj_value = position;
       gtk_adjustment_set_value (vadjustment, position);
@@ -3320,13 +3358,15 @@ kinetic_scroll_stop_notify (GtkScrolledWindow *scrolled_window)
 }
 
 static void
-gtk_scrolled_window_accumulate_velocity (GtkKineticScrolling **scrolling, double elapsed, double *velocity)
+gtk_scrolled_window_accumulate_velocity (GtkKineticScrolling **scrolling,
+                                         gint64                current_time,
+                                         double               *velocity)
 {
     if (!*scrolling)
       return;
 
     double last_velocity;
-    gtk_kinetic_scrolling_tick (*scrolling, elapsed, NULL, &last_velocity);
+    gtk_kinetic_scrolling_tick (*scrolling, current_time, NULL, &last_velocity);
     if (((*velocity >= 0) == (last_velocity >= 0)) &&
         (fabs (*velocity) >= fabs (last_velocity) * VELOCITY_ACCUMULATION_FLOOR))
       {
@@ -3344,7 +3384,6 @@ gtk_scrolled_window_start_deceleration (GtkScrolledWindow *scrolled_window)
   GtkScrolledWindowPrivate *priv = gtk_scrolled_window_get_instance_private (scrolled_window);
   GdkFrameClock *frame_clock;
   gint64 current_time;
-  double elapsed;
   int overshoot_x, overshoot_y;
 
   g_return_if_fail (priv->deceleration_id == 0);
@@ -3352,7 +3391,6 @@ gtk_scrolled_window_start_deceleration (GtkScrolledWindow *scrolled_window)
   frame_clock = gtk_widget_get_frame_clock (GTK_WIDGET (scrolled_window));
 
   current_time = gdk_frame_clock_get_frame_time (frame_clock);
-  elapsed = (current_time - priv->last_deceleration_time) / (double)G_TIME_SPAN_SECOND;
   priv->last_deceleration_time = current_time;
 
   _gtk_scrolled_window_get_overshoot (scrolled_window, &overshoot_x, &overshoot_y);
@@ -3362,7 +3400,7 @@ gtk_scrolled_window_start_deceleration (GtkScrolledWindow *scrolled_window)
       double lower,upper;
       GtkAdjustment *hadjustment;
 
-      gtk_scrolled_window_accumulate_velocity (&priv->hscrolling, elapsed, &priv->x_velocity);
+      gtk_scrolled_window_accumulate_velocity (&priv->hscrolling, current_time, &priv->x_velocity);
       g_clear_pointer (&priv->hscrolling, gtk_kinetic_scrolling_free);
 
       if (priv->x_velocity != 0 || overshoot_x != 0)
@@ -3372,7 +3410,8 @@ gtk_scrolled_window_start_deceleration (GtkScrolledWindow *scrolled_window)
           upper = gtk_adjustment_get_upper (hadjustment);
           upper -= gtk_adjustment_get_page_size (hadjustment);
           priv->hscrolling =
-            gtk_kinetic_scrolling_new (lower,
+            gtk_kinetic_scrolling_new (current_time,
+                                       lower,
                                        upper,
                                        MAX_OVERSHOOT_DISTANCE,
                                        DECELERATION_FRICTION,
@@ -3389,7 +3428,7 @@ gtk_scrolled_window_start_deceleration (GtkScrolledWindow *scrolled_window)
       double lower,upper;
       GtkAdjustment *vadjustment;
 
-      gtk_scrolled_window_accumulate_velocity (&priv->vscrolling, elapsed, &priv->y_velocity);
+      gtk_scrolled_window_accumulate_velocity (&priv->vscrolling, current_time, &priv->y_velocity);
       g_clear_pointer (&priv->vscrolling, gtk_kinetic_scrolling_free);
 
       if (priv->y_velocity != 0 || overshoot_y != 0)
@@ -3399,7 +3438,8 @@ gtk_scrolled_window_start_deceleration (GtkScrolledWindow *scrolled_window)
           upper = gtk_adjustment_get_upper(vadjustment);
           upper -= gtk_adjustment_get_page_size(vadjustment);
           priv->vscrolling =
-            gtk_kinetic_scrolling_new (lower,
+            gtk_kinetic_scrolling_new (current_time,
+                                       lower,
                                        upper,
                                        MAX_OVERSHOOT_DISTANCE,
                                        DECELERATION_FRICTION,

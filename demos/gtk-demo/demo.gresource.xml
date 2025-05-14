@@ -77,6 +77,7 @@
   </gresource>
   <gresource prefix="/cursors">
     <file>cursors.ui</file>
+    <file>cursors.css</file>
   </gresource>
   <gresource prefix="/cursors/images">
     <file>alias_cursor.png</file>
@@ -146,21 +147,6 @@
     <file>cogs.glsl</file>
     <file>glowingstars.glsl</file>
   </gresource>
-  <gresource prefix="/gltransition">
-    <file>gtkshaderstack.c</file>
-    <file>gtkshaderstack.h</file>
-    <file>gtkshaderbin.h</file>
-    <file>gtkshaderbin.c</file>
-    <file>gskshaderpaintable.h</file>
-    <file>gskshaderpaintable.c</file>
-    <file>wind.glsl</file>
-    <file>radial.glsl</file>
-    <file>crosswarp.glsl</file>
-    <file>kaleidoscope.glsl</file>
-    <file>cogs2.glsl</file>
-    <file>ripple.glsl</file>
-    <file>background.glsl</file>
-  </gresource>
   <gresource prefix="/iconscroll">
     <file>iconscroll.ui</file>
   </gresource>
@@ -216,9 +202,9 @@
     <file>main.ui</file>
   </gresource>
   <gresource prefix="/menu">
-    <file>demo3widget.c</file>
-    <file>demo3widget.h</file>
-    <file>demo3widget.ui</file>
+    <file>imageview.c</file>
+    <file>imageview.h</file>
+    <file>imageview.ui</file>
   </gresource>
   <gresource prefix="/mask">
     <file>demo4widget.c</file>
@@ -288,6 +274,7 @@
     <file>filtermodel.c</file>
     <file>fishbowl.c</file>
     <file>fixed.c</file>
+    <file>fixed2.c</file>
     <file>flowbox.c</file>
     <file>frames.c</file>
     <file>font_features.c</file>
@@ -296,7 +283,6 @@
     <file>gears.c</file>
     <file>gestures.c</file>
     <file>glarea.c</file>
-    <file>gltransition.c</file>
     <file>headerbar.c</file>
     <file>hypertext.c</file>
     <file>iconscroll.c</file>
@@ -457,6 +443,7 @@
     <file>portland-rose-thumbnail.png</file>
     <file>large-image-thumbnail.png</file>
     <file compressed="true">large-image.png</file>
+    <file compressed="true">Moby-Dick.txt</file>
   </gresource>
   <gresource prefix="/org/gtk/Demo4/gtk">
     <file preprocess="xml-stripblanks">help-overlay.ui</file>

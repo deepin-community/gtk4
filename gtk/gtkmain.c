@@ -43,9 +43,7 @@
 #include <sys/types.h>          /* For uid_t, gid_t */
 
 #ifdef G_OS_WIN32
-#define STRICT
 #include <windows.h>
-#undef STRICT
 #endif
 
 #include <hb-glib.h>
@@ -192,7 +190,7 @@ static const GdkDebugKey gtk_debug_keys[] = {
   { "text", GTK_DEBUG_TEXT, "Information about GtkTextView" },
   { "tree", GTK_DEBUG_TREE, "Information about GtkTreeView" },
   { "layout", GTK_DEBUG_LAYOUT, "Information from layout managers" },
-  { "builder", GTK_DEBUG_BUILDER, "Trace GtkBuilder operation" },
+  { "builder-trace", GTK_DEBUG_BUILDER_TRACE, "Trace GtkBuilder operation" },
   { "builder-objects", GTK_DEBUG_BUILDER_OBJECTS, "Log unused GtkBuilder objects" },
   { "no-css-cache", GTK_DEBUG_NO_CSS_CACHE, "Disable style property cache" },
   { "interactive", GTK_DEBUG_INTERACTIVE, "Enable the GTK inspector" },
@@ -201,6 +199,7 @@ static const GdkDebugKey gtk_debug_keys[] = {
   { "iconfallback", GTK_DEBUG_ICONFALLBACK, "Information about icon fallback" },
   { "invert-text-dir", GTK_DEBUG_INVERT_TEXT_DIR, "Invert the default text direction" },
   { "css", GTK_DEBUG_CSS, "Information about deprecated CSS features" },
+  { "builder", GTK_DEBUG_BUILDER, "Information about deprecated GtkBuilder features" },
 };
 
 /* This checks to see if the process is running suid or sgid
@@ -248,12 +247,11 @@ static gboolean do_setlocale = TRUE;
 /**
  * gtk_disable_setlocale:
  *
- * Prevents [func@Gtk.init] and [func@Gtk.init_check] from automatically calling
- * `setlocale (LC_ALL, "")`.
+ * Prevents [func@Gtk.init] and [func@Gtk.init_check] from calling `setlocale()`.
  *
  * You would want to use this function if you wanted to set the locale for
- * your program to something other than the user’s locale, or if
- * you wanted to set different values for different locale categories.
+ * your program to something other than the user’s locale, or if you wanted
+ * to set different values for different locale categories.
  *
  * Most programs should not need to call this function.
  **/
@@ -264,6 +262,26 @@ gtk_disable_setlocale (void)
     g_warning ("gtk_disable_setlocale() must be called before gtk_init()");
 
   do_setlocale = FALSE;
+}
+
+/**
+ * gtk_disable_portals:
+ *
+ * Prevents GTK from using portals.
+ *
+ * This is equivalent to setting `GDK_DEBUG=no-portals` in the environment.
+ *
+ * This should only be used in portal implementations, apps must not call it.
+ *
+ * Since: 4.18
+ */
+void
+gtk_disable_portals (void)
+{
+  if (pre_initialized)
+    g_warning ("gtk_disable_portals() must be called before gtk_init()");
+
+  gdk_disable_portals ();
 }
 
 #ifdef G_PLATFORM_WIN32
@@ -585,16 +603,18 @@ do_post_parse_initialization (void)
 /**
  * gtk_init_check:
  *
- * This function does the same work as gtk_init() with only a single
- * change: It does not terminate the program if the windowing system
- * can’t be initialized. Instead it returns %FALSE on failure.
+ * Initializes GTK.
+ *
+ * This function does the same work as [func@Gtk.init] with only a
+ * single change: It does not terminate the program if the windowing
+ * system can’t be initialized. Instead it returns false on failure.
  *
  * This way the application can fall back to some other means of
  * communication with the user - for example a curses or command line
  * interface.
  *
- * Returns: %TRUE if the windowing system has been successfully
- *   initialized, %FALSE otherwise
+ * Returns: true if the windowing system has been successfully
+ *   initialized, false otherwise
  */
 gboolean
 gtk_init_check (void)
@@ -630,19 +650,22 @@ gtk_init_check (void)
 /**
  * gtk_init:
  *
- * Call this function before using any other GTK functions in your GUI
- * applications. It will initialize everything needed to operate the
- * toolkit.
+ * Initializes GTK.
  *
- * If you are using `GtkApplication`, you usually don't have to call this
- * function; the `GApplication::startup` handler does it for you. Though,
- * if you are using GApplication methods that will be invoked before `startup`,
- * such as `local_command_line`, you may need to initialize stuff explicitly.
+ * This function must be called before using any other GTK functions
+ * in your GUI applications.
  *
- * This function will terminate your program if it was unable to
- * initialize the windowing system for some reason. If you want
- * your program to fall back to a textual interface, call
- * [func@Gtk.init_check] instead.
+ * It will initialize everything needed to operate the toolkit. In particular,
+ * it will open the default display (see [func@Gdk.Display.get_default]).
+ *
+ * If you are using [class@Gtk.Application], you usually don't have to call this
+ * function; the [vfunc@Gio.Application.startup] handler does it for you. Though,
+ * if you are using `GApplication` methods that will be invoked before `startup`,
+ * such as `local_command_line`, you may need to initialize GTK explicitly.
+ *
+ * This function will terminate your program if it was unable to initialize
+ * the windowing system for some reason. If you want your program to fall back
+ * to a textual interface, call [func@Gtk.init_check] instead.
  *
  * GTK calls `signal (SIGPIPE, SIG_IGN)` during initialization, to ignore
  * SIGPIPE signals, since these are almost never wanted in graphical
@@ -725,7 +748,7 @@ gtk_init_check_abi_check (int num_checks, size_t sizeof_GtkWindow, size_t sizeof
 /**
  * gtk_is_initialized:
  *
- * Use this function to check if GTK has been initialized.
+ * Returns whether GTK has been initialized.
  *
  * See [func@Gtk.init].
  *
@@ -741,23 +764,23 @@ gtk_is_initialized (void)
 /**
  * gtk_get_locale_direction:
  *
- * Get the direction of the current locale. This is the expected
- * reading direction for text and UI.
+ * Gets the direction of the current locale.
+ *
+ * This is the expected reading direction for text and UI.
  *
  * This function depends on the current locale being set with
- * setlocale() and will default to setting the %GTK_TEXT_DIR_LTR
- * direction otherwise. %GTK_TEXT_DIR_NONE will never be returned.
+ * `setlocale()` and will default to setting the `GTK_TEXT_DIR_LTR`
+ * direction otherwise. `GTK_TEXT_DIR_NONE` will never be returned.
  *
- * GTK sets the default text direction according to the locale
- * during gtk_init(), and you should normally use
- * gtk_widget_get_direction() or gtk_widget_get_default_direction()
- * to obtain the current direction.
+ * GTK sets the default text direction according to the locale during
+ * [func@Gtk.init], and you should normally use [method@Gtk.Widget.get_direction]
+ * or [func@Gtk.Widget.get_default_direction] to obtain the current direction.
  *
  * This function is only needed rare cases when the locale is
  * changed after GTK has already been initialized. In this case,
  * you can use it to update the default text direction as follows:
  *
- * |[<!-- language="C" -->
+ * ```c
  * #include <locale.h>
  *
  * static void
@@ -766,7 +789,7 @@ gtk_is_initialized (void)
  *   setlocale (LC_ALL, new_locale);
  *   gtk_widget_set_default_direction (gtk_get_locale_direction ());
  * }
- * ]|
+ * ```
  *
  * Returns: the direction of the current locale
  */
@@ -1247,6 +1270,8 @@ update_pointer_focus_state (GtkWindow *toplevel,
   GtkWidget *old_target = NULL;
   GdkEventSequence *sequence;
   GdkDevice *device;
+  GtkWidget *event_widget;
+  graphene_point_t p;
   double x, y;
   double nx, ny;
 
@@ -1257,12 +1282,18 @@ update_pointer_focus_state (GtkWindow *toplevel,
     return old_target;
 
   gdk_event_get_position (event, &x, &y);
+  p = GRAPHENE_POINT_INIT (x, y);
+
+  event_widget  = gtk_get_event_widget (event);
+  if (!gtk_widget_compute_point (event_widget, GTK_WIDGET (toplevel), &p, &p))
+    return old_target;
+
   gtk_native_get_surface_transform (GTK_NATIVE (toplevel), &nx, &ny);
-  x -= nx;
-  y -= ny;
+  p.x -= nx;
+  p.y -= ny;
 
   gtk_window_update_pointer_focus (toplevel, device, sequence,
-                                   new_target, x, y);
+                                   new_target, p.x, p.y);
 
   return old_target;
 }

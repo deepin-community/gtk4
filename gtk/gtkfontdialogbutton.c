@@ -40,10 +40,12 @@ static void     update_button_sensitivity
 /**
  * GtkFontDialogButton:
  *
- * The `GtkFontDialogButton` is wrapped around a [class@Gtk.FontDialog]
- * and allows to open a font chooser dialog to change the font.
+ * Opens a font chooser dialog to select a font.
  *
- * ![An example GtkFontDialogButton](font-button.png)
+ * <picture>
+ *   <source srcset="font-button-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkFontDialogButton" src="font-button.png">
+ * </picture>
  *
  * It is suitable widget for selecting a font in a preference dialog.
  *
@@ -621,6 +623,9 @@ update_font_data (GtkFontDialogButton *self)
         }
     }
 
+  if (self->font_family == NULL)
+    return;
+
   for (unsigned i = 0; i < g_list_model_get_n_items (G_LIST_MODEL (self->font_family)); i++)
     {
       PangoFontFace *face = g_list_model_get_item (G_LIST_MODEL (self->font_family), i);
@@ -1089,4 +1094,4 @@ gtk_font_dialog_button_get_use_size (GtkFontDialogButton *self)
 
 /* }}} */
 
-/* vim:set foldmethod=marker expandtab: */
+/* vim:set foldmethod=marker: */

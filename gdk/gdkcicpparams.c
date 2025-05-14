@@ -25,8 +25,9 @@
 /**
  * GdkCicpParams:
  *
- * The `GdkCicpParams` struct contains the parameters that define
- * a colorstate according to the ITU-T H.273
+ * Contains the parameters that define a colorstate with cicp parameters.
+ *
+ * Cicp parameters are specified in the ITU-T H.273
  * [specification](https://www.itu.int/rec/T-REC-H.273/en).
  *
  * See the documentation of individual properties for supported values.
@@ -428,7 +429,7 @@ gdk_cicp_params_set_range (GdkCicpParams *self,
  * supported by GTK. In that case, `NULL` is returned, and @error is set
  * with an error message that can be presented to the user.
  *
- * Returns: (transfer full) (nullable): A newly allocated `GdkColorState`
+ * Returns: (transfer full): A newly allocated `GdkColorState`
  *
  * Since: 4.16
  */
@@ -478,4 +479,4 @@ gdk_cicp_params_get_cicp (GdkCicpParams *self)
 
 /* }}} */
 
-/* vim:set foldmethod=marker expandtab: */
+/* vim:set foldmethod=marker: */

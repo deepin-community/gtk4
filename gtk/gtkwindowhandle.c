@@ -23,6 +23,7 @@
 #include "gtkbinlayout.h"
 #include "gtkbox.h"
 #include "gtkbuildable.h"
+#include "gtkbuilderprivate.h"
 #include "gtkdragsourceprivate.h"
 #include "gtkgestureclick.h"
 #include "gtkgesturedrag.h"
@@ -39,10 +40,11 @@
 /**
  * GtkWindowHandle:
  *
- * `GtkWindowHandle` is a titlebar area widget.
+ * Implements titlebar functionality for a window.
  *
- * When added into a window, it can be dragged to move the window, and handles
- * right click, double click and middle click as expected of a titlebar.
+ * When added into a window, it can be dragged to move the window,
+ * and it implements the right click, double click and middle click
+ * behaviors that are expected of a titlebar.
  *
  * # CSS nodes
  *
@@ -50,9 +52,10 @@
  *
  * # Accessibility
  *
- * Until GTK 4.10, `GtkWindowHandle` used the `GTK_ACCESSIBLE_ROLE_GROUP` role.
+ * Until GTK 4.10, `GtkWindowHandle` used the [enum@Gtk.AccessibleRole.group] role.
  *
- * Starting from GTK 4.12, `GtkWindowHandle` uses the `GTK_ACCESSIBLE_ROLE_GENERIC` role.
+ * Starting from GTK 4.12, `GtkWindowHandle` uses the [enum@Gtk.AccessibleRole.generic]
+ * role.
  */
 
 struct _GtkWindowHandle {
@@ -576,9 +579,14 @@ gtk_window_handle_buildable_add_child (GtkBuildable *buildable,
                                        const char   *type)
 {
   if (GTK_IS_WIDGET (child))
-    gtk_window_handle_set_child (GTK_WINDOW_HANDLE (buildable), GTK_WIDGET (child));
+    {
+      gtk_buildable_child_deprecation_warning (buildable, builder, NULL, "child");
+      gtk_window_handle_set_child (GTK_WINDOW_HANDLE (buildable), GTK_WIDGET (child));
+    }
   else
-    parent_buildable_iface->add_child (buildable, builder, child, type);
+    {
+      parent_buildable_iface->add_child (buildable, builder, child, type);
+    }
 }
 
 static void

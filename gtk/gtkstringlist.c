@@ -28,7 +28,7 @@
 /**
  * GtkStringList:
  *
- * `GtkStringList` is a list model that wraps an array of strings.
+ * A list model that wraps an array of strings.
  *
  * The objects in the model are of type [class@Gtk.StringObject] and have
  * a "string" property that can be used inside expressions.
@@ -62,7 +62,7 @@
 /**
  * GtkStringObject:
  *
- * `GtkStringObject` is the type of items in a `GtkStringList`.
+ * The type of items in a `GtkStringList`.
  *
  * A `GtkStringObject` is a wrapper around a `const char*`; it has
  * a [property@Gtk.StringObject:string] property that can be used
@@ -362,6 +362,8 @@ gtk_string_list_buildable_custom_tag_start (GtkBuildable       *buildable,
   if (strcmp (tagname, "items") == 0)
     {
       ItemParserData *data;
+
+      gtk_buildable_tag_deprecation_warning (buildable, builder, "items", "strings");
 
       data = g_new0 (ItemParserData, 1);
       data->builder = g_object_ref (builder);
@@ -696,5 +698,42 @@ gtk_string_list_get_string (GtkStringList *self,
   return objects_get (&self->items, position)->string;
 }
 
+/**
+ * gtk_string_list_find:
+ * @self: a `GtkStringList`
+ * @string: the string to find
+ *
+ * Gets the position of the @string in @self.
+ *
+ * If @self does not contain @string item, `G_MAXUINT` is returned.
+ *
+ * Returns: the position of the string
+ *
+ * Since: 4.18
+ */
+guint
+gtk_string_list_find (GtkStringList *self,
+                      const char    *string)
+{
+  guint position;
+  guint items_size;
+
+  g_return_val_if_fail (GTK_IS_STRING_LIST (self), G_MAXUINT);
+
+  position = G_MAXUINT;
+  items_size = objects_get_size (&self->items);
+  for (guint i = 0; i < items_size; i++)
+  {
+    if (strcmp (string, objects_get (&self->items, i)->string) == 0)
+    {
+      position = i;
+      break;
+    }
+  }
+
+  return position;
+}
+
 /* }}} */
-/* vim:set foldmethod=marker expandtab: */
+
+/* vim:set foldmethod=marker: */

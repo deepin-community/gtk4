@@ -30,7 +30,7 @@
 /**
  * GtkAspectFrame:
  *
- * `GtkAspectFrame` preserves the aspect ratio of its child.
+ * Preserves the aspect ratio of its child.
  *
  * The frame can respect the aspect ratio of the child widget,
  * or use its own aspect ratio.
@@ -41,9 +41,9 @@
  *
  * # Accessibility
  *
- * Until GTK 4.10, `GtkAspectFrame` used the `GTK_ACCESSIBLE_ROLE_GROUP` role.
+ * Until GTK 4.10, `GtkAspectFrame` used the [enum@Gtk.AccessibleRole.group] role.
  *
- * Starting from GTK 4.12, `GtkAspectFrame` uses the `GTK_ACCESSIBLE_ROLE_GENERIC` role.
+ * Starting from GTK 4.12, `GtkAspectFrame` uses the [enum@Gtk.AccessibleRole.generic] role.
 
  */
 
@@ -57,6 +57,7 @@
 
 #include "gtkwidgetprivate.h"
 #include "gtkprivate.h"
+#include "gtkbuilderprivate.h"
 
 
 typedef struct _GtkAspectFrameClass GtkAspectFrameClass;
@@ -288,9 +289,14 @@ gtk_aspect_frame_buildable_add_child (GtkBuildable *buildable,
                                       const char   *type)
 {
   if (GTK_IS_WIDGET (child))
-    gtk_aspect_frame_set_child (GTK_ASPECT_FRAME (buildable), GTK_WIDGET (child));
+    {
+      gtk_buildable_child_deprecation_warning (buildable, builder, NULL, "child");
+      gtk_aspect_frame_set_child (GTK_ASPECT_FRAME (buildable), GTK_WIDGET (child));
+    }
   else
-    parent_buildable_iface->add_child (buildable, builder, child, type);
+    {
+      parent_buildable_iface->add_child (buildable, builder, child, type);
+    }
 }
 
 static void

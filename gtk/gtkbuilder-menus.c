@@ -37,6 +37,7 @@ typedef struct
 {
   ParserData *parser_data;
   struct frame frame;
+  char *id;
 
   /* attributes */
   char         *attribute;
@@ -162,12 +163,13 @@ gtk_builder_menu_start_element (GtkBuildableParseContext  *context,
       /* Can have '<attribute>' or '<link>' here. */
       if (g_str_equal (element_name, "attribute"))
         {
-          const char *typestr;
-          const char *name;
-          const char *ctxt;
+          const char *typestr = NULL;
+          const char *name = NULL;
+          const char *ctxt = NULL;
+          const char *translatable = NULL;
 
           if (COLLECT (STRING,             "name", &name,
-                       OPTIONAL | BOOLEAN, "translatable", &state->translatable,
+                       OPTIONAL | STRING , "translatable", &translatable,
                        OPTIONAL | STRING,  "context", &ctxt,
                        OPTIONAL | STRING,  "comments", NULL, /* ignore, just for translators */
                        OPTIONAL | STRING,  "type", &typestr))
@@ -177,6 +179,12 @@ gtk_builder_menu_start_element (GtkBuildableParseContext  *context,
                   g_set_error (error, G_VARIANT_PARSE_ERROR,
                                G_VARIANT_PARSE_ERROR_INVALID_TYPE_STRING,
                                "Invalid GVariant type string '%s'", typestr);
+                  return;
+                }
+
+              if (translatable &&
+                  !gtk_builder_parse_translatable (translatable, &state->translatable, error))
+                {
                   return;
                 }
 
@@ -259,12 +267,12 @@ gtk_builder_menu_end_element (GtkBuildableParseContext  *context,
           else
             translated = g_dgettext (state->parser_data->domain, text);
 
-         if (translated != text)
-           {
-             /* it's safe because we know that translated != text */
-             g_free (text);
-             text = g_strdup (translated);
-           }
+          if (translated != text)
+            {
+              /* it's safe because we know that translated != text */
+              g_free (text);
+              text = g_strdup (translated);
+            }
         }
 
       if (state->type == NULL)
@@ -287,6 +295,8 @@ gtk_builder_menu_end_element (GtkBuildableParseContext  *context,
           g_variant_type_free (state->type);
           state->type = NULL;
         }
+
+      state->translatable = FALSE;
 
       g_free (state->context);
       state->context = NULL;
@@ -366,33 +376,53 @@ _gtk_builder_menu_start (ParserData   *parser_data,
                          GError      **error)
 {
   GtkBuilderMenuState *state;
-  char *id;
+  const char *id = NULL;
+  char *internal_id = NULL;
 
   state = g_new0 (GtkBuilderMenuState, 1);
   state->parser_data = parser_data;
   gtk_buildable_parse_context_push (&parser_data->ctx, &gtk_builder_menu_subparser, state);
 
-  if (COLLECT (STRING, "id", &id))
+  if (COLLECT (STRING | OPTIONAL, "id", &id))
     {
       GMenu *menu;
+
+      if (id == NULL)
+        {
+          internal_id = g_strdup_printf ("___object_%d___", ++parser_data->object_counter);
+          id = internal_id;
+        }
 
       menu = g_menu_new ();
       _gtk_builder_add_object (state->parser_data->builder, id, G_OBJECT (menu));
       gtk_builder_menu_push_frame (state, menu, NULL);
       g_object_unref (menu);
+      state->id = g_strdup (id);
     }
+
+  g_free (internal_id);
 }
 
-void
+char *
 _gtk_builder_menu_end (ParserData *parser_data)
 {
   GtkBuilderMenuState *state;
+  char *id;
 
   state = gtk_buildable_parse_context_pop (&parser_data->ctx);
+  id = state->id;
   gtk_builder_menu_pop_frame (state);
 
   g_assert (state->frame.prev == NULL);
   g_assert (state->frame.item == NULL);
   g_assert (state->frame.menu == NULL);
+
+  g_assert (state->string == NULL);
+  g_assert (state->attribute == NULL);
+  g_assert (state->context == NULL);
+  g_assert (!state->translatable);
+
   g_free (state);
+
+  return id;
 }

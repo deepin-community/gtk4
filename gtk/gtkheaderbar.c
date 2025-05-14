@@ -31,15 +31,19 @@
 #include "gtkwidgetprivate.h"
 #include "gtkwindowcontrols.h"
 #include "gtkwindowhandle.h"
+#include "gtkbuilderprivate.h"
 
 #include <string.h>
 
 /**
  * GtkHeaderBar:
  *
- * `GtkHeaderBar` is a widget for creating custom title bars for windows.
+ * Creates a custom titlebar for a window.
  *
- * ![An example GtkHeaderBar](headerbar.png)
+ * <picture>
+ *   <source srcset="headerbar-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkHeaderBar" src="headerbar.png">
+ * </picture>
  *
  * `GtkHeaderBar` is similar to a horizontal `GtkCenterBox`. It allows
  * children to be placed at the start or the end. In addition, it allows
@@ -107,7 +111,7 @@
  *
  * # Accessibility
  *
- * `GtkHeaderBar` uses the %GTK_ACCESSIBLE_ROLE_GROUP role.
+ * `GtkHeaderBar` uses the [enum@Gtk.AccessibleRole.group] role.
  */
 
 #define MIN_TITLE_CHARS 5
@@ -130,6 +134,7 @@ struct _GtkHeaderBar
   char *decoration_layout;
 
   guint show_title_buttons : 1;
+  guint use_native_controls : 1;
   guint track_default_decoration : 1;
 };
 
@@ -145,6 +150,7 @@ enum {
   PROP_TITLE_WIDGET,
   PROP_SHOW_TITLE_BUTTONS,
   PROP_DECORATION_LAYOUT,
+  PROP_USE_NATIVE_CONTROLS,
   LAST_PROP
 };
 
@@ -165,6 +171,9 @@ create_window_controls (GtkHeaderBar *bar)
   g_object_bind_property (bar, "decoration-layout",
                           controls, "decoration-layout",
                           G_BINDING_SYNC_CREATE);
+  g_object_bind_property (bar, "use-native-controls",
+                          controls, "use-native-controls",
+                          G_BINDING_SYNC_CREATE);
   g_object_bind_property (controls, "empty",
                           controls, "visible",
                           G_BINDING_SYNC_CREATE | G_BINDING_INVERT_BOOLEAN);
@@ -174,6 +183,9 @@ create_window_controls (GtkHeaderBar *bar)
   controls = gtk_window_controls_new (GTK_PACK_END);
   g_object_bind_property (bar, "decoration-layout",
                           controls, "decoration-layout",
+                          G_BINDING_SYNC_CREATE);
+  g_object_bind_property (bar, "use-native-controls",
+                          controls, "use-native-controls",
                           G_BINDING_SYNC_CREATE);
   g_object_bind_property (controls, "empty",
                           controls, "visible",
@@ -282,19 +294,19 @@ construct_title_label (GtkHeaderBar *bar)
 
 /**
  * gtk_header_bar_set_title_widget:
- * @bar: a `GtkHeaderBar`
+ * @bar: a header bar
  * @title_widget: (nullable): a widget to use for a title
  *
- * Sets the title for the `GtkHeaderBar`.
+ * Sets the title for the header bar.
  *
- * When set to %NULL, the headerbar will display the title of
+ * When set to `NULL`, the headerbar will display the title of
  * the window it is contained in.
  *
  * The title should help a user identify the current view.
  * To achieve the same style as the builtin title, use the
  * “title” style class.
  *
- * You should set the title widget to %NULL, for the window
+ * You should set the title widget to `NULL`, for the window
  * title label to be visible again.
  */
 void
@@ -330,13 +342,13 @@ gtk_header_bar_set_title_widget (GtkHeaderBar *bar,
 
 /**
  * gtk_header_bar_get_title_widget:
- * @bar: a `GtkHeaderBar`
+ * @bar: a header bar
  *
- * Retrieves the title widget of the header.
+ * Retrieves the title widget of the header bar.
  *
  * See [method@Gtk.HeaderBar.set_title_widget].
  *
- * Returns: (nullable) (transfer none): the title widget of the header
+ * Returns: (nullable) (transfer none): the title widget
  */
 GtkWidget *
 gtk_header_bar_get_title_widget (GtkHeaderBar *bar)
@@ -418,6 +430,10 @@ gtk_header_bar_get_property (GObject    *object,
       g_value_set_string (value, gtk_header_bar_get_decoration_layout (bar));
       break;
 
+    case PROP_USE_NATIVE_CONTROLS:
+      g_value_set_boolean (value, gtk_header_bar_get_use_native_controls (bar));
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -444,6 +460,10 @@ gtk_header_bar_set_property (GObject      *object,
 
     case PROP_DECORATION_LAYOUT:
       gtk_header_bar_set_decoration_layout (bar, g_value_get_string (value));
+      break;
+
+    case PROP_USE_NATIVE_CONTROLS:
+      gtk_header_bar_set_use_native_controls (bar, g_value_get_boolean (value));
       break;
 
     default:
@@ -474,10 +494,10 @@ gtk_header_bar_pack (GtkHeaderBar *bar,
 
 /**
  * gtk_header_bar_remove:
- * @bar: a `GtkHeaderBar`
+ * @bar: a header bar
  * @child: the child to remove
  *
- * Removes a child from the `GtkHeaderBar`.
+ * Removes a child from the header bar.
  *
  * The child must have been added with
  * [method@Gtk.HeaderBar.pack_start],
@@ -600,6 +620,25 @@ gtk_header_bar_class_init (GtkHeaderBarClass *class)
                            NULL,
                            GTK_PARAM_READWRITE);
 
+  /**
+   * GtkHeaderBar:use-native-controls:
+   *
+   * Whether to show platform native close/minimize/maximize buttons.
+   *
+   * For macOS, the [property@Gtk.HeaderBar:decoration-layout] property
+   * can be used to enable/disable controls.
+   *
+   * On Linux, this option has no effect.
+   *
+   * See also [Using GTK on Apple macOS](osx.html?native-window-controls).
+   *
+   * Since: 4.18
+   */
+  header_bar_props[PROP_USE_NATIVE_CONTROLS] =
+      g_param_spec_boolean ("use-native-controls", NULL, NULL,
+                            FALSE,
+                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
+
   g_object_class_install_properties (object_class, LAST_PROP, header_bar_props);
 
   gtk_widget_class_set_layout_manager_type (widget_class, GTK_TYPE_BIN_LAYOUT);
@@ -613,6 +652,7 @@ gtk_header_bar_init (GtkHeaderBar *bar)
   bar->title_widget = NULL;
   bar->decoration_layout = NULL;
   bar->show_title_buttons = TRUE;
+  bar->use_native_controls = FALSE;
 
   bar->handle = gtk_window_handle_new ();
   gtk_widget_set_parent (bar->handle, GTK_WIDGET (bar));
@@ -641,15 +681,26 @@ gtk_header_bar_buildable_add_child (GtkBuildable *buildable,
                                     const char   *type)
 {
   if (g_strcmp0 (type, "title") == 0)
-    gtk_header_bar_set_title_widget (GTK_HEADER_BAR (buildable), GTK_WIDGET (child));
+    {
+      gtk_buildable_child_deprecation_warning (buildable, builder, "title", "title-widget");
+      gtk_header_bar_set_title_widget (GTK_HEADER_BAR (buildable), GTK_WIDGET (child));
+    }
   else if (g_strcmp0 (type, "start") == 0)
-    gtk_header_bar_pack_start (GTK_HEADER_BAR (buildable), GTK_WIDGET (child));
+    {
+      gtk_header_bar_pack_start (GTK_HEADER_BAR (buildable), GTK_WIDGET (child));
+    }
   else if (g_strcmp0 (type, "end") == 0)
-    gtk_header_bar_pack_end (GTK_HEADER_BAR (buildable), GTK_WIDGET (child));
+    {
+      gtk_header_bar_pack_end (GTK_HEADER_BAR (buildable), GTK_WIDGET (child));
+    }
   else if (type == NULL && GTK_IS_WIDGET (child))
-    gtk_header_bar_pack_start (GTK_HEADER_BAR (buildable), GTK_WIDGET (child));
+    {
+      gtk_header_bar_pack_start (GTK_HEADER_BAR (buildable), GTK_WIDGET (child));
+    }
   else
-    parent_buildable_iface->add_child (buildable, builder, child, type);
+    {
+      parent_buildable_iface->add_child (buildable, builder, child, type);
+    }
 }
 
 static void
@@ -662,11 +713,10 @@ gtk_header_bar_buildable_init (GtkBuildableIface *iface)
 
 /**
  * gtk_header_bar_pack_start:
- * @bar: A `GtkHeaderBar`
- * @child: the `GtkWidget` to be added to @bar
+ * @bar: A header bar
+ * @child: the widget to be added to @bar
  *
- * Adds @child to @bar, packed with reference to the
- * start of the @bar.
+ * Adds a child to the header bar, packed with reference to the start.
  */
 void
 gtk_header_bar_pack_start (GtkHeaderBar *bar,
@@ -677,11 +727,10 @@ gtk_header_bar_pack_start (GtkHeaderBar *bar,
 
 /**
  * gtk_header_bar_pack_end:
- * @bar: A `GtkHeaderBar`
- * @child: the `GtkWidget` to be added to @bar
+ * @bar: A header bar
+ * @child: the widget to be added to @bar
  *
- * Adds @child to @bar, packed with reference to the
- * end of the @bar.
+ * Adds a child to the header bar, packed with reference to the end.
  */
 void
 gtk_header_bar_pack_end (GtkHeaderBar *bar,
@@ -705,12 +754,12 @@ gtk_header_bar_new (void)
 
 /**
  * gtk_header_bar_get_show_title_buttons:
- * @bar: a `GtkHeaderBar`
+ * @bar: a header bar
  *
  * Returns whether this header bar shows the standard window
  * title buttons.
  *
- * Returns: %TRUE if title buttons are shown
+ * Returns: true if title buttons are shown
  */
 gboolean
 gtk_header_bar_get_show_title_buttons (GtkHeaderBar *bar)
@@ -722,8 +771,8 @@ gtk_header_bar_get_show_title_buttons (GtkHeaderBar *bar)
 
 /**
  * gtk_header_bar_set_show_title_buttons:
- * @bar: a `GtkHeaderBar`
- * @setting: %TRUE to show standard title buttons
+ * @bar: a header bar
+ * @setting: true to show standard title buttons
  *
  * Sets whether this header bar shows the standard window
  * title buttons.
@@ -763,8 +812,8 @@ gtk_header_bar_set_show_title_buttons (GtkHeaderBar *bar,
 
 /**
  * gtk_header_bar_set_decoration_layout:
- * @bar: a `GtkHeaderBar`
- * @layout: (nullable): a decoration layout, or %NULL to unset the layout
+ * @bar: a header bar
+ * @layout: (nullable): a decoration layout
  *
  * Sets the decoration layout for this header bar.
  *
@@ -798,9 +847,9 @@ gtk_header_bar_set_decoration_layout (GtkHeaderBar *bar,
 
 /**
  * gtk_header_bar_get_decoration_layout:
- * @bar: a `GtkHeaderBar`
+ * @bar: a header bar
  *
- * Gets the decoration layout of the `GtkHeaderBar`.
+ * Gets the decoration layout of the header bar.
  *
  * Returns: (nullable): the decoration layout
  */
@@ -810,4 +859,51 @@ gtk_header_bar_get_decoration_layout (GtkHeaderBar *bar)
   g_return_val_if_fail (GTK_IS_HEADER_BAR (bar), NULL);
 
   return bar->decoration_layout;
+}
+
+/**
+ * gtk_header_bar_get_use_native_controls:
+ * @bar: a header bar
+ *
+ * Returns whether this header bar shows platform
+ * native window controls.
+ *
+ * Returns: true if native window controls are shown
+ *
+ * Since: 4.18
+ */
+gboolean
+gtk_header_bar_get_use_native_controls (GtkHeaderBar *bar)
+{
+  return bar->use_native_controls;
+}
+
+/**
+ * gtk_header_bar_set_use_native_controls:
+ * @bar: a header bar
+ * @setting: true to show native window controls
+ *
+ * Sets whether this header bar shows native window controls.
+ *
+ * This option shows the "stoplight" buttons on macOS.
+ * For Linux, this option has no effect.
+ *
+ * See also [Using GTK on Apple macOS](osx.html?native-window-controls).
+ *
+ * Since: 4.18
+ */
+void
+gtk_header_bar_set_use_native_controls (GtkHeaderBar *bar,
+                                         gboolean      setting)
+{
+  g_return_if_fail (GTK_IS_HEADER_BAR (bar));
+
+  setting = setting != FALSE;
+
+  if (bar->use_native_controls == setting)
+    return;
+
+  bar->use_native_controls = setting;
+
+  g_object_notify_by_pspec (G_OBJECT (bar), header_bar_props[PROP_USE_NATIVE_CONTROLS]);
 }

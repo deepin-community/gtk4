@@ -156,11 +156,6 @@ gtk_demo_run (GtkDemo   *self,
   if (result == NULL)
     return FALSE;
 
-  if (GTK_IS_WINDOW (result))
-    {
-      gtk_window_set_transient_for (GTK_WINDOW (result), GTK_WINDOW (window));
-      gtk_window_set_modal (GTK_WINDOW (result), TRUE);
-    }
   return TRUE;
 }
 
@@ -170,10 +165,6 @@ activate_about (GSimpleAction *action,
                 gpointer       user_data)
 {
   GtkApplication *app = user_data;
-  const char *authors[] = {
-    "The GTK Team",
-    NULL
-  };
   char *version;
   char *os_name;
   char *os_version;
@@ -211,11 +202,11 @@ activate_about (GSimpleAction *action,
                                          ? "GTK Demo (Development)"
                                          : "GTK Demo",
                          "version", version,
-                         "copyright", "© 1997—2021 The GTK Team",
+                         "copyright", "© 1997—2024 The GTK Team",
                          "license-type", GTK_LICENSE_LGPL_2_1,
                          "website", "http://www.gtk.org",
                          "comments", "Program to demonstrate GTK widgets",
-                         "authors", authors,
+                         "authors", (const char *[]) { "The GTK Team", NULL },
                          "logo-icon-name", "org.gtk.Demo4",
                          "title", "About GTK Demo",
                          "system-information", s->str,
@@ -832,9 +823,6 @@ static gboolean
 demo_can_run (GtkWidget  *window,
               const char *name)
 {
-  if (name != NULL && strcmp (name, "gltransition") == 0)
-    return GSK_IS_GL_RENDERER (gtk_native_get_renderer (GTK_NATIVE (window)));
-
   return TRUE;
 }
 
@@ -962,6 +950,13 @@ activate (GApplication *app)
   GtkFilterListModel *filter_model;
   GtkFilter *filter;
   GSimpleAction *action;
+  GList *list;
+
+  if ((list = gtk_application_get_windows (GTK_APPLICATION (app))) != NULL)
+    {
+      gtk_window_present (GTK_WINDOW (list->data));
+      return;
+    }
 
   builder = gtk_builder_new_from_resource ("/ui/main.ui");
 
@@ -1007,6 +1002,8 @@ activate (GApplication *app)
 
   selection_cb (selection, NULL, NULL);
   g_object_unref (selection);
+
+  gtk_window_present (GTK_WINDOW (window));
 
   g_object_unref (builder);
 }
@@ -1099,43 +1096,15 @@ out:
       demo = (func) (window);
 
       gtk_window_set_transient_for (GTK_WINDOW (demo), GTK_WINDOW (window));
+      gtk_widget_set_visible (window, FALSE);
 
       g_signal_connect_swapped (G_OBJECT (demo), "destroy", G_CALLBACK (g_application_quit), app);
     }
-  else
-    gtk_window_present (GTK_WINDOW (window));
 
   if (autoquit)
     g_timeout_add_seconds (1, auto_quit, app);
 
   return 0;
-}
-
-static void
-print_version (void)
-{
-  g_print ("gtk4-demo %s%s%s\n",
-           PACKAGE_VERSION,
-           g_strcmp0 (PROFILE, "devel") == 0 ? "-" : "",
-           g_strcmp0 (PROFILE, "devel") == 0 ? VCS_TAG : "");
-}
-
-static int
-local_options (GApplication *app,
-               GVariantDict *options,
-               gpointer      data)
-{
-  gboolean version = FALSE;
-
-  g_variant_dict_lookup (options, "version", "b", &version);
-
-  if (version)
-    {
-      print_version ();
-      return 0;
-    }
-
-  return -1;
 }
 
 int
@@ -1155,8 +1124,18 @@ main (int argc, char **argv)
     { "app.quit", { "<Control>q", NULL } },
   };
   int i;
+  char version[80];
+
+  gtk_init ();
 
   app = gtk_application_new ("org.gtk.Demo4", G_APPLICATION_NON_UNIQUE|G_APPLICATION_HANDLES_COMMAND_LINE);
+
+  g_snprintf (version, sizeof (version), "%s%s%s\n",
+              PACKAGE_VERSION,
+              g_strcmp0 (PROFILE, "devel") == 0 ? "-" : "",
+              g_strcmp0 (PROFILE, "devel") == 0 ? VCS_TAG : "");
+
+  g_application_set_version (G_APPLICATION (app), version);
 
   g_action_map_add_action_entries (G_ACTION_MAP (app),
                                    app_entries, G_N_ELEMENTS (app_entries),
@@ -1165,14 +1144,12 @@ main (int argc, char **argv)
   for (i = 0; i < G_N_ELEMENTS (accels); i++)
     gtk_application_set_accels_for_action (app, accels[i].action_and_target, accels[i].accelerators);
 
-  g_application_add_main_option (G_APPLICATION (app), "version", 0, 0, G_OPTION_ARG_NONE, "Show program version", NULL);
   g_application_add_main_option (G_APPLICATION (app), "run", 0, 0, G_OPTION_ARG_STRING, "Run an example", "EXAMPLE");
   g_application_add_main_option (G_APPLICATION (app), "list", 0, 0, G_OPTION_ARG_NONE, "List examples", NULL);
   g_application_add_main_option (G_APPLICATION (app), "autoquit", 0, 0, G_OPTION_ARG_NONE, "Quit after a delay", NULL);
 
   g_signal_connect (app, "activate", G_CALLBACK (activate), NULL);
   g_signal_connect (app, "command-line", G_CALLBACK (command_line), NULL);
-  g_signal_connect (app, "handle-local-options", G_CALLBACK (local_options), NULL);
 
   g_application_run (G_APPLICATION (app), argc, argv);
 

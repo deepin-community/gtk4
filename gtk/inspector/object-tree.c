@@ -45,6 +45,7 @@
 #include "gtklabel.h"
 #include "gtklistitem.h"
 #include "gtkpopover.h"
+#include "gtknative.h"
 #include "gtksettings.h"
 #include "gtksingleselection.h"
 #include "gtksignallistitemfactory.h"
@@ -130,6 +131,28 @@ object_tree_widget_get_children (GObject *object)
   g_object_unref (sublist);
 
   return G_LIST_MODEL (gtk_flatten_list_model_new (G_LIST_MODEL (list)));
+}
+
+static GObject *
+object_tree_window_get_parent (GObject *object)
+{
+  return NULL;
+}
+
+static GListModel *
+object_tree_native_get_children (GObject *object)
+{
+  GtkNative *native = GTK_NATIVE (object);
+  GListStore *list;
+
+  list = g_list_store_new (G_TYPE_OBJECT);
+
+  if (gtk_native_get_surface (native))
+    g_list_store_append (list, gtk_native_get_surface (native));
+  if (gtk_native_get_renderer (native))
+    g_list_store_append (list, gtk_native_get_renderer (native));
+
+  return G_LIST_MODEL (list);
 }
 
 static GListModel *
@@ -473,9 +496,9 @@ object_tree_event_controller_get_parent (GObject *object)
 }
 
 /* Note:
- * This tree must be sorted with the most specific types first.
- * We iterate over it top to bottom and return the first match
- * using g_type_is_a ()
+ * This tree should be sorted with the most specific types first.
+ * We iterate over it top to bottom and append the children to the
+ * list if g_type_is_a () matches.
  */
 static const ObjectTreeClassFuncs object_tree_class_funcs[] = {
   {
@@ -517,6 +540,16 @@ static const ObjectTreeClassFuncs object_tree_class_funcs[] = {
     gtk_combo_box_get_type,
     object_tree_widget_get_parent,
     object_tree_combo_box_get_children
+  },
+  {
+    gtk_window_get_type,
+    object_tree_window_get_parent,
+    object_tree_native_get_children,
+  },
+  {
+    gtk_popover_get_type,
+    object_tree_widget_get_parent,
+    object_tree_native_get_children,
   },
   {
     gtk_widget_get_type,

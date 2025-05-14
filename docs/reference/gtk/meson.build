@@ -98,13 +98,13 @@ if get_option('build-demos')
     [ 'gtk4-demo', '1', ],
     [ 'gtk4-demo-application', '1', ],
     [ 'gtk4-widget-factory', '1', ],
-    [ 'gtk4-icon-browser', '1', ],
     [ 'gtk4-node-editor', '1', ],
   ]
 endif
 
 rst2x_flags = [
   '--syntax-highlight=none',
+  '--halt=warning',
 ]
 
 if get_option('man-pages')

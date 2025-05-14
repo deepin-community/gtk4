@@ -41,19 +41,19 @@
 /**
  * GdkEvent: (ref-func gdk_event_ref) (unref-func gdk_event_unref)
  *
- * `GdkEvent`s are immutable data structures, created by GDK to
- * represent windowing system events.
+ * Represents windowing system events.
  *
  * In GTK applications the events are handled automatically by toplevel
  * widgets and passed on to the event controllers of appropriate widgets,
  * so using `GdkEvent` and its related API is rarely needed.
+ *
+ * `GdkEvent` structs are immutable.
  */
 
 /**
  * GdkEventSequence:
  *
- * `GdkEventSequence` is an opaque type representing a sequence
- * of related touch events.
+ * An opaque type representing a sequence of related events.
  */
 
 static void
@@ -3444,4 +3444,4 @@ gdk_grab_broken_event_get_implicit (GdkEvent *event)
 
 /* }}} */
 
-/* vim:set foldmethod=marker expandtab: */
+/* vim:set foldmethod=marker: */
