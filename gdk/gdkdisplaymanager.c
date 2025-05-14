@@ -28,11 +28,16 @@
 #include "gdkdisplaymanagerprivate.h"
 #include "gdkdisplayprivate.h"
 #include "gdkkeysprivate.h"
+#include "gdkprivate.h"
 #include <glib/gi18n-lib.h>
 
 #ifdef GDK_WINDOWING_X11
 #include "x11/gdkx.h"
 #include "x11/gdkprivate-x11.h"
+#endif
+
+#ifdef GDK_WINDOWING_ANDROID
+#include "android/gdkandroiddisplay-private.h"
 #endif
 
 #ifdef GDK_WINDOWING_BROADWAY
@@ -55,8 +60,9 @@
 /**
  * GdkDisplayManager:
  *
- * A singleton object that offers notification when displays appear or
- * disappear.
+ * Offers notification when displays appear or disappear.
+ *
+ * `GdkDisplayManager` is a singleton object.
  *
  * You can use [func@Gdk.DisplayManager.get] to obtain the `GdkDisplayManager`
  * singleton, but that should be rarely necessary. Typically, initializing
@@ -254,7 +260,12 @@ struct _GdkBackend {
   GdkDisplay * (* open_display) (const char *name);
 };
 
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+
 static GdkBackend gdk_backends[] = {
+#ifdef GDK_WINDOWING_ANDROID
+  { "android", _gdk_android_display_open },
+#endif
 #ifdef GDK_WINDOWING_MACOS
   { "macos",   _gdk_macos_display_open },
 #endif
@@ -273,6 +284,8 @@ static GdkBackend gdk_backends[] = {
   /* NULL-terminating this array so we can use commas above */
   { NULL, NULL }
 };
+
+G_GNUC_END_IGNORE_DEPRECATIONS
 
 /**
  * gdk_display_manager_get:
@@ -293,6 +306,8 @@ GdkDisplayManager*
 gdk_display_manager_get (void)
 {
   static GdkDisplayManager *manager = NULL;
+
+  gdk_ensure_initialized ();
 
   if (manager == NULL)
     manager = g_object_new (GDK_TYPE_DISPLAY_MANAGER, NULL);
@@ -329,6 +344,9 @@ gdk_display_manager_get_default_display (GdkDisplayManager *manager)
 GdkDisplay *
 gdk_display_get_default (void)
 {
+  if (!gdk_is_initialized ())
+    return NULL;
+
   return gdk_display_manager_get_default_display (gdk_display_manager_get ());
 }
 

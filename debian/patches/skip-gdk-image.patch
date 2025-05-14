@@ -1,11 +1,26 @@
---- gtk4-4.16.7+ds.orig/testsuite/gdk/meson.build
-+++ gtk4-4.16.7+ds/testsuite/gdk/meson.build
-@@ -76,7 +76,7 @@ endforeach
+From 634238353c96840614e58bbe5ee421098937b126 Mon Sep 17 00:00:00 2001
+From: lhdjply <lhdjply@126.com>
+Date: Wed, 14 May 2025 14:15:44 +0800
+Subject: [PATCH] feat: update gtk4 to 4.18.5+ds-1
+
+Signed-off-by: lhdjply <lhdjply@126.com>
+---
+ testsuite/gdk/meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/testsuite/gdk/meson.build b/testsuite/gdk/meson.build
+index 1e558b4..96aef81 100644
+--- a/testsuite/gdk/meson.build
++++ b/testsuite/gdk/meson.build
+@@ -70,7 +70,7 @@ endforeach
  internal_tests = [
    { 'name': 'colorstate-internal' },
    { 'name': 'dihedral' },
 -  { 'name': 'image' },
 +#  { 'name': 'image' },
+   { 'name': 'memorytexture', 'sources': [ 'gdktestutils.c' ] },
    { 'name': 'texture' },
    { 'name': 'gltexture' },
-   { 'name': 'subsurface' },
+-- 
+2.47.2
+

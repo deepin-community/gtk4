@@ -120,6 +120,7 @@ guint gtk_get_portal_interface_version (GDBusConnection *connection,
 #define PORTAL_PRINT_INTERFACE "org.freedesktop.portal.Print"
 #define PORTAL_SCREENSHOT_INTERFACE "org.freedesktop.portal.Screenshot"
 #define PORTAL_INHIBIT_INTERFACE "org.freedesktop.portal.Inhibit"
+#define PORTAL_OPENURI_INTERFACE "org.freedesktop.portal.OpenURI"
 
 void            gtk_set_display_debug_flags        (GdkDisplay    *display,
                                                     GtkDebugFlags  flags);
@@ -160,8 +161,6 @@ void gtk_synthesize_crossing_events (GtkRoot         *toplevel,
 #ifdef G_OS_WIN32
 
 void _gtk_load_dll_with_libgtk3_manifest (const wchar_t *dllname);
-
-wchar_t * g_wcsdup (const wchar_t *wcs);
 
 #endif /* G_OS_WIN32 */
 

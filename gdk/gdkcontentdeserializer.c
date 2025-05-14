@@ -35,8 +35,7 @@
 /**
  * GdkContentDeserializer:
  *
- * A `GdkContentDeserializer` is used to deserialize content received via
- * inter-application data transfers.
+ * Deserializes content received via inter-application data transfers.
  *
  * The `GdkContentDeserializer` transforms serialized content that is
  * identified by a mime type into an object identified by a GType.
@@ -462,17 +461,20 @@ gdk_content_formats_union_deserialize_gtypes (GdkContentFormats *formats)
 
   g_return_val_if_fail (formats != NULL, NULL);
 
-  init ();
-
   builder = gdk_content_formats_builder_new ();
   gdk_content_formats_builder_add_formats (builder, formats);
 
-  for (l = g_queue_peek_head_link (&deserializers); l; l = l->next)
+  if (!gdk_content_formats_is_empty (formats))
     {
-      Deserializer *deserializer = l->data;
+      init ();
 
-      if (gdk_content_formats_contain_mime_type (formats, deserializer->mime_type))
-        gdk_content_formats_builder_add_gtype (builder, deserializer->type);
+      for (l = g_queue_peek_head_link (&deserializers); l; l = l->next)
+        {
+          Deserializer *deserializer = l->data;
+
+          if (gdk_content_formats_contain_mime_type (formats, deserializer->mime_type))
+            gdk_content_formats_builder_add_gtype (builder, deserializer->type);
+        }
     }
 
   gdk_content_formats_unref (formats);
@@ -497,17 +499,20 @@ gdk_content_formats_union_deserialize_mime_types (GdkContentFormats *formats)
 
   g_return_val_if_fail (formats != NULL, NULL);
 
-  init ();
-
   builder = gdk_content_formats_builder_new ();
   gdk_content_formats_builder_add_formats (builder, formats);
 
-  for (l = g_queue_peek_head_link (&deserializers); l; l = l->next)
+  if (!gdk_content_formats_is_empty (formats))
     {
-      Deserializer *deserializer = l->data;
+      init ();
 
-      if (gdk_content_formats_contain_gtype (formats, deserializer->type))
-        gdk_content_formats_builder_add_mime_type (builder, deserializer->mime_type);
+      for (l = g_queue_peek_head_link (&deserializers); l; l = l->next)
+        {
+          Deserializer *deserializer = l->data;
+
+          if (gdk_content_formats_contain_gtype (formats, deserializer->type))
+            gdk_content_formats_builder_add_mime_type (builder, deserializer->mime_type);
+        }
     }
 
   gdk_content_formats_unref (formats);
@@ -536,9 +541,9 @@ deserialize_not_found (GdkContentDeserializer *deserializer)
  * @callback: (scope async) (closure user_data): callback to call when the operation is done
  * @user_data: data to pass to the callback function
  *
- * Read content from the given input stream and deserialize it, asynchronously.
+ * Reads content from the given input stream and deserialize it, asynchronously.
  *
- * The default I/O priority is %G_PRIORITY_DEFAULT (i.e. 0), and lower numbers
+ * The default I/O priority is `G_PRIORITY_DEFAULT` (i.e. 0), and lower numbers
  * indicate a higher priority.
  */
 void

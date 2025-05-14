@@ -294,15 +294,6 @@ activate_about (GSimpleAction *action,
   GtkApplication *app = user_data;
   GtkWindow *window;
   GtkWidget *button;
-  const char *authors[] = {
-    "Andrea Cimitan",
-    "Cosimo Cecchi",
-    NULL
-  };
-  const char *maintainers[] = {
-    "The GTK Team",
-    NULL
-  };
   char *version;
   char *os_name;
   char *os_version;
@@ -347,18 +338,18 @@ activate_about (GSimpleAction *action,
                                          ? "GTK Widget Factory (Development)"
                                          : "GTK Widget Factory",
                          "version", version,
-                         "copyright", "© 1997—2021 The GTK Team",
+                         "copyright", "© 1997—2024 The GTK Team",
                          "license-type", GTK_LICENSE_LGPL_2_1,
                          "website", "http://www.gtk.org",
                          "comments", "Program to demonstrate GTK themes and widgets",
-                         "authors", authors,
+                         "authors", (const char *[]) { "Andrea Cimitan", "Cosimo Cecchi", NULL },
                          "logo-icon-name", "org.gtk.WidgetFactory4",
                          "title", "About GTK Widget Factory",
                          "system-information", s->str,
                          NULL);
 
   gtk_about_dialog_add_credit_section (GTK_ABOUT_DIALOG (dialog),
-                                       _("Maintained by"), maintainers);
+                                       _("Maintained by"), (const char *[]) { "The GTK Team", NULL });
 
   gtk_window_present (GTK_WINDOW (dialog));
 
@@ -832,9 +823,11 @@ page_changed_cb (GtkWidget *stack, GParamSpec *pspec, gpointer data)
   name = gtk_stack_get_visible_child_name (GTK_STACK (stack));
 
   window = gtk_widget_get_ancestor (stack, GTK_TYPE_APPLICATION_WINDOW);
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
   g_object_set (gtk_application_window_get_help_overlay (GTK_APPLICATION_WINDOW (window)),
                 "view-name", name,
                 NULL);
+G_GNUC_END_IGNORE_DEPRECATIONS
 
   if (g_str_equal (name, "page1"))
     current_page = 1;
@@ -2135,6 +2128,7 @@ load_texture_in_thread (GtkWidget  *picture,
 static void
 activate (GApplication *app)
 {
+  GList *list;
   GtkBuilder *builder;
   GtkBuilderScope *scope;
   GtkWindow *window;
@@ -2194,6 +2188,12 @@ activate (GApplication *app)
 
   g_type_ensure (my_text_view_get_type ());
 
+  if ((list = gtk_application_get_windows (GTK_APPLICATION (app))) != NULL)
+    {
+      gtk_window_present (GTK_WINDOW (list->data));
+      return;
+    }
+
   provider = gtk_css_provider_new ();
   gtk_css_provider_load_from_resource (provider, "/org/gtk/WidgetFactory4/widget-factory.css");
   gtk_style_context_add_provider_for_display (gdk_display_get_default (),
@@ -2247,6 +2247,7 @@ activate (GApplication *app)
                                    window);
 
   controller = gtk_shortcut_controller_new ();
+  gtk_event_controller_set_static_name (controller, "widget-factory-late-accels");
   gtk_event_controller_set_propagation_phase (controller, GTK_PHASE_BUBBLE);
 
   for (i = 0; i < G_N_ELEMENTS (late_accels); i++)
@@ -2501,33 +2502,6 @@ G_GNUC_END_IGNORE_DEPRECATIONS
 }
 
 static void
-print_version (void)
-{
-  g_print ("gtk4-widget-factory %s%s%s\n",
-           PACKAGE_VERSION,
-           g_strcmp0 (PROFILE, "devel") == 0 ? "-" : "",
-           g_strcmp0 (PROFILE, "devel") == 0 ? VCS_TAG : "");
-}
-
-static int
-local_options (GApplication *app,
-               GVariantDict *options,
-               gpointer      data)
-{
-  gboolean version = FALSE;
-
-  g_variant_dict_lookup (options, "version", "b", &version);
-
-  if (version)
-    {
-      print_version ();
-      return 0;
-    }
-
-  return -1;
-}
-
-static void
 activate_action (GSimpleAction *action,
                  GVariant      *parameter,
                  gpointer       user_data)
@@ -2615,8 +2589,15 @@ main (int argc, char *argv[])
     { "radio-x-disabled", NULL, "s", "'x'", NULL },
   };
   int status;
+  char version[80];
 
   app = gtk_application_new ("org.gtk.WidgetFactory4", G_APPLICATION_NON_UNIQUE);
+
+  g_snprintf (version, sizeof (version), "%s%s%s\n",
+              PACKAGE_VERSION,
+              g_strcmp0 (PROFILE, "devel") == 0 ? "-" : "",
+              g_strcmp0 (PROFILE, "devel") == 0 ? VCS_TAG : "");
+  g_application_set_version (G_APPLICATION (app), version);
 
   g_action_map_add_action_entries (G_ACTION_MAP (app),
                                    app_entries, G_N_ELEMENTS (app_entries),
@@ -2632,12 +2613,9 @@ main (int argc, char *argv[])
 
   g_signal_connect (app, "activate", G_CALLBACK (activate), NULL);
 
-  g_application_add_main_option (G_APPLICATION (app), "version", 0, 0, G_OPTION_ARG_NONE, "Show program version", NULL);
-
   if (g_getenv ("GTK_DEBUG_AUTO_QUIT"))
     g_timeout_add (500, quit_timeout, NULL);
 
-  g_signal_connect (app, "handle-local-options", G_CALLBACK (local_options), NULL);
   status = g_application_run (G_APPLICATION (app), argc, argv);
   g_object_unref (app);
 

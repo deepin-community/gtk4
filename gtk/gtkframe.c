@@ -31,14 +31,17 @@
 #include "gtkbuildable.h"
 #include "gtkwidgetprivate.h"
 #include "gtklabel.h"
+#include "gtkbuilderprivate.h"
 
 /**
  * GtkFrame:
  *
- * `GtkFrame` is a widget that surrounds its child with a decorative
- * frame and an optional label.
+ * Surrounds its child with a decorative frame and an optional label.
  *
- * ![An example GtkFrame](frame.png)
+ * <picture>
+ *   <source srcset="frame-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkFrame" src="frame.png">
+ * </picture>
  *
  * If present, the label is drawn inside the top edge of the frame.
  * The horizontal position of the label can be controlled with
@@ -80,7 +83,7 @@
  *
  * # Accessibility
  *
- * `GtkFrame` uses the `GTK_ACCESSIBLE_ROLE_GROUP` role.
+ * `GtkFrame` uses the [enum@Gtk.AccessibleRole.group] role.
  */
 
 typedef struct
@@ -227,11 +230,19 @@ gtk_frame_buildable_add_child (GtkBuildable *buildable,
                                const char   *type)
 {
   if (type && strcmp (type, "label") == 0)
-    gtk_frame_set_label_widget (GTK_FRAME (buildable), GTK_WIDGET (child));
+    {
+      gtk_buildable_child_deprecation_warning (buildable, builder, "label", "label-widget");
+      gtk_frame_set_label_widget (GTK_FRAME (buildable), GTK_WIDGET (child));
+    }
   else if (GTK_IS_WIDGET (child))
-    gtk_frame_set_child (GTK_FRAME (buildable), GTK_WIDGET (child));
+    {
+      gtk_buildable_child_deprecation_warning (buildable, builder, NULL, "child");
+      gtk_frame_set_child (GTK_FRAME (buildable), GTK_WIDGET (child));
+    }
   else
-    parent_buildable_iface->add_child (buildable, builder, child, type);
+    {
+      parent_buildable_iface->add_child (buildable, builder, child, type);
+    }
 }
 
 static void

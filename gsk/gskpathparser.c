@@ -359,8 +359,7 @@ parse_rounded_rect (const char     **p,
  * gsk_path_parse:
  * @string: a string
  *
- * This is a convenience function that constructs a `GskPath`
- * from a serialized form.
+ * Constructs a path from a serialized form.
  *
  * The string is expected to be in (a superset of)
  * [SVG path syntax](https://www.w3.org/TR/SVG11/paths.html#PathData),
@@ -820,4 +819,4 @@ error:
   return NULL;
 }
 
-/* vim:set foldmethod=marker expandtab: */
+/* vim:set foldmethod=marker: */

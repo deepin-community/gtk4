@@ -99,7 +99,8 @@ static const struct {
   { "nesw-resize",  "fd_double_arrow" },
   { "nwse-resize",  "bd_double_arrow" },
   { "zoom-in",      "left_ptr" },
-  { "zoom-out",     "left_ptr" }
+  { "zoom-out",     "left_ptr" },
+  { "all-resize",   "move" }, /* not CSS, but we want to guarantee it anyway */
 };
 
 static const char *
@@ -119,7 +120,7 @@ name_fallback (const char *name)
 static struct wl_cursor *
 gdk_wayland_cursor_load_for_name (GdkWaylandDisplay      *display_wayland,
                                   struct wl_cursor_theme *theme,
-                                  int                     scale,
+                                  float                   scale,
                                   const char             *name)
 {
   struct wl_cursor *c;
@@ -156,7 +157,6 @@ struct wl_buffer *
 _gdk_wayland_cursor_get_buffer (GdkWaylandDisplay *display,
                                 GdkCursor         *cursor,
                                 double             desired_scale,
-                                gboolean           use_viewporter,
                                 guint              image_index,
                                 int               *hotspot_x,
                                 int               *hotspot_y,
@@ -169,7 +169,6 @@ _gdk_wayland_cursor_get_buffer (GdkWaylandDisplay *display,
   if (gdk_cursor_get_name (cursor))
     {
       struct wl_cursor *c;
-      int scale_factor;
 
       if (g_str_equal (gdk_cursor_get_name (cursor), "none"))
         {
@@ -179,12 +178,11 @@ _gdk_wayland_cursor_get_buffer (GdkWaylandDisplay *display,
           return NULL;
         }
 
-      scale_factor = (int) ceil (desired_scale);
-
       c = gdk_wayland_cursor_load_for_name (display,
                                             display->cursor_theme,
-                                            scale_factor,
+                                            desired_scale,
                                             gdk_cursor_get_name (cursor));
+
       if (c && c->image_count > 0)
         {
           struct wl_cursor_image *image;
@@ -199,22 +197,12 @@ _gdk_wayland_cursor_get_buffer (GdkWaylandDisplay *display,
 
           image = c->images[image_index];
 
-          *width = display->cursor_theme_size;
-          *height = display->cursor_theme_size;
-          *scale = image->width / (double) *width;
-          *hotspot_x = image->hotspot_x / scale_factor;
-          *hotspot_y = image->hotspot_y / scale_factor;
+          *scale = c->size / (double) display->cursor_theme_size;
 
-          if (*scale != scale_factor && !use_viewporter)
-            {
-              g_warning (G_STRLOC " cursor image size (%d) not an integer "
-                         "multiple of theme size (%d)", image->width, *width);
-              *width = image->width;
-              *height = image->height;
-              *hotspot_x = image->hotspot_x;
-              *hotspot_y = image->hotspot_y;
-              *scale = 1;
-            }
+          *width = image->width / *scale;
+          *height = image->height / *scale;
+          *hotspot_x = image->hotspot_x / *scale;
+          *hotspot_y = image->hotspot_y / *scale;
 
           return wl_cursor_image_get_buffer (image);
         }
@@ -232,8 +220,7 @@ from_texture:
         {
           surface = gdk_wayland_display_create_shm_surface (display,
                                                             gdk_texture_get_width (texture),
-                                                            gdk_texture_get_height (texture),
-                                                            &GDK_FRACTIONAL_SCALE_INIT_INT (1));
+                                                            gdk_texture_get_height (texture));
 
           gdk_texture_download (texture,
                                 cairo_image_surface_get_data (surface),
@@ -260,14 +247,11 @@ from_texture:
     }
   else
     {
-      if (!use_viewporter)
-        *scale = ceil (desired_scale);
-      else
-        *scale = desired_scale;
+      *scale = desired_scale;
 
       texture = gdk_cursor_get_texture_for_size (cursor,
                                                  display->cursor_theme_size,
-                                                 *scale,
+                                                 desired_scale,
                                                  width,
                                                  height,
                                                  hotspot_x,
@@ -280,8 +264,7 @@ from_texture:
 
           surface = gdk_wayland_display_create_shm_surface (display,
                                                             gdk_texture_get_width (texture),
-                                                            gdk_texture_get_height (texture),
-                                                            &GDK_FRACTIONAL_SCALE_INIT_INT (1));
+                                                            gdk_texture_get_height (texture));
 
           gdk_texture_download (texture,
                                 cairo_image_surface_get_data (surface),
@@ -302,7 +285,6 @@ from_texture:
       return _gdk_wayland_cursor_get_buffer (display,
                                              gdk_cursor_get_fallback (cursor),
                                              desired_scale,
-                                             use_viewporter,
                                              image_index,
                                              hotspot_x, hotspot_y,
                                              width, height,

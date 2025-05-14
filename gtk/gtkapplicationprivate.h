@@ -156,11 +156,12 @@ GType                   gtk_application_impl_dbus_get_type              (void);
 GType                   gtk_application_impl_x11_get_type               (void);
 GType                   gtk_application_impl_wayland_get_type           (void);
 GType                   gtk_application_impl_quartz_get_type            (void);
+GType                   gtk_application_impl_android_get_type           (void);
 
 GtkApplicationImpl *    gtk_application_impl_new                        (GtkApplication              *application,
                                                                          GdkDisplay                  *display);
 void                    gtk_application_impl_startup                    (GtkApplicationImpl          *impl,
-                                                                         gboolean                     register_sesion);
+                                                                         gboolean                     register_session);
 void                    gtk_application_impl_shutdown                   (GtkApplicationImpl          *impl);
 void                    gtk_application_impl_before_emit                (GtkApplicationImpl          *impl,
                                                                          GVariant                    *platform_data);

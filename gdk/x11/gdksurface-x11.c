@@ -67,6 +67,8 @@
 #include <X11/XKBlib.h>
 #endif
 
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+
 const int _gdk_x11_event_mask_table[21] =
 {
   ExposureMask,
@@ -1755,6 +1757,14 @@ gdk_x11_surface_layout_popup (GdkSurface     *surface,
     {
       monitor = gdk_surface_get_layout_monitor (surface, layout,
                                                 gdk_monitor_get_geometry);
+
+      if (!monitor)
+        {
+          GListModel *monitors = gdk_display_get_monitors (surface->display);
+          monitor = g_list_model_get_item (monitors, 0);
+          g_object_unref (monitor);
+        }
+
       gdk_monitor_get_geometry (monitor, &bounds);
     }
 
@@ -2006,6 +2016,8 @@ gdk_x11_surface_lower (GdkSurface *surface)
  * window manager that supports multiple workspaces, as described
  * in the [Extended Window Manager Hints](http://www.freedesktop.org/Standards/wm-spec) specification.
  * Will not do anything if the surface is already on all workspaces.
+ *
+ * Deprecated: 4.18
  */
 void
 gdk_x11_surface_move_to_current_desktop (GdkSurface *surface)
@@ -2068,6 +2080,8 @@ get_netwm_cardinal_property (GdkSurface   *surface,
  * Gets the number of the workspace @surface is on.
  *
  * Returns: the current workspace of @surface
+ *
+ * Deprecated: 4.18
  */
 guint32
 gdk_x11_surface_get_desktop (GdkSurface *surface)
@@ -2085,6 +2099,8 @@ gdk_x11_surface_get_desktop (GdkSurface *surface)
  * Moves the surface to the given workspace when running unde a
  * window manager that supports multiple workspaces, as described
  * in the [Extended Window Manager Hints](http://www.freedesktop.org/Standards/wm-spec) specification.
+ *
+ * Deprecated: 4.18
  */
 void
 gdk_x11_surface_move_to_desktop (GdkSurface *surface,
@@ -2287,6 +2303,8 @@ gdk_x11_surface_set_modal_hint (GdkSurface *surface,
  *
  * Sets a hint on @surface that taskbars should not
  * display it. See the EWMH for details.
+ *
+ * Deprecated: 4.18
  */
 void
 gdk_x11_surface_set_skip_taskbar_hint (GdkSurface *surface,
@@ -2313,6 +2331,8 @@ gdk_x11_surface_set_skip_taskbar_hint (GdkSurface *surface,
  *
  * Sets a hint on @surface that pagers should not
  * display it. See the EWMH for details.
+ *
+ * Deprecated: 4.18
  */
 void
 gdk_x11_surface_set_skip_pager_hint (GdkSurface *surface,
@@ -2339,6 +2359,8 @@ gdk_x11_surface_set_skip_pager_hint (GdkSurface *surface,
  *
  * Sets a hint on @surface that it needs user attention.
  * See the ICCCM for details.
+ *
+ * Deprecated: 4.18
  */
 void
 gdk_x11_surface_set_urgency_hint (GdkSurface *surface,
@@ -2961,6 +2983,8 @@ gdk_x11_surface_set_input_region (GdkSurface     *surface,
  * Note that this property is automatically updated by GDK, so this
  * function should only be used by applications which handle input
  * events bypassing GDK.
+ *
+ * Deprecated: 4.18
  **/
 void
 gdk_x11_surface_set_user_time (GdkSurface *surface,
@@ -3015,6 +3039,8 @@ gdk_x11_surface_set_user_time (GdkSurface *surface,
  * This function modifies or removes an arbitrary X11 window
  * property of type UTF8_STRING.  If the given @surface is
  * not a toplevel surface, it is ignored.
+ *
+ * Deprecated: 4.18
  */
 void
 gdk_x11_surface_set_utf8_property  (GdkSurface *surface,
@@ -3055,6 +3081,8 @@ gdk_x11_surface_set_utf8_property  (GdkSurface *surface,
  * Note that this property is automatically updated by GTK, so this
  * function should only be used by applications which do not use GTK
  * to create toplevel surfaces.
+ *
+ * Deprecated: 4.18
  */
 void
 gdk_x11_surface_set_theme_variant (GdkSurface  *surface,
@@ -3499,6 +3527,8 @@ gdk_x11_surface_unfullscreen (GdkSurface *surface)
  * Returns the group this surface belongs to.
  *
  * Returns: (transfer none) (nullable): The group of this surface;
+ *
+ * Deprecated: 4.18
  */
 GdkSurface *
 gdk_x11_surface_get_group (GdkSurface *surface)
@@ -3520,6 +3550,8 @@ gdk_x11_surface_get_group (GdkSurface *surface)
  *
  * Sets the group leader of @surface to be @leader.
  * See the ICCCM for details.
+ *
+ * Deprecated: 4.18
  */
 void
 gdk_x11_surface_set_group (GdkSurface *surface,
@@ -4582,6 +4614,8 @@ timestamp_predicate (Display *display,
  * Routine to get the current X server time stamp.
  *
  * Returns: the time stamp
+ *
+ * Deprecated: 4.18
  */
 guint32
 gdk_x11_get_server_time (GdkSurface *surface)
@@ -4618,6 +4652,8 @@ gdk_x11_get_server_time (GdkSurface *surface)
  * Returns the X resource (surface) belonging to a `GdkSurface`.
  * 
  * Returns: the ID of @drawable’s X resource.
+ *
+ * Deprecated: 4.18
  **/
 XID
 gdk_x11_surface_get_xid (GdkSurface *surface)
@@ -4644,6 +4680,8 @@ gdk_x11_surface_get_scale (GdkSurface *surface)
  * the surface is not directly managed by the window manager, then frame
  * synchronziation may need to be disabled. This is the case for a surface
  * embedded via the XEMBED protocol.
+ *
+ * Deprecated: 4.18
  */
 void
 gdk_x11_surface_set_frame_sync_enabled (GdkSurface *surface,
@@ -4788,6 +4826,12 @@ gdk_x11_surface_create_window (GdkX11Surface        *self,
 
   xattributes->background_pixmap = None;
   xattributes_mask |= CWBackPixmap;
+
+  if (gdk_display_is_rgba (display))
+    {
+      xattributes->background_pixel = 0;
+      xattributes_mask |= CWBackPixel;
+    }
 
   xattributes->border_pixel = BlackPixel (GDK_DISPLAY_XDISPLAY (display),
                                           display_x11->screen->screen_num);

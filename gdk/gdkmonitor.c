@@ -31,8 +31,7 @@
 /**
  * GdkMonitor:
  *
- * `GdkMonitor` objects represent the individual outputs that are
- * associated with a `GdkDisplay`.
+ * Represents the individual outputs that are associated with a `GdkDisplay`.
  *
  * `GdkDisplay` keeps a `GListModel` to enumerate and monitor
  * monitors with [method@Gdk.Display.get_monitors]. You can use
@@ -749,6 +748,9 @@ gdk_monitor_set_description (GdkMonitor *monitor,
 double
 gdk_monitor_get_dpi (GdkMonitor *monitor)
 {
-  return MAX ((monitor->geometry.width * monitor->scale) / (monitor->width_mm / MM_PER_INCH),
-              (monitor->geometry.height * monitor->scale) / (monitor->height_mm / MM_PER_INCH));
+  if (monitor->width_mm > 0 && monitor->height_mm > 0)
+    return MAX ((monitor->geometry.width * monitor->scale) / (monitor->width_mm / MM_PER_INCH),
+                (monitor->geometry.height * monitor->scale) / (monitor->height_mm / MM_PER_INCH));
+  else
+    return 96.0;
 }

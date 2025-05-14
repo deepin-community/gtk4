@@ -52,36 +52,6 @@ typedef enum
   GDK_DECOR_MAXIMIZE    = 1 << 6
 } GdkWMDecoration;
 
-enum _GdkWin32AeroSnapCombo
-{
-  GDK_WIN32_AEROSNAP_COMBO_NOTHING = 0,
-  GDK_WIN32_AEROSNAP_COMBO_UP,
-  GDK_WIN32_AEROSNAP_COMBO_DOWN,
-  GDK_WIN32_AEROSNAP_COMBO_LEFT,
-  GDK_WIN32_AEROSNAP_COMBO_RIGHT,
-  /* Same order as non-shift variants. We use it to do things like:
-   * AEROSNAP_UP + 4 = AEROSNAP_SHIFTUP
-   */
-  GDK_WIN32_AEROSNAP_COMBO_SHIFTUP,
-  GDK_WIN32_AEROSNAP_COMBO_SHIFTDOWN,
-  GDK_WIN32_AEROSNAP_COMBO_SHIFTLEFT,
-  GDK_WIN32_AEROSNAP_COMBO_SHIFTRIGHT
-};
-
-typedef enum _GdkWin32AeroSnapCombo GdkWin32AeroSnapCombo;
-
-enum _GdkWin32AeroSnapState
-{
-  GDK_WIN32_AEROSNAP_STATE_UNDETERMINED = 0,
-  GDK_WIN32_AEROSNAP_STATE_HALFLEFT,
-  GDK_WIN32_AEROSNAP_STATE_HALFRIGHT,
-  GDK_WIN32_AEROSNAP_STATE_FULLUP,
-  /* Maximize state is only used by edge-snap */
-  GDK_WIN32_AEROSNAP_STATE_MAXIMIZE
-};
-
-typedef enum _GdkWin32AeroSnapState GdkWin32AeroSnapState;
-
 struct _GdkRectangleDouble
 {
   double x;
@@ -104,8 +74,8 @@ typedef enum _GdkW32WindowDragOp GdkW32WindowDragOp;
 
 struct _GdkW32DragMoveResizeContext
 {
-  /* The window that is being moved/resized */
-  GdkSurface         *window;
+  /* The surface that is being moved/resized */
+  GdkSurface         *surface;
 
   /* The kind of drag-operation going on. */
   GdkW32WindowDragOp op;
@@ -126,19 +96,19 @@ struct _GdkW32DragMoveResizeContext
 
   /* Initial cursor position when the operation began.
    * Current cursor position is subtracted from it to find how far
-   * to move window border(s).
+   * to move surface border(s).
    */
   int                start_root_x;
   int                start_root_y;
 
-  /* Last processed cursor position. Values are divided by the window
+  /* Last processed cursor position. Values are divided by the surface
    * scale.
    */
   int                current_root_x;
   int                current_root_y;
 
-  /* Initial window rectangle (position and size).
-   * The window is resized/moved relative to this (see start_root_*).
+  /* Initial surface HWND rectangle (position and size).
+   * The surface is resized/moved relative to this (see start_root_*).
    */
   RECT               start_rect;
 
@@ -146,17 +116,17 @@ struct _GdkW32DragMoveResizeContext
   guint32            timestamp;
 
   /* TRUE if during the next redraw we should call SetWindowPos() to push
-   * the window size and position to the native window.
+   * the surface size and position to the native HWND.
    */
   gboolean           native_move_resize_pending;
 
   /* The cursor we should use while the operation is running. */
   GdkCursor         *cursor;
 
-  /* This window looks like an outline and is drawn under the window
-   * that is being dragged. It indicates the shape the dragged window
+  /* This HWND looks like an outline and is drawn under the surface
+   * that is being dragged. It indicates the shape the dragged surface
    * will take if released at a particular point.
-   * Indicator window size always matches the target indicator shape,
+   * Indicator HWND size always matches the target indicator shape,
    * the actual indicator drawn on it might not, depending on
    * how much time elapsed since the animation started.
    */
@@ -168,7 +138,7 @@ struct _GdkW32DragMoveResizeContext
   int                indicator_surface_height;
 
   /* Size/position of shape_indicator */
-  GdkRectangle       indicator_window_rect;
+  GdkRectangle       indicator_surface_rect;
 
   /* Indicator will animate to occupy this rectangle */
   GdkRectangle       indicator_target;
@@ -209,20 +179,6 @@ struct _GdkW32DragMoveResizeContext
    * (passing from one edge region into another doesn't count).
    */
   gboolean           revealed;
-
-  /* Arrays of GdkRectangle pairs, describing the areas of the virtual
-   * desktop that trigger various AeroSnap window transformations
-   * Coordinates are GDK screen coordinates.
-   */
-  GArray            *halfleft_regions;
-  GArray            *halfright_regions;
-  GArray            *maximize_regions;
-  GArray            *fullup_regions;
-
-  /* Current pointer position will result in this kind of snapping,
-   * if the drag op is finished.
-   */
-  GdkWin32AeroSnapState current_snap;
 };
 
 typedef struct _GdkW32DragMoveResizeContext GdkW32DragMoveResizeContext;
@@ -239,16 +195,14 @@ struct _GdkWin32Surface
   HICON   hicon_big;
   HICON   hicon_small;
 
-  /* The cursor that GDK set for this window via GdkDevice */
+  /* The cursor that GDK set for this surface via GdkDevice */
   GdkWin32HCursor *cursor;
 
-  /* Window size hints */
+  /* surface size hints */
   int hint_flags;
   GdkGeometry hints;
 
-  /* Non-NULL for any window that is registered as a drop target.
-   * For OLE2 protocol only.
-   */
+  /* Non-NULL for any surface that is registered as a drop target */
   drop_target_context *drop_target;
 
   GdkSurface *transient_owner;
@@ -259,7 +213,7 @@ struct _GdkWin32Surface
   int initial_x;
   int initial_y;
 
-  /* left/right/top/bottom width of the shadow/resize-grip around the window */
+  /* left/right/top/bottom width of the shadow/resize-grip around the surface HWND */
   RECT shadow;
 
   /* left+right and top+bottom from @shadow */
@@ -273,11 +227,11 @@ struct _GdkWin32Surface
   guint inhibit_configure : 1;
 
   /* If TRUE, the @temp_styles is set to the styles that were temporarily
-   * added to this window.
+   * added to this surface.
    */
   guint have_temp_styles : 1;
 
-  /* If TRUE, the window is in the process of being maximized.
+  /* If TRUE, the surface is in the process of being maximized.
    * This is set by WM_SYSCOMMAND and by gdk_win32_surface_maximize (),
    * and is unset when WM_WINDOWPOSCHANGING is handled.
    */
@@ -287,32 +241,16 @@ struct _GdkWin32Surface
 
   GdkW32DragMoveResizeContext drag_move_resize_context;
 
-  /* Remembers where the window was snapped.
-   * Some snap operations change their meaning if
-   * the window is already snapped.
-   */
-  GdkWin32AeroSnapState snap_state;
-
-  /* Remembers window position before it was snapped.
-   * This is used to unsnap it.
-   * Position and size are percentages of the workarea
-   * of the monitor on which the window was before it was snapped.
-   */
-  GdkRectangleDouble *snap_stash;
-
-  /* Also remember the same position, but in absolute form. */
-  GdkRectangle *snap_stash_int;
-
   /* Enable all decorations? */
   gboolean decorate_all;
 
-  /* Temporary styles that this window got for the purpose of
+  /* Temporary styles that this HWND got for the purpose of
    * handling WM_SYSMENU.
    * They are removed at the first opportunity (usually WM_INITMENU).
    */
   LONG_PTR temp_styles;
 
-  /* scale of window on HiDPI */
+  /* scale of surface on HiDPI */
   int surface_scale;
 
   GdkToplevelLayout *toplevel_layout;
@@ -338,11 +276,11 @@ struct _GdkWin32SurfaceClass
 
 GType _gdk_win32_surface_get_type (void);
 
-void  _gdk_win32_surface_update_style_bits   (GdkSurface *window);
+void  _gdk_win32_surface_update_style_bits   (GdkSurface *surface);
 
-int   _gdk_win32_surface_get_scale_factor    (GdkSurface *window);
+int   _gdk_win32_surface_get_scale_factor    (GdkSurface *surface);
 
-void  _gdk_win32_get_window_client_area_rect (GdkSurface *window,
+void  _gdk_win32_get_window_client_area_rect (GdkSurface *surface,
                                               int         scale,
                                               RECT       *rect);
 
@@ -350,7 +288,7 @@ void gdk_win32_surface_move (GdkSurface *surface,
                              int         x,
                              int         y);
 
-void gdk_win32_surface_move_resize (GdkSurface *window,
+void gdk_win32_surface_move_resize (GdkSurface *surface,
                                     int         x,
                                     int         y,
                                     int         width,

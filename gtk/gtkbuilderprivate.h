@@ -249,6 +249,10 @@ gboolean _gtk_builder_boolean_from_string (const char   *string,
                                            gboolean     *value,
                                            GError      **error);
 
+gboolean gtk_builder_parse_translatable (const char  *string,
+                                         gboolean    *value,
+                                         GError     **error);
+
 const char * _gtk_builder_parser_translate (const char *domain,
                                              const char *context,
                                              const char *text);
@@ -262,7 +266,7 @@ void      _gtk_builder_menu_start (ParserData   *parser_data,
                                    const char **attribute_names,
                                    const char **attribute_values,
                                    GError      **error);
-void      _gtk_builder_menu_end   (ParserData  *parser_data);
+char *    _gtk_builder_menu_end   (ParserData  *parser_data);
 
 GType     gtk_builder_get_template_type (GtkBuilder *builder,
                                          gboolean *out_allow_parents);
@@ -297,3 +301,11 @@ GObject *_gtk_builder_lookup_object       (GtkBuilder                *builder,
 gboolean _gtk_builder_lookup_failed       (GtkBuilder                *builder,
                                            GError                   **error);
 
+void     gtk_buildable_child_deprecation_warning (GtkBuildable *buildable,
+                                                  GtkBuilder   *builder,
+                                                  const char   *type,
+                                                  const char   *prop);
+void     gtk_buildable_tag_deprecation_warning   (GtkBuildable *buildable,
+                                                  GtkBuilder   *builder,
+                                                  const char   *tag,
+                                                  const char   *prop);

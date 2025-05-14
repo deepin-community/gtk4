@@ -60,16 +60,16 @@
 /**
  * GtkMountOperation:
  *
- * `GtkMountOperation` is an implementation of `GMountOperation`.
- *
- * The functions and objects described here make working with GTK and
- * GIO more convenient.
+ * Asks the user for passwords and other information required to
+ * mount a volume.
  *
  * `GtkMountOperation` is needed when mounting volumes:
  * It is an implementation of `GMountOperation` that can be used with
  * GIO functions for mounting volumes such as
- * g_file_mount_enclosing_volume(), g_file_mount_mountable(),
- * g_volume_mount(), g_mount_unmount_with_operation() and others.
+ * [method@Gio.File.mount_enclosing_volume],
+ * [method@Gio.File.mount_mountable],
+ * [method@Gio.Volume.mount],
+ * [method@Gio.Mount.unmount_with_operation] and others.
  *
  * When necessary, `GtkMountOperation` shows dialogs to let the user
  * enter passwords, ask questions or show processes blocking unmount.
@@ -828,7 +828,7 @@ call_password_proxy_cb (GObject      *source,
 {
   _GtkMountOperationHandler *proxy = _GTK_MOUNT_OPERATION_HANDLER (source);
   GMountOperation *op = user_data;
-  GMountOperationResult result;
+  guint result;
   GVariant *result_details;
   GVariantIter iter;
   const char *key;
@@ -983,7 +983,7 @@ call_question_proxy_cb (GObject      *source,
 {
   _GtkMountOperationHandler *proxy = _GTK_MOUNT_OPERATION_HANDLER (source);
   GMountOperation *op = user_data;
-  GMountOperationResult result;
+  guint result;
   GVariant *result_details;
   GVariantIter iter;
   const char *key;
@@ -1566,7 +1566,7 @@ call_processes_proxy_cb (GObject     *source,
 {
   _GtkMountOperationHandler *proxy = _GTK_MOUNT_OPERATION_HANDLER (source);
   GMountOperation *op = user_data;
-  GMountOperationResult result;
+  guint result;
   GVariant *result_details;
   GVariantIter iter;
   const char *key;

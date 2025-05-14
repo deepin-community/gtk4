@@ -44,7 +44,7 @@
 /**
  * GtkDragSource:
  *
- * `GtkDragSource` is an event controller to initiate Drag-And-Drop operations.
+ * An event controller to initiate Drag-And-Drop operations.
  *
  * `GtkDragSource` can be set up with the necessary
  * ingredients for a DND operation ahead of time. This includes
@@ -801,7 +801,7 @@ gtk_drag_source_drag_cancel (GtkDragSource *source)
 
 /**
  * gtk_drag_check_threshold: (method)
- * @widget: a `GtkWidget`
+ * @widget: a widget
  * @start_x: X coordinate of start of drag
  * @start_y: Y coordinate of start of drag
  * @current_x: current X coordinate
@@ -809,7 +809,7 @@ gtk_drag_source_drag_cancel (GtkDragSource *source)
  *
  * Checks to see if a drag movement has passed the GTK drag threshold.
  *
- * Returns: %TRUE if the drag threshold has been passed.
+ * Returns: true if the drag threshold has been passed
  */
 gboolean
 gtk_drag_check_threshold (GtkWidget *widget,

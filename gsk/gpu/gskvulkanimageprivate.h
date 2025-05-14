@@ -44,7 +44,8 @@ GskGpuImage *           gsk_vulkan_image_new_for_dmabuf                 (GskVulk
                                                                          gsize                   height,
                                                                          const GdkDmabuf        *dmabuf,
                                                                          gboolean                premultiplied);
-GdkTexture *            gsk_vulkan_image_to_dmabuf_texture              (GskVulkanImage         *self);
+GdkTexture *            gsk_vulkan_image_to_dmabuf_texture              (GskVulkanImage         *self,
+                                                                         GdkColorState          *color_state);
 #endif
 
 guchar *                gsk_vulkan_image_get_data                       (GskVulkanImage         *self,
@@ -80,7 +81,7 @@ static inline guint
 gsk_vulkan_mipmap_levels (gsize width,
                           gsize height)
 {
-  return g_bit_nth_msf (MAX (MAX (width, height) - 1, 1), -1) + 1;
+  return g_bit_nth_msf (MAX (width, height), -1) + 1;
 }
 
 G_END_DECLS

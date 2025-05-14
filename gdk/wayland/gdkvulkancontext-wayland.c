@@ -87,6 +87,7 @@ gdk_wayland_vulkan_context_class_init (GdkWaylandVulkanContextClass *klass)
   GdkDrawContextClass *draw_context_class = GDK_DRAW_CONTEXT_CLASS (klass);
 
   vulkan_context_class->create_surface = gdk_wayland_vulkan_context_create_surface;
+
   draw_context_class->end_frame = gdk_vulkan_context_wayland_end_frame;
   draw_context_class->empty_frame = gdk_vulkan_context_wayland_empty_frame;
 }

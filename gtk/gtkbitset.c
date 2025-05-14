@@ -26,9 +26,9 @@
 /**
  * GtkBitset: (ref-func gtk_bitset_ref) (unref-func gtk_bitset_unref)
  *
- * A `GtkBitset` represents a set of unsigned integers.
+ * A set of unsigned integers.
  *
- * Another name for this data structure is "bitmap".
+ * Another name for this data structure is “bitmap”.
  *
  * The current implementation is based on [roaring bitmaps](https://roaringbitmap.org/).
  *
@@ -56,7 +56,7 @@ G_DEFINE_BOXED_TYPE (GtkBitset, gtk_bitset,
 
 /**
  * gtk_bitset_ref:
- * @self: (nullable): a `GtkBitset`
+ * @self: (not nullable): a `GtkBitset`
  *
  * Acquires a reference on the given `GtkBitset`.
  *
@@ -74,7 +74,7 @@ gtk_bitset_ref (GtkBitset *self)
 
 /**
  * gtk_bitset_unref:
- * @self: (nullable): a `GtkBitset`
+ * @self: (not nullable) (transfer full): a `GtkBitset`
  *
  * Releases a reference on the given `GtkBitset`.
  *
@@ -319,7 +319,9 @@ gtk_bitset_copy (const GtkBitset *self)
   g_return_val_if_fail (self != NULL, NULL);
 
   copy = gtk_bitset_new_empty ();
-  roaring_bitmap_overwrite (&copy->roaring, &self->roaring);
+
+  if (!gtk_bitset_is_empty (self))
+    roaring_bitmap_overwrite (&copy->roaring, &self->roaring);
 
   return copy;
 }

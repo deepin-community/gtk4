@@ -24,14 +24,10 @@
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/sysmacros.h>
 
-#ifdef HAVE_LINUX_MEMFD_H
-#include <linux/memfd.h>
-#endif
-
+#ifdef HAVE_SYS_MMAN_H
 #include <sys/mman.h>
-#include <sys/syscall.h>
+#endif
 
 #include <glib.h>
 #include <gio/gio.h>
@@ -43,6 +39,7 @@
 #include "gdksurface-wayland.h"
 #include "gdksurfaceprivate.h"
 #include "gdkdeviceprivate.h"
+#include "gdkdevice-wayland-private.h"
 #include "gdkkeysprivate.h"
 #include "gdkprivate-wayland.h"
 #include "gdkcairocontext-wayland.h"
@@ -61,7 +58,7 @@
 #include <wayland/server-decoration-client-protocol.h>
 #include "linux-dmabuf-unstable-v1-client-protocol.h"
 #include "presentation-time-client-protocol.h"
-#include "xx-color-management-v4-client-protocol.h"
+#include "color-management-v1-client-protocol.h"
 
 #include "wm-button-layout-translation.h"
 
@@ -96,7 +93,7 @@
 
 #define MIN_SYSTEM_BELL_DELAY_MS 20
 
-#define GTK_SHELL1_VERSION       5
+#define GTK_SHELL1_VERSION       6
 #define OUTPUT_VERSION_WITH_DONE 2
 #define NO_XDG_OUTPUT_DONE_SINCE_VERSION 3
 #define OUTPUT_VERSION           3
@@ -535,7 +532,7 @@ gdk_registry_handle_global (void               *data,
                           &wp_presentation_interface,
                           MIN (version, 1));
     }
-  else if (strcmp (interface, xx_color_manager_v4_interface.name) == 0 &&
+  else if (strcmp (interface, wp_color_manager_v1_interface.name) == 0 &&
            GDK_DISPLAY_DEBUG_CHECK (GDK_DISPLAY (display_wayland), COLOR_MANAGEMENT))
     {
       display_wayland->color = gdk_wayland_color_new (display_wayland, registry, id, version);
@@ -546,6 +543,18 @@ gdk_registry_handle_global (void               *data,
         wl_registry_bind (display_wayland->wl_registry, id,
                           &wp_single_pixel_buffer_manager_v1_interface,
                           MIN (version, 1));
+    }
+  else if (strcmp (interface, xdg_system_bell_v1_interface.name) == 0)
+    {
+      display_wayland->system_bell =
+        wl_registry_bind (display_wayland->wl_registry, id,
+                          &xdg_system_bell_v1_interface, 1);
+    }
+  else if (strcmp (interface, wp_cursor_shape_manager_v1_interface.name) == 0)
+    {
+      display_wayland->cursor_shape =
+        wl_registry_bind (display_wayland->wl_registry, id,
+                          &wp_cursor_shape_manager_v1_interface, 1);
     }
 
   g_hash_table_insert (display_wayland->known_globals,
@@ -762,6 +771,7 @@ gdk_wayland_display_dispose (GObject *object)
   g_clear_pointer (&display_wayland->linux_dmabuf, zwp_linux_dmabuf_v1_destroy);
   g_clear_pointer (&display_wayland->dmabuf_formats_info, dmabuf_formats_info_free);
   g_clear_pointer (&display_wayland->color, gdk_wayland_color_free);
+  g_clear_pointer (&display_wayland->system_bell, xdg_system_bell_v1_destroy);
 
   g_clear_pointer (&display_wayland->shm, wl_shm_destroy);
   g_clear_pointer (&display_wayland->wl_registry, wl_registry_destroy);
@@ -808,23 +818,32 @@ gdk_wayland_display_get_name (GdkDisplay *display)
 
 void
 gdk_wayland_display_system_bell (GdkDisplay *display,
-                                 GdkSurface  *window)
+                                 GdkSurface *surface)
 {
   GdkWaylandDisplay *display_wayland;
-  struct gtk_surface1 *gtk_surface;
+  struct gtk_surface1 *gtk_surface = NULL;
+  struct wl_surface *wl_surface = NULL;
   gint64 now_ms;
 
   g_return_if_fail (GDK_IS_DISPLAY (display));
 
   display_wayland = GDK_WAYLAND_DISPLAY (display);
 
-  if (!display_wayland->gtk_shell)
+  if (!display_wayland->gtk_shell &&
+      !display_wayland->system_bell)
     return;
 
-  if (window && GDK_IS_WAYLAND_TOPLEVEL (window))
-    gtk_surface = gdk_wayland_toplevel_get_gtk_surface (GDK_WAYLAND_TOPLEVEL (window));
-  else
-    gtk_surface = NULL;
+  if (surface)
+    {
+      if (GDK_IS_WAYLAND_TOPLEVEL (surface))
+        {
+          GdkWaylandToplevel *toplevel = GDK_WAYLAND_TOPLEVEL (surface);
+
+          gtk_surface = gdk_wayland_toplevel_get_gtk_surface (toplevel);
+        }
+
+      wl_surface = gdk_wayland_surface_get_wl_surface (surface);
+    }
 
   now_ms = g_get_monotonic_time () / 1000;
   if (now_ms - display_wayland->last_bell_time_ms < MIN_SYSTEM_BELL_DELAY_MS)
@@ -832,7 +851,10 @@ gdk_wayland_display_system_bell (GdkDisplay *display,
 
   display_wayland->last_bell_time_ms = now_ms;
 
-  gtk_shell1_system_bell (display_wayland->gtk_shell, gtk_surface);
+  if (display_wayland->system_bell)
+    xdg_system_bell_v1_ring (display_wayland->system_bell, wl_surface);
+  else
+    gtk_shell1_system_bell (display_wayland->gtk_shell, gtk_surface);
 }
 
 static void
@@ -989,7 +1011,7 @@ gdk_wayland_display_get_monitors (GdkDisplay *display)
 
 static GdkMonitor *
 gdk_wayland_display_get_monitor_at_surface (GdkDisplay *display,
-                                           GdkSurface  *window)
+                                            GdkSurface *window)
 {
   GdkWaylandDisplay *display_wayland = GDK_WAYLAND_DISPLAY (display);
   struct wl_output *output;
@@ -1122,7 +1144,7 @@ get_cursor_theme (GdkWaylandDisplay *display_wayland,
     return get_cursor_theme (display_wayland, "default", size);
 
   /* This may fall back to builtin cursors */
-  return wl_cursor_theme_create ("/usr/share/icons/default/cursors", size, display_wayland->shm);
+  return wl_cursor_theme_create ("/usr/share/icons/Adwaita/cursors", size, display_wayland->shm);
 }
 
 /**
@@ -1151,6 +1173,7 @@ _gdk_wayland_display_set_cursor_theme (GdkDisplay *display,
 {
   GdkWaylandDisplay *display_wayland = GDK_WAYLAND_DISPLAY(display);
   struct wl_cursor_theme *theme;
+  GList *seats;
 
   g_assert (display_wayland);
   g_assert (display_wayland->shm);
@@ -1180,6 +1203,15 @@ _gdk_wayland_display_set_cursor_theme (GdkDisplay *display,
     g_free (display_wayland->cursor_theme_name);
   display_wayland->cursor_theme_name = g_strdup (name);
   display_wayland->cursor_theme_size = size;
+
+ seats = gdk_display_list_seats (display);
+ for (GList *l = seats; l; l = l->next)
+   {
+     GdkSeat *seat = l->data;
+
+     gdk_wayland_device_update_surface_cursor (gdk_seat_get_pointer (seat));
+   }
+ g_list_free (seats);
 }
 
 struct wl_cursor_theme *
@@ -1263,7 +1295,6 @@ typedef struct _GdkWaylandCairoSurfaceData {
   struct wl_shm_pool *pool;
   struct wl_buffer *buffer;
   GdkWaylandDisplay *display;
-  GdkFractionalScale scale;
 } GdkWaylandCairoSurfaceData;
 
 static int
@@ -1272,20 +1303,20 @@ open_shared_memory (void)
   static gboolean force_shm_open = FALSE;
   int ret = -1;
 
-#if !defined (__NR_memfd_create)
+#if !defined (HAVE_MEMFD_CREATE)
   force_shm_open = TRUE;
 #endif
 
   do
     {
-#if defined (__NR_memfd_create)
+#if defined (HAVE_MEMFD_CREATE)
       if (!force_shm_open)
         {
           int options = MFD_CLOEXEC;
 #if defined (MFD_ALLOW_SEALING)
           options |= MFD_ALLOW_SEALING;
 #endif
-          ret = syscall (__NR_memfd_create, "gdk-wayland", options);
+          ret = memfd_create ("gdk-wayland", options);
 
           /* fall back to shm_open until debian stops shipping 3.16 kernel
            * See bug 766341
@@ -1388,28 +1419,23 @@ gdk_wayland_cairo_surface_destroy (void *p)
 }
 
 cairo_surface_t *
-gdk_wayland_display_create_shm_surface (GdkWaylandDisplay        *display,
-                                        int                       width,
-                                        int                       height,
-                                        const GdkFractionalScale *scale)
+gdk_wayland_display_create_shm_surface (GdkWaylandDisplay *display,
+                                        guint              width,
+                                        guint              height)
 {
   GdkWaylandCairoSurfaceData *data;
   cairo_surface_t *surface = NULL;
   cairo_status_t status;
-  int scaled_width, scaled_height;
   int stride;
 
   data = g_new (GdkWaylandCairoSurfaceData, 1);
   data->display = display;
   data->buffer = NULL;
-  data->scale = *scale;
 
-  scaled_width = gdk_fractional_scale_scale (scale, width);
-  scaled_height = gdk_fractional_scale_scale (scale, height);
-  stride = cairo_format_stride_for_width (CAIRO_FORMAT_ARGB32, scaled_width);
+  stride = cairo_format_stride_for_width (CAIRO_FORMAT_ARGB32, width);
 
   data->pool = create_shm_pool (display->shm,
-                                scaled_height * stride,
+                                height * stride,
                                 &data->buf_length,
                                 &data->buf);
   if (G_UNLIKELY (data->pool == NULL))
@@ -1417,20 +1443,16 @@ gdk_wayland_display_create_shm_surface (GdkWaylandDisplay        *display,
 
   surface = cairo_image_surface_create_for_data (data->buf,
                                                  CAIRO_FORMAT_ARGB32,
-                                                 scaled_width,
-                                                 scaled_height,
+                                                 width,
+                                                 height,
                                                  stride);
 
   data->buffer = wl_shm_pool_create_buffer (data->pool, 0,
-                                            scaled_width, scaled_height,
+                                            width, height,
                                             stride, WL_SHM_FORMAT_ARGB8888);
 
   cairo_surface_set_user_data (surface, &gdk_wayland_shm_surface_cairo_key,
                                data, gdk_wayland_cairo_surface_destroy);
-
-  cairo_surface_set_device_scale (surface,
-                                  gdk_fractional_scale_to_double (scale),
-                                  gdk_fractional_scale_to_double (scale));
 
   status = cairo_surface_status (surface);
   if (status != CAIRO_STATUS_SUCCESS)
@@ -1935,7 +1957,7 @@ init_settings (GdkDisplay *display)
   GSettings *settings;
   int i;
 
-  if (gdk_should_use_portal () &&
+  if (gdk_display_should_use_portal (display, PORTAL_SETTINGS_INTERFACE, 0) &&
       !(gdk_display_get_debug_flags (display) & GDK_DEBUG_DEFAULT_SETTINGS))
     {
       GVariant *ret;
@@ -2331,25 +2353,6 @@ subpixel_to_string (int layout)
 }
 
 static void
-update_scale (GdkDisplay *display)
-{
-  GList *seats;
-  GList *l;
-
-  g_list_foreach (gdk_wayland_display_get_toplevel_surfaces (display),
-                  (GFunc)gdk_wayland_surface_update_scale,
-                  NULL);
-  seats = gdk_display_list_seats (display);
-  for (l = seats; l; l = l->next)
-    {
-      GdkSeat *seat = l->data;
-
-      gdk_wayland_seat_update_cursor_scale (GDK_WAYLAND_SEAT (seat));
-    }
-  g_list_free (seats);
-}
-
-static void
 gdk_wayland_display_init_xdg_output (GdkWaylandDisplay *self)
 {
   guint i, n;
@@ -2445,8 +2448,6 @@ apply_monitor_change (GdkWaylandMonitor *monitor)
 
   monitor->wl_output_done = FALSE;
   monitor->xdg_output_done = FALSE;
-
-  update_scale (GDK_MONITOR (monitor)->display);
 }
 
 static void
@@ -2721,7 +2722,6 @@ gdk_wayland_display_remove_output (GdkWaylandDisplay *self,
         {
           g_list_store_remove (self->monitors, i);
           gdk_monitor_invalidate (GDK_MONITOR (monitor));
-          update_scale (GDK_DISPLAY (self));
           g_object_unref (monitor);
           break;
         }
@@ -2739,19 +2739,6 @@ gdk_wayland_display_get_output_refresh_rate (GdkWaylandDisplay *display_wayland,
   monitor = get_monitor_for_output (display_wayland, output);
   if (monitor != NULL)
     return gdk_monitor_get_refresh_rate (GDK_MONITOR (monitor));
-
-  return 0;
-}
-
-guint32
-gdk_wayland_display_get_output_scale (GdkWaylandDisplay *display_wayland,
-				      struct wl_output  *output)
-{
-  GdkWaylandMonitor *monitor;
-
-  monitor = get_monitor_for_output (display_wayland, output);
-  if (monitor != NULL)
-    return gdk_monitor_get_scale_factor (GDK_MONITOR (monitor));
 
   return 0;
 }

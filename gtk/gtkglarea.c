@@ -46,9 +46,12 @@
 /**
  * GtkGLArea:
  *
- * `GtkGLArea` is a widget that allows drawing with OpenGL.
+ * Allows drawing with OpenGL.
  *
- * ![An example GtkGLArea](glarea.png)
+ * <picture>
+ *   <source srcset="glarea-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkGLArea" src="glarea.png">
+ * </picture>
  *
  * `GtkGLArea` sets up its own [class@Gdk.GLContext], and creates a custom
  * GL framebuffer that the widget will do GL rendering onto. It also ensures
@@ -87,6 +90,13 @@
  *   glClearColor (0, 0, 0, 0);
  *   glClear (GL_COLOR_BUFFER_BIT);
  *
+ *   // record the active framebuffer ID, so we can return to it
+ *   // with `glBindFramebuffer (GL_FRAMEBUFFER, screen_fb)` should
+ *   // we, for instance, intend on utilizing the results of an
+ *   // intermediate render texture pass
+ *   GLuint screen_fb = 0;
+ *   glGetIntegerv (GL_FRAMEBUFFER_BINDING, &screen_fb);
+ *
  *   // draw your object
  *   // draw_an_object ();
  *
@@ -116,7 +126,7 @@
  *
  * ```c
  * static void
- * on_realize (GtkGLarea *area)
+ * on_realize (GtkGLArea *area)
  * {
  *   // We need to make the context current if we want to
  *   // call GL API
@@ -805,9 +815,7 @@ gtk_gl_area_snapshot (GtkWidget   *widget,
       priv->texture = NULL;
       priv->textures = g_list_prepend (priv->textures, texture);
 
-      if (gdk_gl_context_has_feature (priv->context, GDK_GL_FEATURE_SYNC))
-        sync = glFenceSync (GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-
+      sync = glFenceSync (GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
       gdk_gl_texture_builder_set_sync (texture->builder, sync);
 
       texture->gl_texture = gdk_gl_texture_builder_build (texture->builder,

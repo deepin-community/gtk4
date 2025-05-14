@@ -26,7 +26,7 @@
 #include "gtkwindowprivate.h"
 #include "gtkpopovermenubar.h"
 #include "gtksettings.h"
-#include "gtkshortcutswindowprivate.h"
+#include "deprecated/gtkshortcutswindowprivate.h"
 #include "gtktooltipprivate.h"
 
 #include <glib/gi18n-lib.h>
@@ -34,18 +34,17 @@
 /**
  * GtkApplicationWindow:
  *
- * `GtkApplicationWindow` is a `GtkWindow` subclass that integrates with
- * `GtkApplication`.
+ * A `GtkWindow` subclass that integrates with `GtkApplication`.
  *
  * Notably, `GtkApplicationWindow` can handle an application menubar.
  *
- * This class implements the `GActionGroup` and `GActionMap` interfaces,
- * to let you add window-specific actions that will be exported by the
- * associated [class@Gtk.Application], together with its application-wide
+ * This class implements the [iface@Gio.ActionGroup] and [iface@Gio.ActionMap]
+ * interfaces, to let you add window-specific actions that will be exported
+ * by the associated [class@Gtk.Application], together with its application-wide
  * actions. Window-specific actions are prefixed with the “win.”
  * prefix and application-wide actions are prefixed with the “app.”
  * prefix. Actions must be addressed with the prefixed name when
- * referring to them from a `GMenuModel`.
+ * referring to them from a menu model.
  *
  * Note that widgets that are placed inside a `GtkApplicationWindow`
  * can also activate these actions, if they implement the
@@ -58,13 +57,12 @@
  * For instance, on OS X, both menus will be displayed remotely;
  * on Windows neither will be.
  *
- * If the desktop environment does not display the menubar, then
- * `GtkApplicationWindow` will automatically show a menubar for it.
- * This behaviour can be overridden with the
- * [property@Gtk.ApplicationWindow:show-menubar] property. If the
- * desktop environment does not display the application menu, then
- * it will automatically be included in the menubar or in the windows
- * client-side decorations.
+ * If the desktop environment does not display the menubar, it can be shown in
+ * the `GtkApplicationWindow` by setting the
+ * [property@Gtk.ApplicationWindow:show-menubar] property to true. If the
+ * desktop environment does not display the application menu, then it will
+ * automatically be included in the menubar or in the window’s client-side
+ * decorations.
  *
  * See [class@Gtk.PopoverMenu] for information about the XML language
  * used by `GtkBuilder` for menu models.
@@ -432,7 +430,7 @@ gtk_application_window_measure (GtkWidget      *widget,
           int menubar_height = 0;
 
           gtk_widget_measure (priv->menubar, GTK_ORIENTATION_VERTICAL,
-                              for_size, &menubar_height, NULL, NULL, NULL);
+                              -1, &menubar_height, NULL, NULL, NULL);
 
 
           GTK_WIDGET_CLASS (gtk_application_window_parent_class)->measure (widget,
@@ -482,10 +480,12 @@ gtk_application_window_real_size_allocate (GtkWidget *widget,
                           &menubar_height, NULL, NULL, NULL);
 
       menubar_allocation.height = menubar_height;
-      gtk_widget_size_allocate  (priv->menubar, &menubar_allocation, baseline);
+      gtk_widget_size_allocate  (priv->menubar, &menubar_allocation, -1);
 
       child_allocation.y += menubar_height;
       child_allocation.height -= menubar_height;
+      if (baseline != -1)
+        baseline -= child_allocation.y;
       child = gtk_window_get_child (GTK_WINDOW (window));
       if (child != NULL && gtk_widget_get_visible (child))
         gtk_widget_size_allocate (child, &child_allocation, baseline);
@@ -530,7 +530,7 @@ gtk_application_window_real_unrealize (GtkWidget *widget)
 
 GActionGroup *
 gtk_application_window_get_action_group (GtkApplicationWindow *window)
-{          
+{
   GtkApplicationWindowPrivate *priv = gtk_application_window_get_instance_private (window);
   return G_ACTION_GROUP (priv->actions);
 }
@@ -656,10 +656,26 @@ gtk_application_window_init (GtkApplicationWindow *window)
 }
 
 static void
+gtk_application_window_keys_changed (GtkWindow *window)
+{
+  GtkApplicationWindow *self = GTK_APPLICATION_WINDOW (window);
+  GtkApplicationWindowPrivate *priv = gtk_application_window_get_instance_private (self);
+
+  GTK_WINDOW_CLASS (gtk_application_window_parent_class)->keys_changed (window);
+
+  /* Notify key changes on the help overlay */
+  if (priv->help_overlay != NULL)
+    _gtk_window_notify_keys_changed (GTK_WINDOW (priv->help_overlay));
+}
+
+static void
 gtk_application_window_class_init (GtkApplicationWindowClass *class)
 {
+  GtkWindowClass *window_class = GTK_WINDOW_CLASS (class);
   GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (class);
   GObjectClass *object_class = G_OBJECT_CLASS (class);
+
+  window_class->keys_changed = gtk_application_window_keys_changed;
 
   widget_class->measure = gtk_application_window_measure;
   widget_class->size_allocate = gtk_application_window_real_size_allocate;
@@ -675,12 +691,12 @@ gtk_application_window_class_init (GtkApplicationWindowClass *class)
   /**
    * GtkApplicationWindow:show-menubar:
    *
-   * If this property is %TRUE, the window will display a menubar
+   * If this property is true, the window will display a menubar
    * unless it is shown by the desktop shell.
    *
    * See [method@Gtk.Application.set_menubar].
    *
-   * If %FALSE, the window will not display a menubar, regardless
+   * If false, the window will not display a menubar, regardless
    * of whether the desktop shell is showing it or not.
    */
   gtk_application_window_properties[PROP_SHOW_MENUBAR] =
@@ -691,7 +707,7 @@ gtk_application_window_class_init (GtkApplicationWindowClass *class)
 
 /**
  * gtk_application_window_new:
- * @application: a `GtkApplication`
+ * @application: an application
  *
  * Creates a new `GtkApplicationWindow`.
  *
@@ -709,12 +725,12 @@ gtk_application_window_new (GtkApplication *application)
 
 /**
  * gtk_application_window_get_show_menubar:
- * @window: a `GtkApplicationWindow`
+ * @window: an application window
  *
  * Returns whether the window will display a menubar for the app menu
  * and menubar as needed.
  *
- * Returns: %TRUE if @window will display a menubar when needed
+ * Returns: True if the window will display a menubar when needed
  */
 gboolean
 gtk_application_window_get_show_menubar (GtkApplicationWindow *window)
@@ -725,7 +741,7 @@ gtk_application_window_get_show_menubar (GtkApplicationWindow *window)
 
 /**
  * gtk_application_window_set_show_menubar:
- * @window: a `GtkApplicationWindow`
+ * @window: an application window
  * @show_menubar: whether to show a menubar when needed
  *
  * Sets whether the window will display a menubar for the app menu
@@ -752,14 +768,14 @@ gtk_application_window_set_show_menubar (GtkApplicationWindow *window,
 
 /**
  * gtk_application_window_get_id:
- * @window: a `GtkApplicationWindow`
+ * @window: an application window
  *
  * Returns the unique ID of the window.
  *
  *  If the window has not yet been added to a `GtkApplication`, returns `0`.
  *
- * Returns: the unique ID for @window, or `0` if the window
- *   has not yet been added to a `GtkApplication`
+ * Returns: the unique ID for the window, or `0` if the window
+ *   has not yet been added to an application
  */
 guint
 gtk_application_window_get_id (GtkApplicationWindow *window)
@@ -793,15 +809,17 @@ show_help_overlay (GSimpleAction *action,
 
 /**
  * gtk_application_window_set_help_overlay:
- * @window: a `GtkApplicationWindow`
- * @help_overlay: (nullable): a `GtkShortcutsWindow`
+ * @window: an application window
+ * @help_overlay: (nullable): a shortcuts window
  *
  * Associates a shortcuts window with the application window.
  *
  * Additionally, sets up an action with the name
  * `win.show-help-overlay` to present it.
  *
- * @window takes responsibility for destroying @help_overlay.
+ * The window takes responsibility for destroying the help overlay.
+ *
+ * Deprecated: 4.18: `GtkShortcutsWindow` will be removed in GTK 5
  */
 void
 gtk_application_window_set_help_overlay (GtkApplicationWindow *window,
@@ -837,14 +855,16 @@ gtk_application_window_set_help_overlay (GtkApplicationWindow *window,
 
 /**
  * gtk_application_window_get_help_overlay:
- * @window: a `GtkApplicationWindow`
+ * @window: an application window
  *
  * Gets the `GtkShortcutsWindow` that is associated with @window.
  *
  * See [method@Gtk.ApplicationWindow.set_help_overlay].
  *
  * Returns: (transfer none) (nullable): the help overlay associated
- *   with @window
+ *   with the window
+ *
+ * Deprecated: 4.18: `GtkShortcutsWindow` will be removed in GTK 5
  */
 GtkShortcutsWindow *
 gtk_application_window_get_help_overlay (GtkApplicationWindow *window)

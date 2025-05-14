@@ -39,8 +39,7 @@
 /**
  * GdkContentSerializer:
  *
- * A `GdkContentSerializer` is used to serialize content for
- * inter-application data transfers.
+ * Serializes content for inter-application data transfers.
  *
  * The `GdkContentSerializer` transforms an object that is identified
  * by a GType into a serialized form (i.e. a byte stream) that is
@@ -794,10 +793,24 @@ file_serializer_finish (GObject      *source,
     gdk_content_serializer_return_success (serializer);
 }
 
+
+static const char *
+file_force_uri_schemas[] = { "content", "http", "https" };
 static char *
 file_get_native_uri (GFile *file)
 {
   char *path;
+
+  /*
+   * We want to convert URIs to file:// URIs, so other applications
+   * that do not use GIO/GVFS can read text/uri-list from the clipboard.
+   *
+   * But we don't want to do that for URIs that are widely understood,
+   * so for lack of better APIs, we whitelist those.
+   */
+  for (gsize i = 0; i < G_N_ELEMENTS (file_force_uri_schemas); i++)
+    if (g_file_has_uri_scheme (file, file_force_uri_schemas[i]))
+        return g_file_get_uri (file);
 
   path = g_file_get_path (file);
   if (path != NULL)

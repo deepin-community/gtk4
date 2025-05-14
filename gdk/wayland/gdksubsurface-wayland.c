@@ -54,6 +54,7 @@ gdk_wayland_subsurface_finalize (GObject *object)
   g_clear_pointer (&self->bg_viewport, wp_viewport_destroy);
   g_clear_pointer (&self->bg_subsurface, wl_subsurface_destroy);
   g_clear_pointer (&self->bg_surface, wl_surface_destroy);
+  g_clear_pointer (&self->idle_inhibitor, zwp_idle_inhibitor_v1_destroy);
 
   G_OBJECT_CLASS (gdk_wayland_subsurface_parent_class)->finalize (object);
 }
@@ -84,7 +85,7 @@ get_shm_wl_buffer (GdkWaylandSubsurface *self,
 
   width = gdk_texture_get_width (texture);
   height = gdk_texture_get_height (texture);
-  surface = gdk_wayland_display_create_shm_surface (display, width, height, &GDK_FRACTIONAL_SCALE_INIT_INT (1));
+  surface = gdk_wayland_display_create_shm_surface (display, width, height);
 
   downloader = gdk_texture_downloader_new (texture);
 
@@ -158,6 +159,9 @@ get_dmabuf_wl_buffer (GdkWaylandSubsurface            *self,
   struct wl_buffer *buffer;
   CreateBufferData cd = { NULL, FALSE };
   struct wl_event_queue *event_queue;
+
+  if (display->linux_dmabuf == NULL)
+    return NULL;
 
   params = zwp_linux_dmabuf_v1_create_params (display->linux_dmabuf);
 
@@ -248,7 +252,8 @@ get_gl_texture_wl_buffer (GdkWaylandSubsurface *self,
   GLBufferData gldata;
 
   glcontext = gdk_display_get_gl_context (display);
-  if (!gdk_gl_context_is_shared (glcontext, gdk_gl_texture_get_context (gltexture)))
+  if (glcontext == NULL ||
+      !gdk_gl_context_is_shared (glcontext, gdk_gl_texture_get_context (gltexture)))
     return NULL;
 
   /* Can we avoid this when a right context is current already? */
@@ -266,7 +271,7 @@ get_gl_texture_wl_buffer (GdkWaylandSubsurface *self,
                                gdk_texture_get_width (texture),
                                gdk_texture_get_height (texture),
                                &gl_buffer_listener,
-                               g_memdup (&gldata, sizeof (gldata)));
+                               g_memdup2 (&gldata, sizeof (gldata)));
 }
 
 static struct wl_buffer *
@@ -317,6 +322,14 @@ get_sp_buffer (GdkWaylandSubsurface *self)
   return buffer;
 }
 
+/* Note: The GdkDihedral transforms are *inverses* of the corresponding
+ * wl_output_transform transforms.
+ *
+ * This is intentional: The GdkDihedral is the transform we want the
+ * compositor to apply. set_buffer_transform is about *already transformed*
+ * content. By telling the compositor that the content is already transformed
+ * by the inverse of the GdkDihedral, we get it to apply the transform we want.
+ */
 static inline enum wl_output_transform
 gdk_texture_transform_to_wl (GdkDihedral transform)
 {
@@ -653,15 +666,19 @@ gdk_wayland_subsurface_attach (GdkSubsurface         *sub,
       if (buffer)
         {
           wl_surface_attach (self->surface, buffer, 0, 0);
-          wl_surface_damage_buffer (self->surface,
-                                    0, 0,
-                                    gdk_texture_get_width (texture),
-                                    gdk_texture_get_height (texture));
 
           if (self->color && color_state_changed)
             gdk_wayland_color_surface_set_color_state (self->color, gdk_texture_get_color_state (texture));
 
           needs_commit = TRUE;
+        }
+      
+      if (buffer || transform_changed)
+        {
+          wl_surface_damage_buffer (self->surface,
+                                    0, 0,
+                                    gdk_texture_get_width (texture),
+                                    gdk_texture_get_height (texture));
         }
 
       if (has_background)
@@ -933,3 +950,27 @@ gdk_wayland_surface_create_subsurface (GdkSurface *surface)
   return GDK_SUBSURFACE (sub);
 }
 
+gboolean
+gdk_wayland_subsurface_inhibit_idle (GdkSubsurface *subsurface)
+{
+  GdkWaylandSubsurface *sub = GDK_WAYLAND_SUBSURFACE (subsurface);
+  GdkWaylandDisplay *display_wayland = GDK_WAYLAND_DISPLAY (gdk_surface_get_display (subsurface->parent));
+
+  if (!display_wayland->idle_inhibit_manager)
+    return FALSE;
+
+  if (!sub->idle_inhibitor)
+    sub->idle_inhibitor =
+      zwp_idle_inhibit_manager_v1_create_inhibitor (display_wayland->idle_inhibit_manager,
+                                                    sub->surface);
+
+  return TRUE;
+}
+
+void
+gdk_wayland_subsurface_uninhibit_idle (GdkSubsurface *subsurface)
+{
+  GdkWaylandSubsurface *sub = GDK_WAYLAND_SUBSURFACE (subsurface);
+
+  g_clear_pointer (&sub->idle_inhibitor, zwp_idle_inhibitor_v1_destroy);
+}
