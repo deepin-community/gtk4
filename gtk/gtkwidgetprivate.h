@@ -81,6 +81,7 @@ struct _GtkWidgetPrivate
   guint has_grab              : 1;
   guint child_visible         : 1;
   guint can_target            : 1;
+  guint limit_events          : 1;
 
   /* Queue-resize related flags */
   guint resize_needed         : 1; /* queue_resize() has been called but no get_preferred_size() yet */
@@ -228,6 +229,7 @@ gboolean     gtk_widget_needs_allocate      (GtkWidget *widget);
 void         gtk_widget_ensure_resize       (GtkWidget *widget);
 void         gtk_widget_ensure_allocate     (GtkWidget *widget);
 void          _gtk_widget_scale_changed     (GtkWidget *widget);
+void         gtk_widget_monitor_changed     (GtkWidget *widget);
 
 GdkSurface * gtk_widget_get_surface         (GtkWidget *widget);
 

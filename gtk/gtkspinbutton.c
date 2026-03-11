@@ -33,7 +33,7 @@
 
 #include "gtkaccessibleprivate.h"
 #include "gtkaccessiblerange.h"
-#include "gtkadjustment.h"
+#include "gtkadjustmentprivate.h"
 #include "gtkbutton.h"
 #include "gtkbuttonprivate.h"
 #include "gtkeditable.h"
@@ -69,10 +69,12 @@
 /**
  * GtkSpinButton:
  *
- * A `GtkSpinButton` is an ideal way to allow the user to set the
- * value of some attribute.
+ * Allows to enter or change numeric values.
  *
- * ![An example GtkSpinButton](spinbutton.png)
+ * <picture>
+ *   <source srcset="spinbutton-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkSpinButton" src="spinbutton.png">
+ * </picture>
  *
  * Rather than having to directly type a number into a `GtkEntry`,
  * `GtkSpinButton` allows the user to click on one of two arrows
@@ -186,7 +188,7 @@
  *
  * # Accessibility
  *
- * `GtkSpinButton` uses the %GTK_ACCESSIBLE_ROLE_SPIN_BUTTON role.
+ * `GtkSpinButton` uses the [enum@Gtk.AccessibleRole.spin_button] role.
  */
 
 typedef struct _GtkSpinButton      GtkSpinButton;
@@ -264,7 +266,7 @@ enum {
 /* Signals */
 enum
 {
-  INPUT,
+  INPUT_,
   OUTPUT,
   VALUE_CHANGED,
   ACTIVATE,
@@ -306,7 +308,8 @@ static void gtk_spin_button_snap           (GtkSpinButton      *spin_button,
 static void gtk_spin_button_insert_text    (GtkEditable        *editable,
                                             const char         *new_text,
                                             int                 new_text_length,
-                                            int                *position);
+                                            int                *position,
+                                            gpointer            data);
 static void gtk_spin_button_real_spin      (GtkSpinButton      *spin_button,
                                             double              step);
 static void gtk_spin_button_real_change_value (GtkSpinButton   *spin,
@@ -499,7 +502,7 @@ gtk_spin_button_class_init (GtkSpinButtonClass *class)
    * Returns: %TRUE for a successful conversion, %FALSE if the input
    *   was not handled, and %GTK_INPUT_ERROR if the conversion failed.
    */
-  spinbutton_signals[INPUT] =
+  spinbutton_signals[INPUT_] =
     g_signal_new (I_("input"),
                   G_TYPE_FROM_CLASS (gobject_class),
                   G_SIGNAL_RUN_LAST,
@@ -508,7 +511,7 @@ gtk_spin_button_class_init (GtkSpinButtonClass *class)
                   _gtk_marshal_INT__POINTER,
                   G_TYPE_INT, 1,
                   G_TYPE_POINTER);
-  g_signal_set_va_marshaller (spinbutton_signals[INPUT],
+  g_signal_set_va_marshaller (spinbutton_signals[INPUT_],
                               G_TYPE_FROM_CLASS (gobject_class),
                               _gtk_marshal_INT__POINTERv);
 
@@ -662,7 +665,6 @@ static void
 gtk_spin_button_editable_init (GtkEditableInterface *iface)
 {
   iface->get_delegate = gtk_spin_button_get_delegate;
-  iface->insert_text = gtk_spin_button_insert_text;
 }
 
 static gboolean
@@ -1087,6 +1089,7 @@ gtk_spin_button_init (GtkSpinButton *spin_button)
   gtk_widget_set_vexpand (spin_button->entry, TRUE);
   g_signal_connect (spin_button->entry, "activate", G_CALLBACK (gtk_spin_button_activate), spin_button);
   g_signal_connect (spin_button->entry, "changed", G_CALLBACK (gtk_spin_button_changed), spin_button);
+  g_signal_connect (spin_button->entry, "insert-text", G_CALLBACK (gtk_spin_button_insert_text), spin_button);
   gtk_widget_set_parent (spin_button->entry, GTK_WIDGET (spin_button));
 
   spin_button->down_button = g_object_new (GTK_TYPE_BUTTON,
@@ -1579,11 +1582,14 @@ gtk_spin_button_activate (GtkText *entry,
 
 static void
 gtk_spin_button_insert_text (GtkEditable *editable,
-                             const char *new_text,
+                             const char  *new_text,
                              int          new_text_length,
-                             int         *position)
+                             int         *position,
+                             gpointer     data)
 {
-  GtkSpinButton *spin = GTK_SPIN_BUTTON (editable);
+  GtkSpinButton *spin = GTK_SPIN_BUTTON (data);
+
+  g_signal_stop_emission_by_name (editable, "insert-text");
 
   if (spin->numeric)
     {
@@ -1674,8 +1680,12 @@ gtk_spin_button_insert_text (GtkEditable *editable,
         }
     }
 
+  g_signal_handlers_block_by_func (editable, gtk_spin_button_insert_text, data);
+
   gtk_editable_insert_text (GTK_EDITABLE (spin->entry),
                             new_text, new_text_length, position);
+
+  g_signal_handlers_unblock_by_func (editable, gtk_spin_button_insert_text, data);
 }
 
 static void
@@ -2221,7 +2231,9 @@ gtk_spin_button_set_value (GtkSpinButton *spin_button,
 {
   g_return_if_fail (GTK_IS_SPIN_BUTTON (spin_button));
 
-  if (fabs (value - gtk_adjustment_get_value (spin_button->adjustment)) > EPSILON)
+  if (fabs (value - gtk_adjustment_get_value (spin_button->adjustment)) > EPSILON ||
+      value < gtk_adjustment_get_lower (spin_button->adjustment) ||
+      value > gtk_adjustment_get_bounded_upper (spin_button->adjustment))
     gtk_adjustment_set_value (spin_button->adjustment, value);
   else
     {
@@ -2298,6 +2310,9 @@ gtk_spin_button_set_numeric (GtkSpinButton *spin_button,
                                   numeric ? GTK_INPUT_PURPOSE_NUMBER: GTK_INPUT_PURPOSE_FREE_FORM);
       gtk_text_set_input_hints (GTK_TEXT (spin_button->entry),
                                 numeric ? GTK_INPUT_HINT_NO_EMOJI : GTK_INPUT_HINT_NONE);
+
+      if (numeric)
+        gtk_widget_set_direction (spin_button->entry, GTK_TEXT_DIR_LTR);
 
       g_object_notify_by_pspec (G_OBJECT (spin_button), spinbutton_props[PROP_NUMERIC]);
     }
@@ -2541,7 +2556,7 @@ gtk_spin_button_update (GtkSpinButton *spin_button)
   g_return_if_fail (GTK_IS_SPIN_BUTTON (spin_button));
 
   return_val = FALSE;
-  g_signal_emit (spin_button, spinbutton_signals[INPUT], 0, &val, &return_val);
+  g_signal_emit (spin_button, spinbutton_signals[INPUT_], 0, &val, &return_val);
   if (return_val == FALSE)
     {
       return_val = gtk_spin_button_default_input (spin_button, &val);

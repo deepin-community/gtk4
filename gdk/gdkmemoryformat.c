@@ -29,8 +29,6 @@
 
 #include "gsk/gl/fp16private.h"
 
-#include <epoxy/gl.h>
-
 /* Don't report quick (< 0.5 msec) runs */
 #define MIN_MARK_DURATION 500000
 
@@ -482,6 +480,7 @@ static const GdkMemoryFormatDescription memory_formats[] = {
     .alignment = G_ALIGNOF (guchar),
     .depth = GDK_MEMORY_U8,
     .fallbacks = (GdkMemoryFormat[]) {
+        GDK_MEMORY_R8G8B8A8_PREMULTIPLIED,
         -1,
     },
     .gl = {
@@ -515,6 +514,7 @@ static const GdkMemoryFormatDescription memory_formats[] = {
     .alignment = G_ALIGNOF (guchar),
     .depth = GDK_MEMORY_U8,
     .fallbacks = (GdkMemoryFormat[]) {
+        GDK_MEMORY_R8G8B8A8_PREMULTIPLIED,
         -1,
     },
     .gl = {
@@ -580,6 +580,7 @@ static const GdkMemoryFormatDescription memory_formats[] = {
     .alignment = G_ALIGNOF (guchar),
     .depth = GDK_MEMORY_U8,
     .fallbacks = (GdkMemoryFormat[]) {
+        GDK_MEMORY_R8G8B8A8_PREMULTIPLIED,
         -1,
     },
     .gl = {
@@ -613,6 +614,7 @@ static const GdkMemoryFormatDescription memory_formats[] = {
     .alignment = G_ALIGNOF (guchar),
     .depth = GDK_MEMORY_U8,
     .fallbacks = (GdkMemoryFormat[]) {
+        GDK_MEMORY_R8G8B8A8,
         -1,
     },
     .gl = {
@@ -646,6 +648,7 @@ static const GdkMemoryFormatDescription memory_formats[] = {
     .alignment = G_ALIGNOF (guchar),
     .depth = GDK_MEMORY_U8,
     .fallbacks = (GdkMemoryFormat[]) {
+        GDK_MEMORY_R8G8B8A8,
         -1,
     },
     .gl = {
@@ -711,6 +714,7 @@ static const GdkMemoryFormatDescription memory_formats[] = {
     .alignment = G_ALIGNOF (guchar),
     .depth = GDK_MEMORY_U8,
     .fallbacks = (GdkMemoryFormat[]) {
+        GDK_MEMORY_R8G8B8A8,
         -1,
     },
     .gl = {
@@ -778,6 +782,7 @@ static const GdkMemoryFormatDescription memory_formats[] = {
     .alignment = G_ALIGNOF (guchar),
     .depth = GDK_MEMORY_U8,
     .fallbacks = (GdkMemoryFormat[]) {
+        GDK_MEMORY_R8G8B8X8,
         GDK_MEMORY_R8G8B8A8_PREMULTIPLIED,
         -1,
     },
@@ -845,6 +850,7 @@ static const GdkMemoryFormatDescription memory_formats[] = {
     .alignment = G_ALIGNOF (guchar),
     .depth = GDK_MEMORY_U8,
     .fallbacks = (GdkMemoryFormat[]) {
+        GDK_MEMORY_R8G8B8X8,
         GDK_MEMORY_R8G8B8A8_PREMULTIPLIED,
         -1,
     },
@@ -879,6 +885,7 @@ static const GdkMemoryFormatDescription memory_formats[] = {
     .alignment = G_ALIGNOF (guchar),
     .depth = GDK_MEMORY_U8,
     .fallbacks = (GdkMemoryFormat[]) {
+        GDK_MEMORY_R8G8B8X8,
         GDK_MEMORY_R8G8B8A8_PREMULTIPLIED,
         -1,
     },
@@ -2100,6 +2107,7 @@ struct _MemoryConvert
   GdkColorState       *src_cs;
   gsize                width;
   gsize                height;
+  gsize                chunk_size;
 
   /* atomic */ int     rows_done;
 };
@@ -2114,7 +2122,7 @@ gdk_memory_convert_generic (gpointer data)
   GdkFloatColorConvert convert_func = NULL;
   GdkFloatColorConvert convert_func2 = NULL;
   gboolean needs_premultiply, needs_unpremultiply;
-  gsize y, n;
+  gsize y0, y;
   gint64 before = GDK_PROFILER_CURRENT_TIME;
   gsize rows;
 
@@ -2126,17 +2134,22 @@ gdk_memory_convert_generic (gpointer data)
 
       if (func != NULL)
         {
-          n = 1;
-
-          for (y = g_atomic_int_add (&mc->rows_done, n);
-               y < mc->height;
-               y = g_atomic_int_add (&mc->rows_done, n))
+          for (y0 = g_atomic_int_add (&mc->rows_done, mc->chunk_size), rows = 0;
+               y0 < mc->height;
+               y0 = g_atomic_int_add (&mc->rows_done, mc->chunk_size))
             {
-              const guchar *src_data = mc->src_data + y * mc->src_stride;
-              guchar *dest_data = mc->dest_data + y * mc->dest_stride;
+              for (y = y0; y < MIN (y0 + mc->chunk_size, mc->height); y++, rows++)
+                {
+                  const guchar *src_data = mc->src_data + y * mc->src_stride;
+                  guchar *dest_data = mc->dest_data + y * mc->dest_stride;
 
-              func (dest_data, src_data, mc->width);
+                  func (dest_data, src_data, mc->width);
+                }
             }
+
+          ADD_MARK (before,
+                    "Memory convert (thread)", "size %lux%lu, %lu rows",
+                    mc->width, mc->height, rows);
           return;
         }
     }
@@ -2167,30 +2180,32 @@ gdk_memory_convert_generic (gpointer data)
     }
 
   tmp = g_malloc (sizeof (*tmp) * mc->width);
-  n = 1;
 
-  for (y = g_atomic_int_add (&mc->rows_done, n), rows = 0;
-       y < mc->height;
-       y = g_atomic_int_add (&mc->rows_done, n), rows++)
+  for (y0 = g_atomic_int_add (&mc->rows_done, mc->chunk_size), rows = 0;
+       y0 < mc->height;
+       y0 = g_atomic_int_add (&mc->rows_done, mc->chunk_size))
     {
-      const guchar *src_data = mc->src_data + y * mc->src_stride;
-      guchar *dest_data = mc->dest_data + y * mc->dest_stride;
+      for (y = y0; y < MIN (y0 + mc->chunk_size, mc->height); y++, rows++)
+        {
+          const guchar *src_data = mc->src_data + y * mc->src_stride;
+          guchar *dest_data = mc->dest_data + y * mc->dest_stride;
 
-      src_desc->to_float (tmp, src_data, mc->width);
+          src_desc->to_float (tmp, src_data, mc->width);
 
-      if (needs_unpremultiply)
-        unpremultiply (tmp, mc->width);
+          if (needs_unpremultiply)
+            unpremultiply (tmp, mc->width);
 
-      if (convert_func)
-        convert_func (mc->src_cs, tmp, mc->width);
+          if (convert_func)
+            convert_func (mc->src_cs, tmp, mc->width);
 
-      if (convert_func2)
-        convert_func2 (mc->dest_cs, tmp, mc->width);
+          if (convert_func2)
+            convert_func2 (mc->dest_cs, tmp, mc->width);
 
-      if (needs_premultiply)
-        premultiply (tmp, mc->width);
+          if (needs_premultiply)
+            premultiply (tmp, mc->width);
 
-      dest_desc->from_float (dest_data, tmp, mc->width);
+          dest_desc->from_float (dest_data, tmp, mc->width);
+        }
     }
 
   g_free (tmp);
@@ -2223,7 +2238,10 @@ gdk_memory_convert (guchar              *dest_data,
     .src_cs = src_cs,
     .width = width,
     .height = height,
+    .chunk_size = MAX (1, 512 / width),
   };
+
+  guint n_tasks;
 
   g_assert (dest_format < GDK_MEMORY_N_FORMATS);
   g_assert (src_format < GDK_MEMORY_N_FORMATS);
@@ -2256,7 +2274,9 @@ gdk_memory_convert (guchar              *dest_data,
       return;
     }
 
-  gdk_parallel_task_run (gdk_memory_convert_generic, &mc);
+  n_tasks = (mc.height + mc.chunk_size - 1) / mc.chunk_size;
+
+  gdk_parallel_task_run (gdk_memory_convert_generic, &mc, n_tasks);
 }
 
 typedef struct _MemoryConvertColorState MemoryConvertColorState;
@@ -2270,6 +2290,7 @@ struct _MemoryConvertColorState
   GdkColorState *dest_cs;
   gsize width;
   gsize height;
+  gsize chunk_size;
 
   /* atomic */ int rows_done;
 };
@@ -2381,15 +2402,16 @@ static void
 gdk_memory_convert_color_state_srgb_to_srgb_linear (gpointer data)
 {
   MemoryConvertColorState *mc = data;
-  int y;
+  gsize y0, y;
   guint64 before = GDK_PROFILER_CURRENT_TIME;
   gsize rows;
 
-  for (y = g_atomic_int_add (&mc->rows_done, 1), rows = 0;
-       y < mc->height;
-       y = g_atomic_int_add (&mc->rows_done, 1), rows++)
+  for (y0 = g_atomic_int_add (&mc->rows_done, mc->chunk_size), rows = 0;
+       y0 < mc->height;
+       y0 = g_atomic_int_add (&mc->rows_done, mc->chunk_size))
     {
-      convert_srgb_to_srgb_linear (mc->data + y * mc->stride, mc->width);
+      for (y = y0; y < MIN (y0 + mc->chunk_size, mc->height); y++, rows++)
+        convert_srgb_to_srgb_linear (mc->data + y * mc->stride, mc->width);
     }
 
   ADD_MARK (before,
@@ -2401,15 +2423,16 @@ static void
 gdk_memory_convert_color_state_srgb_linear_to_srgb (gpointer data)
 {
   MemoryConvertColorState *mc = data;
-  int y;
+  gsize y0, y;
   guint64 before = GDK_PROFILER_CURRENT_TIME;
   gsize rows;
 
-  for (y = g_atomic_int_add (&mc->rows_done, 1), rows = 0;
-       y < mc->height;
-       y = g_atomic_int_add (&mc->rows_done, 1), rows++)
+  for (y0 = g_atomic_int_add (&mc->rows_done, mc->chunk_size), rows = 0;
+       y0 < mc->height;
+       y0 = g_atomic_int_add (&mc->rows_done, mc->chunk_size))
     {
-      convert_srgb_linear_to_srgb (mc->data + y * mc->stride, mc->width);
+      for (y = y0; y < MIN (y0 + mc->chunk_size, mc->height); y++, rows++)
+        convert_srgb_linear_to_srgb (mc->data + y * mc->stride, mc->width);
     }
 
   ADD_MARK (before,
@@ -2425,7 +2448,7 @@ gdk_memory_convert_color_state_generic (gpointer user_data)
   GdkFloatColorConvert convert_func = NULL;
   GdkFloatColorConvert convert_func2 = NULL;
   float (*tmp)[4];
-  int y;
+  gsize y0, y;
   guint64 before = GDK_PROFILER_CURRENT_TIME;
   gsize rows;
 
@@ -2445,27 +2468,30 @@ gdk_memory_convert_color_state_generic (gpointer user_data)
 
   tmp = g_malloc (sizeof (*tmp) * mc->width);
 
-  for (y = g_atomic_int_add (&mc->rows_done, 1), rows = 0;
-       y < mc->height;
-       y = g_atomic_int_add (&mc->rows_done, 1), rows++)
+  for (y0 = g_atomic_int_add (&mc->rows_done, mc->chunk_size), rows = 0;
+       y0 < mc->height;
+       y0 = g_atomic_int_add (&mc->rows_done, mc->chunk_size))
     {
-      guchar *data = mc->data + y * mc->stride;
+      for (y = y0; y < MIN (y0 + mc->chunk_size, mc->height); y++, rows++)
+        {
+          guchar *data = mc->data + y * mc->stride;
 
-      desc->to_float (tmp, data, mc->width);
+          desc->to_float (tmp, data, mc->width);
 
-      if (desc->alpha == GDK_MEMORY_ALPHA_PREMULTIPLIED)
-        unpremultiply (tmp, mc->width);
+          if (desc->alpha == GDK_MEMORY_ALPHA_PREMULTIPLIED)
+            unpremultiply (tmp, mc->width);
 
-      if (convert_func)
-        convert_func (mc->src_cs, tmp, mc->width);
+          if (convert_func)
+            convert_func (mc->src_cs, tmp, mc->width);
 
-      if (convert_func2)
-        convert_func2 (mc->dest_cs, tmp, mc->width);
+          if (convert_func2)
+            convert_func2 (mc->dest_cs, tmp, mc->width);
 
-      if (desc->alpha == GDK_MEMORY_ALPHA_PREMULTIPLIED)
-        premultiply (tmp, mc->width);
+          if (desc->alpha == GDK_MEMORY_ALPHA_PREMULTIPLIED)
+            premultiply (tmp, mc->width);
 
-      desc->from_float (data, tmp, mc->width);
+          desc->from_float (data, tmp, mc->width);
+        }
     }
 
   g_free (tmp);
@@ -2479,8 +2505,8 @@ void
 gdk_memory_convert_color_state (guchar          *data,
                                 gsize            stride,
                                 GdkMemoryFormat  format,
-                                GdkColorState   *src_cs,
-                                GdkColorState   *dest_cs,
+                                GdkColorState   *src_color_state,
+                                GdkColorState   *dest_color_state,
                                 gsize            width,
                                 gsize            height)
 {
@@ -2488,30 +2514,34 @@ gdk_memory_convert_color_state (guchar          *data,
     .data = data,
     .stride = stride,
     .format = format,
-    .src_cs = src_cs,
-    .dest_cs = dest_cs,
+    .src_cs = src_color_state,
+    .dest_cs = dest_color_state,
     .width = width,
     .height = height,
+    .chunk_size = MAX (1, 512 / width),
   };
+  guint n_tasks;
 
-  if (gdk_color_state_equal (src_cs, dest_cs))
+  if (gdk_color_state_equal (src_color_state, dest_color_state))
     return;
 
+  n_tasks = (mc.height + mc.chunk_size - 1) / mc.chunk_size;
+
   if (format == GDK_MEMORY_B8G8R8A8_PREMULTIPLIED &&
-      src_cs == GDK_COLOR_STATE_SRGB &&
-      dest_cs == GDK_COLOR_STATE_SRGB_LINEAR)
+      src_color_state == GDK_COLOR_STATE_SRGB &&
+      dest_color_state == GDK_COLOR_STATE_SRGB_LINEAR)
     {
-      gdk_parallel_task_run (gdk_memory_convert_color_state_srgb_to_srgb_linear, &mc);
+      gdk_parallel_task_run (gdk_memory_convert_color_state_srgb_to_srgb_linear, &mc, n_tasks);
     }
   else if (format == GDK_MEMORY_B8G8R8A8_PREMULTIPLIED &&
-           src_cs == GDK_COLOR_STATE_SRGB_LINEAR &&
-           dest_cs == GDK_COLOR_STATE_SRGB)
+           src_color_state == GDK_COLOR_STATE_SRGB_LINEAR &&
+           dest_color_state == GDK_COLOR_STATE_SRGB)
     {
-      gdk_parallel_task_run (gdk_memory_convert_color_state_srgb_linear_to_srgb, &mc);
+      gdk_parallel_task_run (gdk_memory_convert_color_state_srgb_linear_to_srgb, &mc, n_tasks);
     }
   else
     {
-      gdk_parallel_task_run (gdk_memory_convert_color_state_generic, &mc);
+      gdk_parallel_task_run (gdk_memory_convert_color_state_generic, &mc, n_tasks);
     }
 }
 
@@ -2667,19 +2697,24 @@ gdk_memory_mipmap (guchar          *dest,
     .linear = linear,
     .rows_done = 0,
   };
+  gsize chunk_size;
+  guint n_tasks;
 
   g_assert (lod_level > 0);
+
+  chunk_size = MAX (1, 512 / src_width),
+  n_tasks = (src_height + chunk_size - 1) / chunk_size;
 
   if (dest_format == src_format)
     {
       if (linear)
-        gdk_parallel_task_run (gdk_memory_mipmap_same_format_linear, &mipmap);
+        gdk_parallel_task_run (gdk_memory_mipmap_same_format_linear, &mipmap, n_tasks);
       else
-        gdk_parallel_task_run (gdk_memory_mipmap_same_format_nearest, &mipmap);
+        gdk_parallel_task_run (gdk_memory_mipmap_same_format_nearest, &mipmap, n_tasks);
     }
   else
     {
-      gdk_parallel_task_run (gdk_memory_mipmap_generic, &mipmap);
+      gdk_parallel_task_run (gdk_memory_mipmap_generic, &mipmap, n_tasks);
     }
 }
 

@@ -8,10 +8,12 @@ builddir=$1
 setup=$2
 suite=$3
 multiplier=${MESON_TEST_TIMEOUT_MULTIPLIER:-1}
-n_processes=${MESON_TEST_MAX_PROCESSES:-1}
+n_processes=${MESON_TEST_MAX_PROCESSES:-$(nproc)}
 
 # Ignore memory leaks lower in dependencies
-export LSAN_OPTIONS=suppressions=$srcdir/lsan.supp:print_suppressions=0:detect_leaks=0:allocator_may_return_null=1
+export LSAN_OPTIONS=suppressions=$srcdir/lsan.supp:print_suppressions=0:detect_leaks=0:allocator_may_return_null=1:symbolize=1
+export ASAN_SYMBOLIZER_PATH=/usr/bin/llvm-symbolizer
+
 
 case "${setup}" in
   x11*)
@@ -38,11 +40,8 @@ case "${setup}" in
   wayland*)
     export XDG_RUNTIME_DIR="$(mktemp -p $(pwd) -d xdg-runtime-XXXXXX)"
 
-    weston --backend=headless-backend.so --socket=wayland-5 --idle-time=0 &
-    compositor=$!
-    export WAYLAND_DISPLAY=wayland-5
-
     dbus-run-session -- \
+      mutter --headless --wayland --no-x11 --virtual-monitor 1024x768 -- \
           meson test -C ${builddir} \
                 --quiet \
                 --timeout-multiplier "${multiplier}" \
@@ -56,8 +55,6 @@ case "${setup}" in
                 --no-suite=headless \
                 --no-suite=gsk-compare-broadway
     exit_code=$?
-
-    kill ${compositor}
     ;;
 
   broadway*)
@@ -92,13 +89,6 @@ case "${setup}" in
 esac
 
 cd ${builddir}
-
-$srcdir/.gitlab-ci/meson-junit-report.py \
-            --project-name=gtk \
-            --backend="${setup}" \
-            --job-id="${CI_JOB_NAME}" \
-            --output="report-${setup}.xml" \
-            "meson-logs/testlog-${setup}.json"
 
 $srcdir/.gitlab-ci/meson-html-report.py \
             --project-name=gtk \

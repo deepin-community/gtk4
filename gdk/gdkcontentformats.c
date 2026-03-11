@@ -18,8 +18,7 @@
 /**
  * GdkContentFormats:
  *
- * The `GdkContentFormats` structure is used to advertise and negotiate the
- * format of content.
+ * Used to advertise and negotiate the format of content.
  *
  * You will encounter `GdkContentFormats` when interacting with objects
  * controlling operations that pass data between different widgets, window
@@ -50,6 +49,12 @@
  * the types it represents. Instead, new `GdkContentFormats` have to be created.
  * The [struct@Gdk.ContentFormatsBuilder] structure is meant to help in this
  * endeavor.
+ */
+
+/**
+ * GdkContentFormatsBuilder:
+ *
+ * Creates `GdkContentFormats` objects.
  */
 
 #include "config.h"
@@ -572,6 +577,24 @@ gdk_content_formats_get_mime_types (const GdkContentFormats *formats,
 }
 
 /**
+ * gdk_content_formats_is_empty:
+ * @formats: content formats
+ *
+ * Returns whether the content formats contain any formats.
+ *
+ * Returns: true if @formats contains no mime types and no GTypes
+ *
+ * Since: 4.18
+ */
+gboolean
+gdk_content_formats_is_empty (GdkContentFormats *formats)
+{
+  return formats->n_mime_types == 0 && formats->n_gtypes == 0;
+}
+
+/* {{{ GdkContentFormatsBuilder */
+
+/*
  * GdkContentFormatsBuilder:
  *
  * A `GdkContentFormatsBuilder` is an auxiliary struct used to create
@@ -825,6 +848,7 @@ gdk_content_formats_builder_add_mime_type (GdkContentFormatsBuilder *builder,
   builder->n_mime_types++;
 }
 
+/* }}} */
 /* {{{ GdkFileList */
 
 /* We're using GdkFileList* and GSList* interchangeably, counting on the
@@ -912,3 +936,5 @@ gdk_file_list_new_from_array (GFile **files,
 }
 
 /* }}} */
+
+/* vim:set foldmethod=marker: */

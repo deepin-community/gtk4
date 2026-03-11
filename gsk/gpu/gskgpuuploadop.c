@@ -25,12 +25,10 @@ gsk_gpu_upload_op_gl_command_with_area (GskGpuOp                    *op,
 {
   GskGLImage *gl_image = GSK_GL_IMAGE (image);
   GdkMemoryFormat format;
-  GdkGLContext *context;
   gsize stride, bpp;
   guchar *data;
   guint gl_format, gl_type;
 
-  context = GDK_GL_CONTEXT (gsk_gpu_frame_get_context (frame));
   format = gsk_gpu_image_get_format (image);
   bpp = gdk_memory_format_bytes_per_pixel (format);
   stride = area->width * bpp;
@@ -53,7 +51,7 @@ gsk_gpu_upload_op_gl_command_with_area (GskGpuOp                    *op,
     {
       glTexSubImage2D (GL_TEXTURE_2D, 0, area->x, area->y, area->width, area->height, gl_format, gl_type, data);
     }
-  else if (stride % bpp == 0 && gdk_gl_context_has_feature (context, GDK_GL_FEATURE_UNPACK_SUBIMAGE))
+  else if (stride % bpp == 0)
     {
       glPixelStorei (GL_UNPACK_ROW_LENGTH, stride / bpp);
 
@@ -590,11 +588,6 @@ gsk_gpu_upload_glyph_op_draw (GskGpuOp *op,
   cairo_paint (cr);
   cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
 
-  /* Make sure the entire surface is initialized to black */
-  cairo_set_source_rgba (cr, 0, 0, 0, 0);
-  cairo_rectangle (cr, 0.0, 0.0, self->area.width, self->area.height);
-  cairo_fill (cr);
-
   /* Draw glyph */
   cairo_set_source_rgba (cr, 1, 1, 1, 1);
 
@@ -667,7 +660,7 @@ void
 gsk_gpu_upload_glyph_op (GskGpuFrame                 *frame,
                          GskGpuImage                 *image,
                          PangoFont                   *font,
-                         const PangoGlyph             glyph,
+                         PangoGlyph                   glyph,
                          const cairo_rectangle_int_t *area,
                          const graphene_point_t      *origin)
 {

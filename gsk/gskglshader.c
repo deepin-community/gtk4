@@ -19,8 +19,7 @@
 /**
  * GskGLShader:
  *
- * A `GskGLShader` is a snippet of GLSL that is meant to run in the
- * fragment shader of the rendering pipeline.
+ * Implements a fragment shader using GLSL.
  *
  * A fragment shader gets the coordinates being rendered as input and
  * produces the pixel values for that particular pixel. Additionally,
@@ -133,22 +132,18 @@
  * }
  * ```
  *
- * # Deprecation
- *
- * This feature was deprecated in GTK 4.16 after the new rendering infrastructure
- * introduced in 4.14 did not support it.
- * The lack of Vulkan integration would have made it a very hard feature to support.
- *
- * If you want to use OpenGL directly, you should look at [GtkGLArea](../gtk4/class.GLArea.html)
- * which uses a different approach and is still well supported.
+ * Deprecated: 4.16: This feature was deprecated in GTK 4.16 after the new
+ * rendering infrastructure introduced in 4.14 did not support it. The lack
+ * of Vulkan integration would have made it a very hard feature to support.
+ * If you want to use OpenGL directly, you should look at
+ * [GtkGLArea](../gtk4/class.GLArea.html), which uses a different approach
+ * and is still well-supported.
  */
 
 #include "config.h"
 #include "gskglshader.h"
 #include "gskglshaderprivate.h"
 #include "gskdebugprivate.h"
-
-#include "gl/gskglrendererprivate.h"
 
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 
@@ -561,9 +556,6 @@ gsk_gl_shader_compile (GskGLShader  *shader,
                        GError      **error)
 {
   g_return_val_if_fail (GSK_IS_GL_SHADER (shader), FALSE);
-
-  if (GSK_IS_GL_RENDERER (renderer))
-    return gsk_gl_renderer_try_compile_gl_shader (GSK_GL_RENDERER (renderer), shader, error);
 
   g_set_error (error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
                "The renderer does not support gl shaders");

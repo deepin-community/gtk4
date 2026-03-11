@@ -14,7 +14,9 @@ GDK backends use some additional environment variables.
 
 Note that environment variables are generally used for debugging
 purposes. They are not guaranteed to be API stable, and should not
-be used for end-user configuration and customization.
+be used for end-user configuration and customization. If you feel the
+need to set one of them programmatically, you should probably ask for
+an API to do what you want, instead.
 
 ### `GTK_DEBUG`
 
@@ -25,10 +27,16 @@ print out different types of debugging information.
 : Actions and menu models
 
 `builder`
-: GtkBuilder support
+: Deprecated GtkBuilder features
+
+`builder-trace`
+: Trace GtkBuilder operation
 
 `builder-objects`
 : Unused GtkBuilder objects
+
+`css`
+: Deprecated CSS features
 
 `geometry`
 : Size allocation
@@ -221,17 +229,11 @@ A number of options affect behavior instead of logging:
 : Force graphics offload for all textures, even when slower. This allows
   to debug offloading in the absence of dmabufs.
 
-`gl-no-fractional`
-: Disable fractional scaling for OpenGL.
-
 `gl-debug`
 : Insert debugging information in OpenGL
 
 `gl-prefer-gl`
 : Prefer OpenGL over OpenGL ES. This was the default behavior before GTK 4.14.
-
-`vulkan-validate`
-: Load the Vulkan validation layer, if available
 
 `default-settings`
 : Force default values for xsettings
@@ -358,6 +360,9 @@ disable certain features.
 `offload`
 : Disable graphics offload to subsurfaces
 
+`threads`
+: Disabled the use of threads where possible
+
 ### `GDK_GL_DISABLE`
 
 This variable can be set to a list of values, which cause GDK to
@@ -379,13 +384,6 @@ does not support them.
 
 `base-instance`
 :GL_EXT_base_instance
-
-### `GDK_VULKAN_DEVICE`
-
-This variable can be set to the index of a Vulkan device to override
-the default selection of the device that is used for Vulkan rendering.
-The special value `list` can be used to obtain a list of all Vulkan
-devices.
 
 ### `GDK_VULKAN_DISABLE`
 
@@ -431,13 +429,13 @@ using and the GDK backend supports them:
 : Selects the fallback Cairo renderer
 
 `opengl`
-: Selects the default OpenGL renderer
-
-`gl`
-: Selects the "gl" OpenGL renderer
+: Selects the OpenGL renderer
 
 `ngl`
-: Selects the "ngl" OpenGL renderer
+: Selects the OpenGL renderer
+
+`gl`:
+: Selects the OpenGL renderer.
 
 `vulkan`
 : Selects the Vulkan renderer
@@ -487,6 +485,8 @@ disable certain optimizations of the "ngl" and "vulkan" renderer.
 `occlusion`
 : Disable occlusion culling via opacity tracking
 
+`repeat`
+: Repeat drawing operations instead of using offscreen and GL_REPEAT
 
 The special value `all` can be used to turn on all values. The special
 value `help` can be used to obtain a list of all supported values.
@@ -497,13 +497,6 @@ Overrides the timeout for cache GC in the "ngl" and "vulkan" renderers.
 The value can be -1 to disable GC entirely, 0 to force GC to happen
 before every frame, or a positive number to do GC in a timeout every
 n seconds. The default timeout is 15 seconds.
-
-### `GSK_MAX_TEXTURE_SIZE`
-
-Limit texture size to the minimum of this value and the OpenGL limit for
-texture sizes in the "gl" renderer. This can be used to debug issues with
-texture slicing on systems where the OpenGL texture size limit would
-otherwise make texture slicing difficult to test.
 
 ### `GTK_CSD`
 
@@ -528,6 +521,9 @@ library you are using:
 
 `atspi`
 : Selects the AT-SPI accessibility backend
+
+`accesskit`
+: Selects the AccessKit accessibility backend
 
 `test`
 : Selects the test backend

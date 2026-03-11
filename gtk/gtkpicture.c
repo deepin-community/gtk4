@@ -33,9 +33,12 @@
 /**
  * GtkPicture:
  *
- * The `GtkPicture` widget displays a `GdkPaintable`.
+ * Displays a `GdkPaintable`.
  *
- * ![An example GtkPicture](picture.png)
+ * picture>
+ *   <source srcset="picture-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkPicture" src="picture.png">
+ * </picture>
  *
  * Many convenience functions are provided to make pictures simple to use.
  * For example, if you want to load an image from a file, and then display
@@ -78,7 +81,7 @@
  *
  * ## Accessibility
  *
- * `GtkPicture` uses the `GTK_ACCESSIBLE_ROLE_IMG` role.
+ * `GtkPicture` uses the [enum@Gtk.AccessibleRole.img] role.
  */
 
 enum
@@ -227,6 +230,19 @@ gtk_picture_measure (GtkWidget      *widget,
                                            0, 0,
                                            default_size, default_size,
                                            &min_width, &min_height);
+    }
+
+  if (for_size > 0 && self->content_fit == GTK_CONTENT_FIT_SCALE_DOWN)
+    {
+      double opposite_intrinsic_size;
+
+      if (orientation == GTK_ORIENTATION_HORIZONTAL)
+        opposite_intrinsic_size = gdk_paintable_get_intrinsic_height (self->paintable);
+      else
+        opposite_intrinsic_size = gdk_paintable_get_intrinsic_width (self->paintable);
+
+      if (opposite_intrinsic_size != 0 && opposite_intrinsic_size < for_size)
+        for_size = opposite_intrinsic_size;
     }
 
   if (orientation == GTK_ORIENTATION_HORIZONTAL)
@@ -1012,6 +1028,7 @@ gtk_picture_set_content_fit (GtkPicture    *self,
                              GtkContentFit  content_fit)
 {
   gboolean notify_keep_aspect_ratio;
+  gboolean queue_resize;
 
   g_return_if_fail (GTK_IS_PICTURE (self));
 
@@ -1020,10 +1037,15 @@ gtk_picture_set_content_fit (GtkPicture    *self,
 
   notify_keep_aspect_ratio = (content_fit == GTK_CONTENT_FIT_FILL ||
                               self->content_fit == GTK_CONTENT_FIT_FILL);
+  queue_resize = (content_fit == GTK_CONTENT_FIT_SCALE_DOWN ||
+                  self->content_fit == GTK_CONTENT_FIT_SCALE_DOWN);
 
   self->content_fit = content_fit;
 
-  gtk_widget_queue_draw (GTK_WIDGET (self));
+  if (queue_resize)
+    gtk_widget_queue_resize (GTK_WIDGET (self));
+  else
+    gtk_widget_queue_draw (GTK_WIDGET (self));
 
   g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_CONTENT_FIT]);
 

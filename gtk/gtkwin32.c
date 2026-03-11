@@ -28,10 +28,8 @@
 
 #include "gtkprivate.h"
 
-#define STRICT
 #include <windows.h>
 #include <commctrl.h>
-#undef STRICT
 
 extern IMAGE_DOS_HEADER __ImageBase;
 
@@ -45,6 +43,23 @@ this_module (void)
  * Fall back to that value if we can't find resource index programmatically.
  */
 #define EMPIRIC_MANIFEST_RESOURCE_INDEX 2
+
+static wchar_t *
+g_wcsdup (const wchar_t *wcs)
+{
+  wchar_t *new_wcs = NULL;
+  gsize length;
+
+  if G_LIKELY (wcs)
+    {
+      length = wcslen (wcs) + 1;
+      new_wcs = g_new (wchar_t, length);
+      wcscpy (new_wcs, wcs);
+      new_wcs[length - 1] = L'\0';
+    }
+
+  return new_wcs;
+}
 
 static BOOL CALLBACK
 find_first_manifest (HMODULE  module_handle,
@@ -66,15 +81,15 @@ find_first_manifest (HMODULE  module_handle,
 }
 
 /*
- * Grabs the first manifest it finds in libgtk3 (which is expected to be the
+ * Grabs the first manifest it finds in libgtk (which is expected to be the
  * common-controls-6.0.0.0 manifest we embedded to enable visual styles),
  * uses it to create a process-default activation context, activates that
  * context, loads up the library passed in @dllname, then deactivates and
  * releases the context.
  *
  * In practice this is used to force system DLLs (like comdlg32) to be
- * loaded as if the application had the same manifest as libgtk3
- * (otherwise libgtk3 manifest only affests libgtk3 itself).
+ * loaded as if the application had the same manifest as libgtk
+ * (otherwise libgtk3 manifest only affests libgtk itself).
  * This way application does not need to have a manifest or to link
  * against comctl32.
  *
@@ -218,21 +233,4 @@ _gtk_get_data_prefix (void)
     gtk_data_prefix = g_win32_get_package_installation_directory_of_module (this_module ());
 
   return gtk_data_prefix;
-}
-
-wchar_t *
-g_wcsdup (const wchar_t *wcs)
-{
-  wchar_t *new_wcs = NULL;
-  gsize length;
-
-  if G_LIKELY (wcs)
-    {
-      length = wcslen (wcs) + 1;
-      new_wcs = g_new (wchar_t, length);
-      wcscpy (new_wcs, wcs);
-      new_wcs[length - 1] = L'\0';
-    }
-
-  return new_wcs;
 }

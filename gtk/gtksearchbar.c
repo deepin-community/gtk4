@@ -31,6 +31,7 @@
 
 #include "gtkbinlayout.h"
 #include "gtkbuildable.h"
+#include "gtkbuilderprivate.h"
 #include "gtkbutton.h"
 #include "gtkcenterbox.h"
 #include "gtkentryprivate.h"
@@ -44,9 +45,12 @@
 /**
  * GtkSearchBar:
  *
- * `GtkSearchBar` is a container made to have a search entry.
+ * Reveals a search entry when search is started.
  *
- * ![An example GtkSearchBar](search-bar.png)
+ * <picture>
+ *   <source srcset="search-bar-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkSearchBar" src="search-bar.png">
+ * </picture>
  *
  * It can also contain additional widgets, such as drop-down menus,
  * or buttons.  The search bar would appear when a search is started
@@ -93,7 +97,7 @@
  *
  * # Accessibility
  *
- * `GtkSearchBar` uses the %GTK_ACCESSIBLE_ROLE_SEARCH role.
+ * `GtkSearchBar` uses the [enum@Gtk.AccessibleRole.search] role.
  */
 
 typedef struct _GtkSearchBarClass   GtkSearchBarClass;
@@ -145,9 +149,14 @@ gtk_search_bar_buildable_add_child (GtkBuildable *buildable,
                                     const char   *type)
 {
   if (GTK_IS_WIDGET (child))
-    gtk_search_bar_set_child (GTK_SEARCH_BAR (buildable), GTK_WIDGET (child));
+    {
+      gtk_buildable_child_deprecation_warning (buildable, builder, NULL, "child");
+      gtk_search_bar_set_child (GTK_SEARCH_BAR (buildable), GTK_WIDGET (child));
+    }
   else
-    parent_buildable_iface->add_child (buildable, builder, child, type);
+    {
+      parent_buildable_iface->add_child (buildable, builder, child, type);
+    }
 }
 
 static void
@@ -642,6 +651,8 @@ gtk_search_bar_set_key_capture_widget (GtkSearchBar *bar,
                                  (gpointer *) &bar->capture_widget);
 
       bar->capture_widget_controller = gtk_event_controller_key_new ();
+      gtk_event_controller_set_static_name (bar->capture_widget_controller,
+                                            "gtk-search-bar-capture");
       gtk_event_controller_set_propagation_phase (bar->capture_widget_controller,
                                                   GTK_PHASE_BUBBLE);
       g_signal_connect (bar->capture_widget_controller, "key-pressed",

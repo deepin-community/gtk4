@@ -66,9 +66,12 @@
 /**
  * GtkTextView:
  *
- * A widget that displays the contents of a [class@Gtk.TextBuffer].
+ * Displays the contents of a [class@Gtk.TextBuffer].
  *
- * ![An example GtkTextView](multiline-text.png)
+ * <picture>
+ *   <source srcset="multiline-text-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkTextView" src="multiline-text.png">
+ * </picture>
  *
  * You may wish to begin by reading the [conceptual overview](section-text-widget.html),
  * which gives an overview of all the objects and data types related to the
@@ -136,7 +139,7 @@
  *
  * ## Accessibility
  *
- * `GtkTextView` uses the %GTK_ACCESSIBLE_ROLE_TEXT_BOX role.
+ * `GtkTextView` uses the [enum@Gtk.AccessibleRole.text_box] role.
  */
 
 /* How scrolling, validation, exposes, etc. work.
@@ -233,14 +236,13 @@ struct _GtkTextViewPrivate
   GtkAdjustment *vadjustment;
 
   /* X offset between widget coordinates and buffer coordinates
-   * taking left_padding in account
    */
-  int xoffset;
+  double xoffset;
 
   /* Y offset between widget coordinates and buffer coordinates
-   * taking top_padding and top_margin in account
+   * taking top_margin in account
    */
-  int yoffset;
+  double yoffset;
 
   /* Width and height of the buffer */
   int width;
@@ -301,10 +303,6 @@ struct _GtkTextViewPrivate
   int right_margin;
   int top_margin;
   int bottom_margin;
-  int left_padding;
-  int right_padding;
-  int top_padding;
-  int bottom_padding;
 
   int indent;
 
@@ -564,7 +562,8 @@ static void     gtk_text_view_commit_handler               (GtkIMContext  *conte
 							    const char    *str,
 							    GtkTextView   *text_view);
 static void     gtk_text_view_commit_text                  (GtkTextView   *text_view,
-                                                            const char    *text);
+                                                            const char    *text,
+                                                            guint32        timestamp);
 static void     gtk_text_view_preedit_start_handler        (GtkIMContext  *context,
                                                             GtkTextView   *text_view);
 static void     gtk_text_view_preedit_changed_handler      (GtkIMContext  *context,
@@ -691,6 +690,9 @@ static void gtk_text_view_real_undo (GtkWidget   *widget,
 static void gtk_text_view_real_redo (GtkWidget   *widget,
                                      const char *action_name,
                                      GVariant    *parameter);
+
+static double quantize_value (GtkAdjustment *adjustment,
+                              GtkWidget     *widget);
 
 
 /* FIXME probably need the focus methods. */
@@ -1917,6 +1919,18 @@ gtk_text_view_class_init (GtkTextViewClass *klass)
 #endif
 
   /* Cut/copy/paste */
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_Cut, GDK_NO_MODIFIER_MASK,
+                                       "cut-clipboard",
+                                       NULL);
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_Copy, GDK_NO_MODIFIER_MASK,
+                                       "copy-clipboard",
+                                       NULL);
+  gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_Paste, GDK_NO_MODIFIER_MASK,
+                                       "paste-clipboard",
+                                       NULL);
 #ifdef __APPLE__
   gtk_widget_class_add_binding_signal (widget_class,
                                        GDK_KEY_x, GDK_META_MASK,
@@ -1972,6 +1986,12 @@ gtk_text_view_class_init (GtkTextViewClass *klass)
 #endif
 
   /* Undo/Redo */
+  gtk_widget_class_add_binding_action (widget_class,
+                                       GDK_KEY_Undo, GDK_NO_MODIFIER_MASK,
+                                       "text.undo", NULL);
+  gtk_widget_class_add_binding_action (widget_class,
+                                       GDK_KEY_Redo, GDK_NO_MODIFIER_MASK,
+                                       "text.redo", NULL);
 #ifdef __APPLE__
   gtk_widget_class_add_binding_action (widget_class,
                                        GDK_KEY_z, GDK_META_MASK,
@@ -2189,7 +2209,6 @@ gtk_text_view_init (GtkTextView *text_view)
 
   gtk_accessible_update_property (GTK_ACCESSIBLE (widget),
                                   GTK_ACCESSIBLE_PROPERTY_MULTI_LINE, TRUE,
-                                  GTK_ACCESSIBLE_PROPERTY_HAS_POPUP, TRUE,
                                   -1);
 }
 
@@ -2298,6 +2317,10 @@ gtk_text_view_set_buffer (GtkTextView   *text_view,
 
   if (old_buffer != NULL)
     {
+      gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (text_view),
+                                           GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_REMOVE,
+                                           0, gtk_text_buffer_get_char_count (old_buffer));
+
       while (priv->anchored_children.length)
         {
           AnchoredChild *ac = g_queue_peek_head (&priv->anchored_children);
@@ -2402,6 +2425,10 @@ gtk_text_view_set_buffer (GtkTextView   *text_view,
 
       gtk_widget_action_set_enabled (GTK_WIDGET (text_view), "text.undo", can_undo);
       gtk_widget_action_set_enabled (GTK_WIDGET (text_view), "text.redo", can_redo);
+
+      gtk_accessible_text_update_contents (GTK_ACCESSIBLE_TEXT (text_view),
+                                           GTK_ACCESSIBLE_TEXT_CONTENT_CHANGE_INSERT,
+                                           0, gtk_text_buffer_get_char_count (buffer));
     }
 
   if (old_buffer)
@@ -2649,7 +2676,7 @@ gtk_text_view_get_line_at_y (GtkTextView *text_view,
 }
 
 /* Same as gtk_text_view_scroll_to_iter but deal with
- * (top_margin / top_padding) and (bottom_margin / bottom_padding).
+ * top_margin and bottom_margin.
  * When with_border == TRUE and you scroll on the edges,
  * all borders are shown for the corresponding edge.
  * When with_border == FALSE, only left margin and right_margin
@@ -2716,7 +2743,7 @@ _gtk_text_view_scroll_to_iter (GtkTextView   *text_view,
    * (-priv->top_margin) [top padding][top margin] (0) [text][bottom margin][bottom padding]
    *
    * Hadjustment value:
-   * (-priv->left_padding) [left padding] (0) [left margin][text][right margin][right padding]
+   * [left padding] (0) [left margin][text][right margin][right padding]
    *
    * Buffer coordinates:
    * on x: (0) [left margin][text][right margin]
@@ -2729,7 +2756,7 @@ _gtk_text_view_scroll_to_iter (GtkTextView   *text_view,
    * Canvas coordinates:
    * (the canvas is the virtual window where the content of the buffer is drawn )
    *
-   * on x: (-priv->left_padding) [left padding] (0) [left margin][text][right margin][right padding]
+   * on x: [left padding] (0) [left margin][text][right margin][right padding]
    * on y: (-priv->top_margin) [top margin][top padding] (0) [text][bottom margin][bottom padding]
    *
    * (priv->xoffset, priv->yoffset) is the origin of the view (visible part of the canvas)
@@ -2756,7 +2783,7 @@ _gtk_text_view_scroll_to_iter (GtkTextView   *text_view,
   screen_inner_bottom = screen.y + screen.height - within_margin_yoffset;
 
   buffer_bottom = priv->height - priv->bottom_margin;
-  buffer_right = priv->width - priv->right_margin - priv->left_padding - 1;
+  buffer_right = priv->width - priv->right_margin - 1;
 
   screen_dest.x = screen.x;
   screen_dest.y = screen.y;
@@ -2798,14 +2825,14 @@ _gtk_text_view_scroll_to_iter (GtkTextView   *text_view,
       if (cursor.y < screen_inner_top)
         {
           if (cursor.y == 0)
-            border_yoffset = with_border ? priv->top_padding : 0;
+            border_yoffset = 0;
 
           screen_dest.y = cursor.y - MAX (within_margin_yoffset, border_yoffset);
         }
       else if (cursor_bottom > screen_inner_bottom)
         {
           if (cursor_bottom == buffer_bottom - priv->top_margin)
-            border_yoffset = with_border ? priv->bottom_padding : 0;
+            border_yoffset = 0;
 
           screen_dest.y = cursor_bottom - screen_dest.height -
                           MAX (within_margin_yoffset, border_yoffset);
@@ -2836,14 +2863,14 @@ _gtk_text_view_scroll_to_iter (GtkTextView   *text_view,
       if (cursor.x < screen_inner_left)
         {
           if (cursor.x == priv->left_margin)
-            border_xoffset = with_border ? priv->left_padding : 0;
+            border_xoffset = 0;
 
           screen_dest.x = cursor.x - MAX (within_margin_xoffset, border_xoffset);
         }
       else if (cursor_right >= screen_inner_right - 1)
         {
-          if (cursor.x >= buffer_right - priv->right_padding)
-            border_xoffset = with_border ? priv->right_padding : 0;
+          if (cursor.x >= buffer_right)
+            border_xoffset = 0;
 
           screen_dest.x = cursor_right - screen_dest.width -
                           MAX (within_margin_xoffset, border_xoffset) + 1;
@@ -2852,7 +2879,7 @@ _gtk_text_view_scroll_to_iter (GtkTextView   *text_view,
 
   if (screen_dest.x != screen.x)
     {
-      gtk_adjustment_animate_to_value (priv->hadjustment, screen_dest.x + priv->left_padding);
+      gtk_adjustment_animate_to_value (priv->hadjustment, screen_dest.x);
 
       DV (g_print (" horiz increment %d\n", screen_dest.x - screen.x));
     }
@@ -3061,6 +3088,44 @@ gtk_text_view_update_layout_width (GtkTextView *text_view)
 }
 
 static void
+calculate_gutter_offsets (GtkTextView *text_view,
+                          int         *width,
+                          int         *height)
+{
+  GtkWidget *x_gutter;
+  GtkWidget *y_gutter;
+
+  g_return_if_fail (GTK_IS_TEXT_VIEW (text_view));
+  g_return_if_fail (width != NULL && height != NULL);
+
+  x_gutter = gtk_text_view_get_gutter (text_view, GTK_TEXT_WINDOW_LEFT);
+
+  if (x_gutter != NULL)
+    {
+      GtkRequisition x_req = {0};
+      gtk_widget_get_preferred_size (x_gutter, &x_req, NULL);
+      *width = x_req.width;
+    }
+  else
+    {
+      *width = 0;
+    }
+
+  y_gutter = gtk_text_view_get_gutter (text_view, GTK_TEXT_WINDOW_TOP);
+
+  if (y_gutter != NULL)
+    {
+      GtkRequisition y_req = {0};
+      gtk_widget_get_preferred_size (y_gutter, &y_req, NULL);
+      *height = y_req.height;
+    }
+  else
+    {
+      *height = 0;
+    }
+}
+
+static void
 gtk_text_view_update_im_spot_location (GtkTextView *text_view)
 {
   GdkRectangle area;
@@ -3068,10 +3133,15 @@ gtk_text_view_update_im_spot_location (GtkTextView *text_view)
   if (text_view->priv->layout == NULL)
     return;
 
+  int x_offset = 0;
+  int y_offset = 0;
+
+  calculate_gutter_offsets (text_view, &x_offset, &y_offset);
+
   gtk_text_view_get_cursor_locations (text_view, NULL, &area, NULL);
 
-  area.x -= text_view->priv->xoffset;
-  area.y -= text_view->priv->yoffset;
+  area.x -= text_view->priv->xoffset - x_offset;
+  area.y -= text_view->priv->yoffset - y_offset;
 
   /* Width returned by Pango indicates direction of cursor,
    * by its sign more than the size of cursor.
@@ -3277,6 +3347,39 @@ gtk_text_view_get_visible_rect (GtkTextView  *text_view,
                  visible_rect->width,
                  visible_rect->height));
     }
+}
+
+/**
+ * gtk_text_view_get_visible_offset:
+ * @text_view: a `GtkTextView`
+ * @x_offset: (out) (nullable): a location for the X offset
+ * @y_offset: (out) (nullable): a location for the Y offset
+ *
+ * Gets the X,Y offset in buffer coordinates of the top-left corner of
+ * the textview's text contents.
+ *
+ * This allows for more-precise positioning than what is provided by
+ * [method@Gtk.TextView.get_visible_rect()] as you can discover what
+ * device pixel is being quantized for text positioning.
+ *
+ * You might want this when making ulterior widgets align with quantized
+ * device pixels of the textview contents such as line numbers.
+ *
+ * Since: 4.18
+ */
+void
+gtk_text_view_get_visible_offset (GtkTextView *text_view,
+                                  double      *x_offset,
+                                  double      *y_offset)
+{
+
+  g_return_if_fail (GTK_IS_TEXT_VIEW (text_view));
+
+  if (x_offset)
+    *x_offset = text_view->priv->xoffset;
+
+  if (y_offset)
+    *y_offset = text_view->priv->yoffset;
 }
 
 /**
@@ -3628,7 +3731,6 @@ gtk_text_view_set_left_margin (GtkTextView *text_view,
   if (priv->left_margin != left_margin)
     {
       priv->left_margin = left_margin;
-      priv->left_margin = left_margin + priv->left_padding;
 
       if (priv->layout && priv->layout->default_style)
         {
@@ -3681,7 +3783,6 @@ gtk_text_view_set_right_margin (GtkTextView *text_view,
   if (priv->right_margin != right_margin)
     {
       priv->right_margin = right_margin;
-      priv->right_margin = right_margin + priv->right_padding;
 
       if (priv->layout && priv->layout->default_style)
         {
@@ -3734,7 +3835,6 @@ gtk_text_view_set_top_margin (GtkTextView *text_view,
       priv->yoffset += priv->top_margin - top_margin;
 
       priv->top_margin = top_margin;
-      priv->top_margin = top_margin + priv->top_padding;
 
       if (priv->layout && priv->layout->default_style)
         gtk_text_layout_default_style_changed (priv->layout);
@@ -3782,7 +3882,6 @@ gtk_text_view_set_bottom_margin (GtkTextView *text_view,
   if (priv->bottom_margin != bottom_margin)
     {
       priv->bottom_margin = bottom_margin;
-      priv->bottom_margin = bottom_margin + priv->bottom_padding;
 
       if (priv->layout && priv->layout->default_style)
         gtk_text_layout_default_style_changed (priv->layout);
@@ -4476,7 +4575,11 @@ gtk_text_view_measure (GtkWidget      *widget,
   if (orientation == GTK_ORIENTATION_HORIZONTAL)
     extra = borders.left + priv->left_margin + priv->right_margin + borders.right;
   else
-    extra = borders.top + priv->height + borders.bottom;
+    {
+      min = MAX (min, priv->height);
+      nat = MAX (nat, priv->height);
+      extra = borders.top + borders.bottom;
+    }
 
   *minimum = min + extra;
   *natural = nat + extra;
@@ -4485,7 +4588,7 @@ gtk_text_view_measure (GtkWidget      *widget,
 static void
 gtk_text_view_compute_child_allocation (GtkTextView         *text_view,
                                         const AnchoredChild *vc,
-                                        GtkAllocation       *allocation,
+                                        graphene_rect_t     *allocation,
                                         int                  gutter_width,
                                         int                  gutter_height)
 {
@@ -4502,12 +4605,12 @@ gtk_text_view_compute_child_allocation (GtkTextView         *text_view,
 
   buffer_y += vc->from_top_of_line;
 
-  allocation->x = vc->from_left_of_buffer - text_view->priv->xoffset + gutter_width;
-  allocation->y = buffer_y - text_view->priv->yoffset + gutter_height;
+  allocation->origin.x = vc->from_left_of_buffer - text_view->priv->xoffset + gutter_width;
+  allocation->origin.y = buffer_y - text_view->priv->yoffset + gutter_height;
 
   gtk_widget_get_preferred_size (vc->widget, &req, NULL);
-  allocation->width = req.width;
-  allocation->height = req.height;
+  allocation->size.width = req.width;
+  allocation->size.height = req.height;
 }
 
 static void
@@ -4516,57 +4619,23 @@ gtk_text_view_update_child_allocation (GtkTextView         *text_view,
                                        int                  gutter_width,
                                        int                  gutter_height)
 {
-  GtkAllocation allocation;
+  graphene_rect_t allocation;
 
   gtk_text_view_compute_child_allocation (text_view, vc, &allocation, gutter_width, gutter_height);
 
-  gtk_widget_size_allocate (vc->widget, &allocation, -1);
+  gtk_widget_allocate (vc->widget,
+                       allocation.size.width,
+                       allocation.size.height,
+                       -1,
+                       gsk_transform_translate (NULL, &allocation.origin));
 
 #if 0
-  g_print ("allocation for %p allocated to %d,%d yoffset = %d\n",
+  g_print ("allocation for %p allocated to %lf,%lf yoffset = %lf\n",
            vc->widget,
-           vc->widget->allocation.x,
-           vc->widget->allocation.y,
+           allocation.origin.x,
+           allocation.origin.y,
            text_view->priv->yoffset);
 #endif
-}
-
-static void
-calculate_gutter_offsets (GtkTextView *text_view,
-                          int         *width,
-                          int         *height)
-{
-  GtkWidget *x_gutter;
-  GtkWidget *y_gutter;
-
-  g_return_if_fail (GTK_IS_TEXT_VIEW (text_view));
-  g_return_if_fail (width != NULL && height != NULL);
-
-  x_gutter = gtk_text_view_get_gutter (text_view, GTK_TEXT_WINDOW_LEFT);
-
-  if (x_gutter != NULL)
-    {
-      GtkRequisition x_req = {0};
-      gtk_widget_get_preferred_size (x_gutter, &x_req, NULL);
-      *width = x_req.width;
-    }
-  else
-    {
-      *width = 0;
-    }
-
-  y_gutter = gtk_text_view_get_gutter (text_view, GTK_TEXT_WINDOW_TOP);
-
-  if (y_gutter != NULL)
-    {
-      GtkRequisition y_req = {0};
-      gtk_widget_get_preferred_size (y_gutter, &y_req, NULL);
-      *height = y_req.height;
-    }
-  else
-    {
-      *height = 0;
-    }
 }
 
 static void
@@ -5310,38 +5379,23 @@ gtk_text_view_state_flags_changed (GtkWidget     *widget,
 }
 
 static void
-gtk_text_view_obscure_mouse_cursor (GtkTextView *text_view)
+gtk_text_view_obscure_mouse_cursor (GtkTextView *text_view,
+                                    guint32      timestamp)
 {
-  GdkDisplay *display;
-  GdkSeat *seat;
-  GdkDevice *device;
-
   if (text_view->priv->mouse_cursor_obscured)
     return;
 
   gtk_widget_set_cursor_from_name (GTK_WIDGET (text_view), "none");
 
-  display = gtk_widget_get_display (GTK_WIDGET (text_view));
-  seat = gdk_display_get_default_seat (display);
-  device = gdk_seat_get_pointer (seat);
-
-  text_view->priv->obscured_cursor_timestamp = gdk_device_get_timestamp (device);
+  text_view->priv->obscured_cursor_timestamp = timestamp;
   text_view->priv->mouse_cursor_obscured = TRUE;
 }
 
 static void
-gtk_text_view_unobscure_mouse_cursor (GtkTextView *text_view)
+gtk_text_view_unobscure_mouse_cursor (GtkTextView *text_view, guint32 timestamp)
 {
-  GdkDisplay *display;
-  GdkSeat *seat;
-  GdkDevice *device;
-
-  display = gtk_widget_get_display (GTK_WIDGET (text_view));
-  seat = gdk_display_get_default_seat (display);
-  device = gdk_seat_get_pointer (seat);
-
   if (text_view->priv->mouse_cursor_obscured &&
-      gdk_device_get_timestamp (device) != text_view->priv->obscured_cursor_timestamp)
+      timestamp > text_view->priv->obscured_cursor_timestamp)
     {
       gtk_widget_set_cursor_from_name (GTK_WIDGET (text_view), "text");
       text_view->priv->mouse_cursor_obscured = FALSE;
@@ -5651,6 +5705,7 @@ gtk_text_view_key_controller_key_pressed (GtkEventControllerKey *controller,
 {
   GtkTextViewPrivate *priv;
   gboolean retval = FALSE;
+  guint32 timestamp;
 
   priv = text_view->priv;
 
@@ -5659,6 +5714,8 @@ gtk_text_view_key_controller_key_pressed (GtkEventControllerKey *controller,
 
   /* Make sure input method knows where it is */
   flush_update_im_spot_location (text_view);
+
+  timestamp = gtk_event_controller_get_current_event_time (GTK_EVENT_CONTROLLER (controller));
 
   /* use overall editability not can_insert, more predictable for users */
 
@@ -5671,7 +5728,7 @@ gtk_text_view_key_controller_key_pressed (GtkEventControllerKey *controller,
        * editable
        */
       gtk_text_view_reset_im_context (text_view);
-      gtk_text_view_commit_text (text_view, "\n");
+      gtk_text_view_commit_text (text_view, "\n", timestamp);
       retval = TRUE;
     }
   /* Pass through Tab as literal tab, unless Control is held down */
@@ -5686,7 +5743,7 @@ gtk_text_view_key_controller_key_pressed (GtkEventControllerKey *controller,
       if (priv->accepts_tab && priv->editable)
 	{
 	  gtk_text_view_reset_im_context (text_view);
-	  gtk_text_view_commit_text (text_view, "\t");
+	  gtk_text_view_commit_text (text_view, "\t", timestamp);
 	}
       else
 	g_signal_emit_by_name (text_view, "move-focus",
@@ -6021,7 +6078,9 @@ gtk_text_view_motion (GtkEventController *controller,
                       double              y,
                       gpointer            user_data)
 {
-  gtk_text_view_unobscure_mouse_cursor (GTK_TEXT_VIEW (user_data));
+  guint32 timestamp = gtk_event_controller_get_current_event_time (controller);
+
+  gtk_text_view_unobscure_mouse_cursor (GTK_TEXT_VIEW (user_data), timestamp);
 }
 
 static void
@@ -6035,7 +6094,7 @@ gtk_text_view_paint (GtkWidget   *widget,
   priv = text_view->priv;
 
   g_return_if_fail (priv->layout != NULL);
-  g_return_if_fail (priv->xoffset >= - priv->left_padding);
+  g_return_if_fail (priv->xoffset >= 0);
   g_return_if_fail (priv->yoffset >= - priv->top_margin);
 
   while (priv->first_validate_idle != 0)
@@ -6057,12 +6116,10 @@ gtk_text_view_paint (GtkWidget   *widget,
   gtk_text_layout_snapshot (priv->layout,
                             widget,
                             snapshot,
-                            &(GdkRectangle) {
-                              priv->xoffset,
-                              priv->yoffset,
-                              gtk_widget_get_width (widget),
-                              gtk_widget_get_height (widget)
-                            },
+                            &GRAPHENE_RECT_INIT (priv->xoffset,
+                                                 priv->yoffset,
+                                                 gtk_widget_get_width (widget),
+                                                 gtk_widget_get_height (widget)),
                             priv->selection_style_changed,
                             priv->cursor_alpha);
 
@@ -6579,8 +6636,8 @@ gtk_text_view_move_cursor (GtkTextView     *text_view,
           break;
 	}
 
-      old_xpos = gtk_adjustment_get_value (priv->hadjustment);
-      old_ypos = gtk_adjustment_get_value (priv->vadjustment);
+      old_xpos = quantize_value (priv->hadjustment, GTK_WIDGET (text_view));
+      old_ypos = quantize_value (priv->vadjustment, GTK_WIDGET (text_view));
       gtk_text_view_move_viewport (text_view, scroll_step, count);
       if ((old_xpos == gtk_adjustment_get_target_value (priv->hadjustment) &&
            old_ypos == gtk_adjustment_get_target_value (priv->vadjustment)) &&
@@ -6792,6 +6849,7 @@ gtk_text_view_move_viewport (GtkTextView     *text_view,
 {
   GtkAdjustment *adjustment;
   double increment;
+  double value;
 
   switch (step)
     {
@@ -6829,7 +6887,8 @@ gtk_text_view_move_viewport (GtkTextView     *text_view,
       break;
     }
 
-  gtk_adjustment_animate_to_value (adjustment, gtk_adjustment_get_value (adjustment) + count * increment);
+  value = quantize_value (adjustment, GTK_WIDGET (text_view));
+  gtk_adjustment_animate_to_value (adjustment, value + count * increment);
 }
 
 static void
@@ -7822,14 +7881,16 @@ gtk_text_view_drag_gesture_end (GtkGestureDrag *gesture,
   GtkTextViewPrivate *priv;
   GdkEvent *event;
   GdkDevice *device;
+  guint32 timestamp = GDK_CURRENT_TIME;
 
   priv = text_view->priv;
   sequence = gtk_gesture_single_get_current_sequence (GTK_GESTURE_SINGLE (gesture));
+  timestamp = gtk_event_controller_get_current_event_time (GTK_EVENT_CONTROLLER (gesture));
 
   clicked_in_selection =
     g_object_get_qdata (G_OBJECT (gesture), quark_text_selection_data) == NULL;
   g_object_set_qdata (G_OBJECT (gesture), quark_text_selection_data, NULL);
-  gtk_text_view_unobscure_mouse_cursor (text_view);
+  gtk_text_view_unobscure_mouse_cursor (text_view, timestamp);
 
   if (priv->scroll_timeout != 0)
     {
@@ -8191,8 +8252,6 @@ gtk_text_view_ensure_layout (GtkTextView *text_view)
 
       style->left_margin = priv->left_margin;
       style->right_margin = priv->right_margin;
-      priv->layout->right_padding = priv->right_padding;
-      priv->layout->left_padding = priv->left_padding;
 
       style->indent = priv->indent;
       style->tabs = priv->tabs ? pango_tab_array_copy (priv->tabs) : NULL;
@@ -8216,6 +8275,15 @@ gtk_text_view_ensure_layout (GtkTextView *text_view)
           /* ac may now be invalid! */
         }
     }
+}
+
+GtkTextLayout *
+gtk_text_view_get_layout (GtkTextView *text_view)
+{
+  GtkTextViewPrivate *priv = text_view->priv;
+
+  gtk_text_view_ensure_layout (text_view);
+  return priv->layout;
 }
 
 GtkTextAttributes*
@@ -8588,7 +8656,7 @@ gtk_text_view_set_hadjustment_values (GtkTextView *text_view)
   priv = text_view->priv;
 
   screen_width = SCREEN_WIDTH (text_view);
-  old_value = gtk_adjustment_get_value (priv->hadjustment);
+  old_value = quantize_value (priv->hadjustment, GTK_WIDGET (text_view));
   new_upper = MAX (screen_width, priv->width);
 
   g_object_set (priv->hadjustment,
@@ -8618,7 +8686,7 @@ gtk_text_view_set_vadjustment_values (GtkTextView *text_view)
   priv = text_view->priv;
 
   screen_height = SCREEN_HEIGHT (text_view);
-  old_value = gtk_adjustment_get_value (priv->vadjustment);
+  old_value = quantize_value (priv->vadjustment, GTK_WIDGET (text_view));
   new_upper = MAX (screen_height, priv->height);
 
   g_object_set (priv->vadjustment,
@@ -8649,8 +8717,9 @@ gtk_text_view_value_changed (GtkAdjustment *adjustment,
   GtkTextViewPrivate *priv;
   GtkTextIter iter;
   int line_top;
-  int dx = 0;
-  int dy = 0;
+  double dx = 0;
+  double dy = 0;
+  double value;
 
   priv = text_view->priv;
 
@@ -8664,23 +8733,25 @@ gtk_text_view_value_changed (GtkAdjustment *adjustment,
              adjustment == priv->hadjustment ? "hadjustment" : adjustment == priv->vadjustment ? "vadjustment" : "none",
              adjustment ? gtk_adjustment_get_value (adjustment) : 0.0));
 
+  value = quantize_value (adjustment, GTK_WIDGET (text_view));
+
   if (adjustment == priv->hadjustment)
     {
-      dx = priv->xoffset - (int)gtk_adjustment_get_value (adjustment);
-      priv->xoffset = (int)gtk_adjustment_get_value (adjustment) - priv->left_padding;
+      dx = priv->xoffset - value;
+      priv->xoffset = value;
     }
   else if (adjustment == priv->vadjustment)
     {
-      dy = priv->yoffset - (int)gtk_adjustment_get_value (adjustment) + priv->top_margin ;
+      dy = priv->yoffset - value + priv->top_margin;
       priv->yoffset -= dy;
 
       if (priv->layout)
         {
-          gtk_text_layout_get_line_at_y (priv->layout, &iter, gtk_adjustment_get_value (adjustment), &line_top);
+          gtk_text_layout_get_line_at_y (priv->layout, &iter, value, &line_top);
 
           gtk_text_buffer_move_mark (get_buffer (text_view), priv->first_para_mark, &iter);
 
-          priv->first_para_pixels = gtk_adjustment_get_value (adjustment) - line_top;
+          priv->first_para_pixels = value - line_top;
         }
     }
 
@@ -8751,14 +8822,25 @@ gtk_text_view_commit_handler (GtkIMContext  *context,
                               const char    *str,
                               GtkTextView   *text_view)
 {
-  gtk_text_view_commit_text (text_view, str);
+  GdkDisplay *display;
+  GdkSeat *seat;
+  GdkDevice *device;
+  guint32 timestamp;
+
+  display = gtk_widget_get_display (GTK_WIDGET (text_view));
+  seat = gdk_display_get_default_seat (display);
+  device = gdk_seat_get_pointer (seat);
+  timestamp = gdk_device_get_timestamp (device);
+
+  gtk_text_view_commit_text (text_view, str, timestamp);
   gtk_text_view_reset_blink_time (text_view);
   gtk_text_view_pend_cursor_blink (text_view);
 }
 
 static void
 gtk_text_view_commit_text (GtkTextView   *text_view,
-                           const char    *str)
+                           const char    *str,
+                           guint32        timestamp)
 {
   GtkTextViewPrivate *priv;
   gboolean had_selection;
@@ -8767,7 +8849,7 @@ gtk_text_view_commit_text (GtkTextView   *text_view,
 
   priv = text_view->priv;
 
-  gtk_text_view_obscure_mouse_cursor (text_view);
+  gtk_text_view_obscure_mouse_cursor (text_view, timestamp);
   gtk_text_buffer_begin_user_action (get_buffer (text_view));
 
   had_selection = gtk_text_buffer_get_selection_bounds (get_buffer (text_view), &begin, &end);
@@ -8841,10 +8923,19 @@ gtk_text_view_preedit_changed_handler (GtkIMContext *context,
   PangoAttrList *attrs;
   int cursor_pos;
   GtkTextIter iter;
+  GdkDisplay *display;
+  GdkSeat *seat;
+  GdkDevice *device;
+  guint32 timestamp;
+
+  display = gtk_widget_get_display (GTK_WIDGET (text_view));
+  seat = gdk_display_get_default_seat (display);
+  device = gdk_seat_get_pointer (seat);
+  timestamp = gdk_device_get_timestamp (device);
 
   priv = text_view->priv;
 
-  gtk_text_view_obscure_mouse_cursor (text_view);
+  gtk_text_view_obscure_mouse_cursor (text_view, timestamp);
   gtk_text_buffer_get_iter_at_mark (priv->buffer, &iter,
 				    gtk_text_buffer_get_insert (priv->buffer));
 
@@ -10524,6 +10615,26 @@ gtk_text_view_get_key_controller (GtkTextView *text_view)
   return text_view->priv->key_controller;
 }
 
+static double
+quantize_value (GtkAdjustment *adjustment,
+                GtkWidget     *widget)
+{
+  GtkNative *native;
+  GdkSurface *surface;
+  double inv_scale;
+
+  g_assert (GTK_IS_ADJUSTMENT (adjustment));
+  g_assert (GTK_IS_WIDGET (widget));
+
+  if (!(native = gtk_widget_get_native (widget)) ||
+      !(surface = gtk_native_get_surface (native)))
+    return (int)gtk_adjustment_get_value (adjustment);
+
+  inv_scale = 1. / gdk_surface_get_scale (surface);
+
+  return round (gtk_adjustment_get_value (adjustment) / inv_scale) * inv_scale;
+}
+
 /* {{{ GtkAccessibleText implementation */
 
 static GBytes *
@@ -10912,4 +11023,4 @@ gtk_text_view_accessible_text_init (GtkAccessibleTextInterface *iface)
 
 /* }}} */
 
-/* vim:set foldmethod=marker expandtab: */
+/* vim:set foldmethod=marker: */

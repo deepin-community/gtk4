@@ -35,7 +35,7 @@
 /**
  * GtkTextIter:
  *
- * An iterator for the contents of a `GtkTextBuffer`.
+ * Iterates over the contents of a `GtkTextBuffer`.
  *
  * You may wish to begin by reading the
  * [text widget conceptual overview](section-text-widget.html),
@@ -5704,6 +5704,21 @@ _gtk_text_btree_get_iter_at_line      (GtkTextBTree   *tree,
   g_return_if_fail (line != NULL);
 
   iter_init_from_byte_offset (iter, tree, line, byte_offset);
+
+  check_invariants (iter);
+}
+
+void
+_gtk_text_btree_get_iter_at_line_ptr_char (GtkTextBTree   *tree,
+                                           GtkTextIter    *iter,
+                                           GtkTextLine    *line,
+                                           int             char_offset)
+{
+  g_return_if_fail (iter != NULL);
+  g_return_if_fail (tree != NULL);
+  g_return_if_fail (line != NULL);
+
+  iter_init_from_char_offset (iter, tree, line, char_offset);
 
   check_invariants (iter);
 }

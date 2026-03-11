@@ -34,6 +34,7 @@
 #include "gtktypebuiltins.h"
 #include "gtkwidgetprivate.h"
 #include "gtkbuildable.h"
+#include "gtkbuilderprivate.h"
 #include "gtktext.h"
 
 #include <math.h>
@@ -41,8 +42,8 @@
 /**
  * GtkViewport:
  *
- * `GtkViewport` implements scrollability for widgets that lack their
- * own scrolling capabilities.
+ * Implements scrollability for widgets that don't support scrolling
+ * on their own.
  *
  * Use `GtkViewport` to scroll child widgets such as `GtkGrid`,
  * `GtkBox`, and so on.
@@ -56,9 +57,9 @@
  *
  * # Accessibility
  *
- * Until GTK 4.10, `GtkViewport` used the `GTK_ACCESSIBLE_ROLE_GROUP` role.
+ * Until GTK 4.10, `GtkViewport` used the [enum@Gtk.AccessibleRole.group] role.
  *
- * Starting from GTK 4.12, `GtkViewport` uses the `GTK_ACCESSIBLE_ROLE_GENERIC` role.
+ * Starting from GTK 4.12, `GtkViewport` uses the [enum@Gtk.AccessibleRole.generic] role.
  */
 
 typedef struct _GtkViewportPrivate       GtkViewportPrivate;
@@ -133,9 +134,14 @@ gtk_viewport_buildable_add_child (GtkBuildable *buildable,
                                   const char   *type)
 {
   if (GTK_IS_WIDGET (child))
-    gtk_viewport_set_child (GTK_VIEWPORT (buildable), GTK_WIDGET (child));
+    {
+      gtk_buildable_child_deprecation_warning (buildable, builder, NULL, "child");
+      gtk_viewport_set_child (GTK_VIEWPORT (buildable), GTK_WIDGET (child));
+    }
   else
-    parent_buildable_iface->add_child (buildable, builder, child, type);
+    {
+      parent_buildable_iface->add_child (buildable, builder, child, type);
+    }
 }
 
 static void

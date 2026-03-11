@@ -112,12 +112,13 @@ gsk_pango_renderer_draw_glyph_item (PangoRenderer  *renderer,
 
   get_color (crenderer, PANGO_RENDER_PART_FOREGROUND, &color);
 
-  gtk_snapshot_append_text2 (crenderer->snapshot,
-                             glyph_item->item->analysis.font,
-                             glyph_item->glyphs,
-                             &color,
-                             (float) x / PANGO_SCALE,
-                             (float) y / PANGO_SCALE);
+  if (glyph_item->item->analysis.font)
+    gtk_snapshot_append_text2 (crenderer->snapshot,
+                               glyph_item->item->analysis.font,
+                               glyph_item->glyphs,
+                               &color,
+                               (float) x / PANGO_SCALE,
+                               (float) y / PANGO_SCALE);
 
   gdk_color_finish (&color);
 
@@ -218,7 +219,7 @@ gsk_pango_renderer_draw_error_underline (PangoRenderer *renderer,
 
   gtk_snapshot_push_repeat (crenderer->snapshot,
                             &GRAPHENE_RECT_INIT (xx, yy, ww, hh),
-                            NULL);
+                            &GRAPHENE_RECT_INIT (xx, yy, 1.5 * hh, hh));
 
   gsk_rounded_rect_init_from_rect (&dot,
                                    &GRAPHENE_RECT_INIT (xx, yy, hh, hh),
@@ -227,9 +228,6 @@ gsk_pango_renderer_draw_error_underline (PangoRenderer *renderer,
   gtk_snapshot_push_rounded_clip (crenderer->snapshot, &dot);
   gtk_snapshot_append_color2 (crenderer->snapshot, &color, &dot.bounds);
   gtk_snapshot_pop (crenderer->snapshot);
-  gtk_snapshot_append_color2 (crenderer->snapshot,
-                              &GDK_COLOR_SRGB (0, 0, 0, 0),
-                              &GRAPHENE_RECT_INIT (xx, yy, 1.5 * hh, hh));
 
   gdk_color_finish (&color);
 

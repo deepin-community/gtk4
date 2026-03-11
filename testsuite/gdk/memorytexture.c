@@ -1,23 +1,23 @@
+#include "config.h"
+
 #include <gtk/gtk.h>
 
-#include <epoxy/gl.h>
-
+#include "gdk/gdkmemoryformatprivate.h"
 #include "gsk/gl/fp16private.h"
 #include "testsuite/gdk/gdktestutils.h"
 
-#define N 10
+
+#define N_RUNS 10
 
 static GdkGLContext *gl_context = NULL;
 static GskRenderer *gl_renderer = NULL;
-static GskRenderer *ngl_renderer = NULL;
 static GskRenderer *vulkan_renderer = NULL;
 
 typedef enum {
   TEXTURE_METHOD_LOCAL,
+  TEXTURE_METHOD_GL_NATIVE,
   TEXTURE_METHOD_GL,
   TEXTURE_METHOD_GL_RELEASED,
-  TEXTURE_METHOD_GL_NATIVE,
-  TEXTURE_METHOD_NGL,
   TEXTURE_METHOD_VULKAN,
   TEXTURE_METHOD_PNG,
   TEXTURE_METHOD_PNG_PIXBUF,
@@ -109,14 +109,8 @@ gl_native_should_skip_format (GdkMemoryFormat format)
 
   gdk_gl_context_get_version (gl_context, &major, &minor);
 
-  if (major < 3)
-    {
-      g_test_skip ("GLES < 3.0 is not supported");
-      return TRUE;
-    }
-
-  if (gdk_memory_format_is_deep (format) &&
-      (major < 3 || (major == 3 && minor < 1)))
+  if (gdk_memory_format_get_depth (format, FALSE) != GDK_MEMORY_U8 &&
+      major == 3 && minor < 1)
     {
       g_test_skip ("GLES < 3.1 can't handle 16bit non-RGBA formats");
       return TRUE;
@@ -232,6 +226,10 @@ create_texture (GdkMemoryFormat  format,
     case TEXTURE_METHOD_LOCAL:
       break;
 
+    case TEXTURE_METHOD_GL_NATIVE:
+      texture = upload_to_gl_native (texture);
+      break;
+
     case TEXTURE_METHOD_GL:
       texture = upload_to_renderer (texture, gl_renderer);
       break;
@@ -242,14 +240,6 @@ create_texture (GdkMemoryFormat  format,
         gdk_gl_texture_release (GDK_GL_TEXTURE (texture));
       break;
 
-    case TEXTURE_METHOD_GL_NATIVE:
-      texture = upload_to_gl_native (texture);
-      break;
-
-    case TEXTURE_METHOD_NGL:
-      texture = upload_to_renderer (texture, ngl_renderer);
-      break;
-
     case TEXTURE_METHOD_VULKAN:
       texture = upload_to_renderer (texture, vulkan_renderer);
       break;
@@ -257,10 +247,10 @@ create_texture (GdkMemoryFormat  format,
     case TEXTURE_METHOD_PNG:
       {
         GBytes *bytes = gdk_texture_save_to_png_bytes (texture);
-        g_assert (bytes);
+        g_assert_nonnull (bytes);
         g_object_unref (texture);
         texture = gdk_texture_new_from_bytes (bytes, NULL);
-        g_assert (texture);
+        g_assert_nonnull (texture);
         g_bytes_unref (bytes);
       }
       break;
@@ -272,14 +262,14 @@ create_texture (GdkMemoryFormat  format,
         GBytes *bytes;
 
         bytes = gdk_texture_save_to_png_bytes (texture);
-        g_assert (bytes);
+        g_assert_nonnull (bytes);
         g_object_unref (texture);
         stream = g_memory_input_stream_new_from_bytes (bytes);
         pixbuf = gdk_pixbuf_new_from_stream (stream, NULL, NULL);
         g_object_unref (stream);
-        g_assert (pixbuf);
+        g_assert_nonnull (pixbuf);
         texture = gdk_texture_new_for_pixbuf (pixbuf);
-        g_assert (texture);
+        g_assert_nonnull (texture);
         g_object_unref (pixbuf);
         g_bytes_unref (bytes);
       }
@@ -288,10 +278,10 @@ create_texture (GdkMemoryFormat  format,
     case TEXTURE_METHOD_TIFF:
       {
         GBytes *bytes = gdk_texture_save_to_tiff_bytes (texture);
-        g_assert (bytes);
+        g_assert_nonnull (bytes);
         g_object_unref (texture);
         texture = gdk_texture_new_from_bytes (bytes, NULL);
-        g_assert (texture);
+        g_assert_nonnull (texture);
         g_bytes_unref (bytes);
       }
       break;
@@ -303,14 +293,14 @@ create_texture (GdkMemoryFormat  format,
         GBytes *bytes;
 
         bytes = gdk_texture_save_to_tiff_bytes (texture);
-        g_assert (bytes);
+        g_assert_nonnull (bytes);
         g_object_unref (texture);
         stream = g_memory_input_stream_new_from_bytes (bytes);
         pixbuf = gdk_pixbuf_new_from_stream (stream, NULL, NULL);
         g_object_unref (stream);
-        g_assert (pixbuf);
+        g_assert_nonnull (pixbuf);
         texture = gdk_texture_new_for_pixbuf (pixbuf);
-        g_assert (texture);
+        g_assert_nonnull (texture);
         g_object_unref (pixbuf);
         g_bytes_unref (bytes);
       }
@@ -334,10 +324,9 @@ texture_method_is_accurate (TextureMethod method)
     case TEXTURE_METHOD_TIFF:
       return TRUE;
 
+    case TEXTURE_METHOD_GL_NATIVE:
     case TEXTURE_METHOD_GL:
     case TEXTURE_METHOD_GL_RELEASED:
-    case TEXTURE_METHOD_GL_NATIVE:
-    case TEXTURE_METHOD_NGL:
     case TEXTURE_METHOD_VULKAN:
     case TEXTURE_METHOD_PNG:
     case TEXTURE_METHOD_PNG_PIXBUF:
@@ -440,19 +429,11 @@ should_skip_download_test (GdkMemoryFormat format,
     case TEXTURE_METHOD_TIFF:
       return FALSE;
 
-    case TEXTURE_METHOD_NGL:
-      if (ngl_renderer == NULL)
-        {
-          g_test_skip ("NGL renderer is not supported");
-          return TRUE;
-        }
-      return FALSE;
-
     case TEXTURE_METHOD_GL:
     case TEXTURE_METHOD_GL_RELEASED:
       if (gl_renderer == NULL)
         {
-          g_test_skip ("OpenGL renderer is not supported");
+          g_test_skip ("NGL renderer is not supported");
           return TRUE;
         }
       return FALSE;
@@ -503,11 +484,9 @@ test_download (gconstpointer data,
 
       /* these methods may premultiply during operation */
       if (color.alpha == 0.f &&
-          !gdk_memory_format_is_premultiplied (format) &&
-          gdk_memory_format_has_alpha (format) &&
-          (method == TEXTURE_METHOD_GL || method == TEXTURE_METHOD_GL_RELEASED ||
-           method == TEXTURE_METHOD_GL_NATIVE || method == TEXTURE_METHOD_VULKAN ||
-           method == TEXTURE_METHOD_NGL))
+          gdk_memory_format_alpha (format) == GDK_MEMORY_ALPHA_STRAIGHT &&
+          (method == TEXTURE_METHOD_GL_NATIVE || method == TEXTURE_METHOD_VULKAN ||
+           method == TEXTURE_METHOD_GL || method == TEXTURE_METHOD_GL_RELEASED))
         color = (GdkRGBA) { 0, 0, 0, 0 };
 
       expected = create_texture (format, TEXTURE_METHOD_LOCAL, width, height, &color);
@@ -524,7 +503,7 @@ test_download (gconstpointer data,
 static void
 test_download_1x1 (gconstpointer data)
 {
-  test_download (data, 1, 1, N);
+  test_download (data, 1, 1, N_RUNS);
 }
 
 static void
@@ -563,7 +542,7 @@ test_conversion (gconstpointer data,
   else
     accurate = TRUE;
 
-  for (i = 0; i < N; i++)
+  for (i = 0; i < N_RUNS; i++)
     {
       /* non-premultiplied can represet GdkRGBA (1, 1, 1, 0)
        * but premultiplied cannot.
@@ -574,15 +553,15 @@ test_conversion (gconstpointer data,
           create_random_color (&color1);
         }
       while (color1.alpha == 0 &&
-             gdk_memory_format_is_premultiplied (format1) !=
-             gdk_memory_format_is_premultiplied (format2));
+             (gdk_memory_format_alpha (format1) == GDK_MEMORY_ALPHA_PREMULTIPLIED) !=
+             (gdk_memory_format_alpha (format2) == GDK_MEMORY_ALPHA_PREMULTIPLIED));
 
       /* If the source can't handle alpha, make sure
        * the target uses with the opaque version of the color.
        */
       color2 = color1;
-      if (!gdk_memory_format_has_alpha (format1) &&
-          gdk_memory_format_has_alpha (format2))
+      if (gdk_memory_format_alpha (format1) == GDK_MEMORY_ALPHA_OPAQUE &&
+          gdk_memory_format_alpha (format2) != GDK_MEMORY_ALPHA_OPAQUE)
         color_make_opaque (&color2, &color2);
 
       /* If the source has fewer color channels than the
@@ -638,10 +617,9 @@ add_test (const char    *name,
         {
           const char *method_names[N_TEXTURE_METHODS] = {
             [TEXTURE_METHOD_LOCAL] = "local",
+            [TEXTURE_METHOD_GL_NATIVE] = "gl-native",
             [TEXTURE_METHOD_GL] = "gl",
             [TEXTURE_METHOD_GL_RELEASED] = "gl-released",
-            [TEXTURE_METHOD_GL_NATIVE] = "gl-native",
-            [TEXTURE_METHOD_NGL] = "ngl",
             [TEXTURE_METHOD_VULKAN] = "vulkan",
             [TEXTURE_METHOD_PNG] = "png",
             [TEXTURE_METHOD_PNG_PIXBUF] = "png-pixbuf",
@@ -671,7 +649,7 @@ add_conversion_test (const char    *name,
     {
       for (format2 = 0; format2 < GDK_MEMORY_N_FORMATS; format2++)
         {
-          char *test_name = g_strdup_printf ("%s/%s/%s",
+          char *test_name = g_strdup_printf ("%s/from-%s/to-%s",
                                              name,
                                              g_enum_get_value (enum_class, format1)->value_nick,
                                              g_enum_get_value (enum_class, format2)->value_nick);
@@ -708,12 +686,6 @@ main (int argc, char *argv[])
       g_clear_object (&gl_renderer);
     }
 
-  ngl_renderer = gsk_ngl_renderer_new ();
-  if (!gsk_renderer_realize_for_display (ngl_renderer, display, NULL))
-    {
-      g_clear_object (&ngl_renderer);
-    }
-
   vulkan_renderer = gsk_vulkan_renderer_new ();
   if (!gsk_renderer_realize_for_display (vulkan_renderer, display, NULL))
     {
@@ -729,11 +701,6 @@ main (int argc, char *argv[])
       g_clear_object (&vulkan_renderer);
     }
 #endif
-  if (ngl_renderer)
-    {
-      gsk_renderer_unrealize (ngl_renderer);
-      g_clear_object (&ngl_renderer);
-    }
   if (gl_renderer)
     {
       gsk_renderer_unrealize (gl_renderer);

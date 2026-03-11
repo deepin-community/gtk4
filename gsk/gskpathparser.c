@@ -359,8 +359,7 @@ parse_rounded_rect (const char     **p,
  * gsk_path_parse:
  * @string: a string
  *
- * This is a convenience function that constructs a `GskPath`
- * from a serialized form.
+ * Constructs a path from a serialized form.
  *
  * The string is expected to be in (a superset of)
  * [SVG path syntax](https://www.w3.org/TR/SVG11/paths.html#PathData),
@@ -393,9 +392,9 @@ GskPath *
 gsk_path_parse (const char *string)
 {
   GskPathBuilder *builder;
-  double x, y;
+  double x, y; /* current point */
   double prev_x1, prev_y1;
-  double path_x, path_y;
+  double path_x, path_y; /* start point of the current subpath */
   const char *p;
   char cmd;
   char prev_cmd;
@@ -445,39 +444,47 @@ gsk_path_parse (const char *string)
             /* Look for special contours */
             if (parse_rectangle (&p, &x1, &y1, &w, &h))
               {
-                gsk_path_builder_add_rect (builder, &GRAPHENE_RECT_INIT (x1, y1, w, h));
-                if (_strchr ("zZX", prev_cmd))
+                if (cmd == 'm')
                   {
-                    path_x = x1;
-                    path_y = y1;
+                    x1 += x;
+                    y1 += y;
                   }
+                gsk_path_builder_add_rect (builder, &GRAPHENE_RECT_INIT (x1, y1, w, h));
+                path_x = x1;
+                path_y = y1;
 
+                cmd = 'z';
                 x = x1;
                 y = y1;
               }
             else if (parse_circle (&p, &x1, &y1, &r))
               {
-                gsk_path_builder_add_circle (builder, &GRAPHENE_POINT_INIT (x1, y1), r);
-
-                if (_strchr ("zZX", prev_cmd))
+                if (cmd == 'm')
                   {
-                    path_x = x1 + r;
-                    path_y = y1;
+                    x1 += x;
+                    y1 += y;
                   }
+                gsk_path_builder_add_circle (builder, &GRAPHENE_POINT_INIT (x1, y1), r);
+                path_x = x1 + r;
+                path_y = y1;
 
+                cmd = 'z';
                 x = x1 + r;
                 y = y1;
               }
             else if (parse_rounded_rect (&p, &rr))
               {
+                if (cmd == 'm')
+                  {
+                    rr.bounds.origin.x += x;
+                    rr.bounds.origin.y += y;
+                  }
                 gsk_path_builder_add_rounded_rect (builder, &rr);
 
-                if (_strchr ("zZX", prev_cmd))
-                  {
-                    path_x = rr.bounds.origin.x + rr.corner[GSK_CORNER_TOP_LEFT].width;
-                    path_y = rr.bounds.origin.y;
-                  }
+                path_x = rr.bounds.origin.x + rr.corner[GSK_CORNER_TOP_LEFT].width;
+                path_y = rr.bounds.origin.y;
 
+                cmd = 'Z';
                 x = rr.bounds.origin.x + rr.corner[GSK_CORNER_TOP_LEFT].width;
                 y = rr.bounds.origin.y;
               }
@@ -494,11 +501,8 @@ gsk_path_parse (const char *string)
                 else
                   {
                     gsk_path_builder_move_to (builder, x1, y1);
-                    if (_strchr ("zZX", prev_cmd))
-                      {
-                        path_x = x1;
-                        path_y = y1;
-                      }
+                    path_x = x1;
+                    path_y = y1;
                   }
 
                 x = x1;
@@ -748,7 +752,7 @@ gsk_path_parse (const char *string)
                     y2 += y;
                   }
                 if (_strchr ("zZ", prev_cmd))
-                  { 
+                  {
                     gsk_path_builder_move_to (builder, x, y);
                     path_x = x;
                     path_y = y;
@@ -820,4 +824,4 @@ error:
   return NULL;
 }
 
-/* vim:set foldmethod=marker expandtab: */
+/* vim:set foldmethod=marker: */

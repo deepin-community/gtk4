@@ -41,10 +41,12 @@
 /**
  * GtkPopoverMenu:
  *
- * `GtkPopoverMenu` is a subclass of `GtkPopover` that implements menu
- * behavior.
+ * A subclass of `GtkPopover` that implements menu behavior.
  *
- * ![An example GtkPopoverMenu](menu.png)
+ * <picture>
+ *   <source srcset="menu-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkPopoverMenu" src="menu.png">
+ * </picture>
  *
  * `GtkPopoverMenu` treats its children like menus and allows switching
  * between them. It can open submenus as traditional, nested submenus,
@@ -152,11 +154,10 @@
  *
  * # Accessibility
  *
- * `GtkPopoverMenu` uses the %GTK_ACCESSIBLE_ROLE_MENU role, and its
- * items use the %GTK_ACCESSIBLE_ROLE_MENU_ITEM,
- * %GTK_ACCESSIBLE_ROLE_MENU_ITEM_CHECKBOX or
- * %GTK_ACCESSIBLE_ROLE_MENU_ITEM_RADIO roles, depending on the
- * action they are connected to.
+ * `GtkPopoverMenu` uses the [enum@Gtk.AccessibleRole.menu] role, and its
+ * items use the [enum@Gtk.AccessibleRole.menu_item],
+ * [enum@Gtk.AccessibleRole.checkbox] or [enum@Gtk.AccessibleRole.menu_item_radio]
+ * roles, depending on the action they are connected to.
  */
 
 typedef struct _GtkPopoverMenuClass GtkPopoverMenuClass;
@@ -322,7 +323,7 @@ gtk_popover_menu_init (GtkPopoverMenu *popover)
   guint n_controllers, i;
 
   sw = gtk_scrolled_window_new ();
-  gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (sw), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (sw), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
   gtk_scrolled_window_set_propagate_natural_width (GTK_SCROLLED_WINDOW (sw), TRUE);
   gtk_scrolled_window_set_propagate_natural_height (GTK_SCROLLED_WINDOW (sw), TRUE);
   gtk_popover_set_child (GTK_POPOVER (popover), sw);
@@ -355,7 +356,6 @@ gtk_popover_menu_init (GtkPopoverMenu *popover)
     }
   g_free (controllers);
 
-  gtk_popover_disable_auto_mnemonics (GTK_POPOVER (popover));
   gtk_popover_set_cascade_popdown (GTK_POPOVER (popover), TRUE);
 }
 

@@ -1,25 +1,31 @@
 project('gtk', 'c',
-        version: '4.16.7',
+        version: '4.18.6',
         default_options: [
           'buildtype=debugoptimized',
           'warning_level=1',
           # We only need c99, but glib needs GNU-specific features
           # https://github.com/mesonbuild/meson/issues/2289
-          'c_std=gnu99',
+          'c_std=gnu11',
+          'cpp_std=c++11',
         ],
-        meson_version : '>= 0.63.0',
+        meson_version : '>= 1.2.0',
         license: 'LGPL-2.1-or-later')
 
+glib_major_req = 2
+glib_minor_req = 80
+
+pango_major_req = 1
+pango_minor_req = 56
+
 # keep these numbers in sync with wrap files where there exist
-glib_req           = '>= 2.76.0'
-introspection_req  = '>= 1.76.0' # keep this in sync with glib
-pango_req          = '>= 1.52.0' # keep this in sync with .gitlab-ci/test-msys.sh
-harfbuzz_req       = '>= 2.6.0'
+glib_req           = '>= @0@.@1@'.format(glib_major_req, glib_minor_req)
+pango_req          = '>= @0@.@1@'.format(pango_major_req, pango_minor_req)
+harfbuzz_req       = '>= 8.4.0'
 fribidi_req        = '>= 1.0.6'
-cairo_req          = '>= 1.18.0'
+cairo_req          = '>= 1.18.2'
 gdk_pixbuf_req     = '>= 2.30.0'
-wayland_proto_req  = '>= 1.36'
-wayland_req        = '>= 1.21.0'
+wayland_proto_req  = '>= 1.41'
+wayland_req        = '>= 1.23.0'
 graphene_req       = '>= 1.10.0'
 epoxy_req          = '>= 1.4'
 cloudproviders_req = '>= 0.3.1'
@@ -32,8 +38,15 @@ fs = import('fs')
 gnome = import('gnome')
 pkg_config = import('pkgconfig')
 
-add_project_arguments('-DG_LOG_USE_STRUCTURED=1', language: 'c')
-add_project_arguments('-DGLIB_DISABLE_DEPRECATION_WARNINGS', language: 'c')
+add_project_arguments([
+    '-DG_LOG_USE_STRUCTURED=1',
+    '-DGLIB_VERSION_MIN_REQUIRED=GLIB_VERSION_@0@_@1@'.format(glib_major_req, glib_minor_req),
+    '-DGLIB_VERSION_MAX_ALLOWED=GLIB_VERSION_@0@_@1@'.format(glib_major_req, glib_minor_req),
+    '-DPANGO_VERSION_MIN_REQUIRED=G_ENCODE_VERSION(@0@,@1@)'.format(pango_major_req, pango_minor_req),
+    '-DPANGO_VERSION_MAX_ALLOWED=G_ENCODE_VERSION(@0@,@1@)'.format(pango_major_req, pango_minor_req),
+  ],
+  language: 'c'
+)
 
 # Making releases:
 #  1. new development cycle:
@@ -56,13 +69,15 @@ gtk_micro_version = gtk_version.split('.')[2].to_int()
 # If new API is added during a stable cycle, reset to 0
 gtk_interface_age = gtk_minor_version.is_odd() ? 0 : gtk_micro_version
 
-add_project_arguments('-DGTK_VERSION="@0@"'.format(meson.project_version()), language: 'c')
+add_project_arguments('-DGTK_VERSION="@0@"'.format(gtk_version), language: 'c')
 
 add_project_arguments('-D_GNU_SOURCE', language: 'c')
 
 if host_machine.system() == 'windows'
   add_project_arguments(['-DUNICODE',
-                         '-D_UNICODE'], language: 'c')
+                         '-D_UNICODE',
+                         '-DCOBJMACROS',
+                         '-D_WIN32_WINNT=_WIN32_WINNT_WIN10'], language: 'c')
 endif
 
 # Use debug/optimization flags to determine whether to enable debug or disable
@@ -98,7 +113,7 @@ gtk_api_version = '4.0'
 module_suffix = []
 # GModule requires file extension to be .so, not .dylib on Mac.
 # https://gitlab.gnome.org/GNOME/glib/issues/520
-if ['darwin', 'ios'].contains(host_machine.system())
+if host_machine.system() == 'darwin'
   module_suffix = 'so'
 endif
 
@@ -107,21 +122,39 @@ wayland_enabled  = get_option('wayland-backend')
 broadway_enabled = get_option('broadway-backend')
 macos_enabled    = get_option('macos-backend')
 win32_enabled    = get_option('win32-backend')
+android_enabled  = get_option('android-backend')
 vulkan_enabled   = get_option('vulkan')
 
 os_unix   = false
 os_linux  = false
 os_win32  = false
 os_darwin = false
+os_android = false
+
+cc = meson.get_compiler('c')
 
 # Some windowing system backends depend on the platform we're
 # building for, so we need to ensure they are disabled; in other
 # cases, they are the only windowing system available, so we need
 # to ensure they are enabled
 if host_machine.system() == 'darwin'
+
+  if not cc.compiles('''
+    #include <Availability.h>
+    #if __MAC_OS_X_VERSION_MIN_REQUIRED < 101500L
+    # error message "Minimal macOS SDK version not met"
+    #endif
+    ''',
+    name: 'macOS SDK version >= 10.15',
+  )
+    error('macOS SDK 10.15 or newer is required to build GTK')
+  endif
+
   os_darwin = true
 elif host_machine.system() == 'windows'
   os_win32 = true
+elif host_machine.system() == 'android'
+  os_android = true
 elif host_machine.system() == 'linux'
   os_linux = true
 endif
@@ -141,6 +174,13 @@ else
   win32_enabled = false
 endif
 
+if os_android
+  wayland_enabled = false
+  x11_enabled = false
+else
+  android_enabled = false
+endif
+
 gtk_prefix = get_option('prefix')
 gtk_includedir = join_paths(gtk_prefix, get_option('includedir'))
 gtk_libdir = join_paths(gtk_prefix, get_option('libdir'))
@@ -152,8 +192,6 @@ gtk_applicationsdir = join_paths(gtk_datadir, 'applications')
 gtk_schemasdir = join_paths(gtk_datadir, 'glib-2.0/schemas')
 gtk_appdatadir = join_paths(gtk_datadir, 'metainfo')
 
-cc = meson.get_compiler('c')
-
 cdata = configuration_data()
 cdata.set_quoted('PACKAGE_VERSION', meson.project_version())
 cdata.set_quoted('GTK_LOCALEDIR', gtk_localedir)
@@ -163,27 +201,12 @@ cdata.set_quoted('GTK_SYSCONFDIR', gtk_sysconfdir)
 cdata.set_quoted('GETTEXT_PACKAGE', 'gtk40')
 
 check_headers = [
-  'crt/externs.h',
   'dev/evdev/input.h',
-  'dlfcn.h',
   'ftw.h',
-  'inttypes.h',
   'linux/input.h',
-  'linux/memfd.h',
-  'locale.h',
-  'memory.h',
-  'stdint.h',
-  'stdlib.h',
-  'string.h',
-  'strings.h',
   'sys/mman.h',
-  'sys/param.h',
-  'sys/stat.h',
-  'sys/sysinfo.h',
   'sys/sysmacros.h',
-  'sys/systeminfo.h',
   'sys/time.h',
-  'sys/types.h',
   'unistd.h',
 ]
 
@@ -266,6 +289,14 @@ if cc.get_id() == 'msvc'
     '-D_USE_MATH_DEFINES',
     required_debug_cflags
   ]
+  # Extra warning flags and those that should be disabled because they are too common or
+  # break features.
+  test_cflags += [
+    '/wd4068', # unknown pragma, triggers for all gcc/clang pragmas
+    '/wd4116', # breaks G_ALIGNOF()
+    '/wd4090', # VC2017 is way too aggressive with this
+  ]
+
   msvc_supported_cflags = cc.get_supported_arguments(test_cflags)
   if debug
     required_cflags += required_debug_cflags
@@ -337,6 +368,7 @@ elif cc.get_id() == 'gcc' or cc.get_id() == 'clang'
     'vla',
     'write-strings',
   ]
+
 
   if get_option('buildtype').startswith('debug')
     foreach warning: extra_warnings
@@ -413,7 +445,7 @@ endif
 
 pangocairo_dep    = dependency('pangocairo', version: pango_req)
 pixbuf_dep        = dependency('gdk-pixbuf-2.0', version: gdk_pixbuf_req,
-                               default_options: ['png=enabled', 'jpeg=enabled', 'builtin_loaders=png,jpeg', 'man=false'])
+                               default_options: ['png=enabled', 'jpeg=enabled', 'gif=enabled', 'builtin_loaders=all', 'man=false'])
 png_dep           = dependency('libpng', 'png')
 tiff_dep          = dependency('libtiff-4', 'tiff')
 jpeg_dep          = dependency('libjpeg', 'jpeg')
@@ -423,11 +455,11 @@ xkbdep            = dependency('xkbcommon', version: xkbcommon_req, required: wa
 graphene_dep      = dependency('graphene-gobject-1.0', version: graphene_req,
                                default_options: ['tests=false', 'gobject_types=true'])
 iso_codes_dep     = dependency('iso-codes', required: false)
-gi_dep            = dependency('gobject-introspection-1.0', version: introspection_req,
-                               required: get_option('introspection').enabled() and
-                                         get_option('build-tests'))
 gstplayer_dep     = dependency('gstreamer-player-1.0', version: gstreamer_req,
-                               required: get_option('media-gstreamer'))
+                               required: get_option('media-gstreamer'),
+                               default_options: [
+                                 'python=disabled',
+                               ])
 gstgl_dep         = dependency('gstreamer-gl-1.0', version: gstreamer_req,
                                required: get_option('media-gstreamer'))
 gstallocators_dep = dependency('gstreamer-allocators-1.0', version: gstreamer_req,
@@ -497,12 +529,17 @@ if have_egl
 endif
 cdata.set('HAVE_HARFBUZZ', harfbuzz_dep.found())
 cdata.set('HAVE_PANGOFT', pangoft_dep.found())
+if win32_enabled
+  cdata.set('HAVE_PANGOWIN32', pangowin32_dep.found())
+  cdata.set('CONST_VTABLE', 1)
+endif
 
 wayland_pkgs = []
 if wayland_enabled
   wlclientdep    = dependency('wayland-client', version:  wayland_req,
-                              default_options: ['documentation=false'])
-  wlprotocolsdep = dependency('wayland-protocols', version: wayland_proto_req)
+                              default_options: ['documentation=false', 'tests=false'])
+  wlprotocolsdep = dependency('wayland-protocols', version: wayland_proto_req,
+                              default_options: ['tests=false'])
   wlegldep       = dependency('wayland-egl')
 
   wayland_pkgs = [
@@ -601,12 +638,13 @@ endif
 # Check for bind_textdomain_codeset, including -lintl if GLib brings it in by
 # doing the same check as glib. We can't check that by linking to glib because
 # it might be a subproject and hence not built yet.
-if cc.has_function('ngettext')
+libintl_prefix = '#include <libintl.h>'
+if cc.has_function('ngettext', prefix: libintl_prefix)
   libintl_dep = []
   cdata.set('HAVE_BIND_TEXTDOMAIN_CODESET', 1)
 else
   libintl_dep = cc.find_library('intl', required : false)
-  if cc.has_function('bind_textdomain_codeset', dependencies: libintl_dep)
+  if cc.has_function('bind_textdomain_codeset', prefix: libintl_prefix, dependencies: libintl_dep)
     cdata.set('HAVE_BIND_TEXTDOMAIN_CODESET', 1)
   else
     # Don't use subproject('proxy-libintl').get_variable('intl_dep') because that
@@ -647,6 +685,11 @@ libdrm_dep = dependency('libdrm', required: os_linux)
 libdrm_dep = libdrm_dep.partial_dependency(includes: true, compile_args: true)
 cdata.set('HAVE_DRM_FOURCC_H', libdrm_dep.found())
 
+if not libdrm_dep.found()
+  have_drm_fourcc = cc.has_header('drm/drm_fourcc.h', required: os_android)
+  cdata.set('HAVE_DRM_DRM_FOURCC_H', have_drm_fourcc)
+endif
+
 cdata.set('HAVE_DMABUF', cc.has_header('linux/dma-buf.h'))
 
 cloudproviders_dep = dependency('cloudproviders',
@@ -656,6 +699,10 @@ cloudproviders_dep = dependency('cloudproviders',
     'vapigen=false',
   ])
 cdata.set('HAVE_CLOUDPROVIDERS', cloudproviders_dep.found())
+
+accesskit_dep = dependency('accesskit-c-0.15', required: get_option('accesskit').enabled())
+
+cdata.set('HAVE_ACCESSKIT', accesskit_dep.found())
 
 # libsysprof-capture support
 if not get_option('sysprof').disabled()
@@ -779,7 +826,7 @@ endif
 ld_is_bfd = false
 ld = find_program('ld', required : false)
 if ld.found()
-  ld_is_bfd = run_command(ld, '--version', check: false).stdout().contains('GNU ld')
+  ld_is_bfd = run_command(ld, '--version', check: false).stdout().startswith('GNU ld')
 endif
 
 if not meson.is_cross_build() and build_machine.cpu_family() == 'x86_64' and build_machine.system() == 'linux' and objcopy.found() and objcopy_supports_add_symbol and objcopy_supports_section_alignment and ld.found() and ld_is_bfd
@@ -819,10 +866,15 @@ subdir('gdk')
 subdir('gsk')
 subdir('gtk')
 subdir('modules')
+subdir('tools')
+subdir('po')
+subdir('docs/reference')
+if os_android
+  subdir('gdk/android/glue')
+endif
 if get_option('build-demos')
   subdir('demos')
 endif
-subdir('tools')
 if get_option('build-tests')
   subdir('tests')
 endif
@@ -860,7 +912,7 @@ gsk_packages = [ 'graphene-gobject-1.0 @0@'.format(graphene_req) ]
 gtk_packages = [ 'gio-2.0 @0@'.format(glib_req) ]
 
 enabled_backends = []
-foreach backend: [ 'broadway', 'macos', 'wayland', 'win32', 'x11', ]
+foreach backend: [ 'android', 'broadway', 'macos', 'wayland', 'win32', 'x11', ]
   if get_variable('@0@_enabled'.format(backend))
     enabled_backends += backend
   endif
@@ -918,9 +970,10 @@ if os_unix
   meson.override_dependency('gtk4-unix-print', libgtk_dep)
 endif
 
-subdir('po')
 
-subdir('docs/reference')
+devenv = environment()
+devenv.set('GTK_PATH', meson.current_build_dir() / 'modules')
+meson.add_devenv(devenv)
 
 if not meson.is_cross_build()
   gnome.post_install(
@@ -955,6 +1008,7 @@ summary('Cloud support', cloudproviders_dep.found(), section: 'Features')
 summary('Sysprof support', libsysprof_capture_dep.found(), section: 'Features')
 summary('Colord support', colord_dep.found(), section: 'Features')
 summary('Tracker support', tracker3_dep.found(), section: 'Features')
+summary('AccessKit support', accesskit_dep.found(), section: 'Features')
 
 summary('Compiler', cc.get_id(), section: 'Toolchain')
 summary('Linker', cc.get_linker_id(), section: 'Toolchain')
@@ -969,7 +1023,7 @@ summary('Tests', get_option('build-tests'), section: 'Build')
 summary('Demos', get_option('build-demos'), section: 'Build')
 summary('Examples', get_option('build-examples'), section: 'Build')
 
-summary('prefix', gtk_prefix, section: 'Directories')
-summary('includedir', gtk_includedir, section: 'Directories')
-summary('libdir', gtk_libdir, section: 'Directories')
-summary('datadir', gtk_datadir, section: 'Directories')
+summary('Prefix', gtk_prefix, section: 'Directories')
+summary('Includedir', gtk_includedir, section: 'Directories')
+summary('Libdir', gtk_libdir, section: 'Directories')
+summary('Datadir', gtk_datadir, section: 'Directories')

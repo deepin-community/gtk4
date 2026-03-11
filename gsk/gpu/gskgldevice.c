@@ -69,15 +69,16 @@ gl_program_key_equal (gconstpointer a,
 static GskGpuImage *
 gsk_gl_device_create_offscreen_image (GskGpuDevice   *device,
                                       gboolean        with_mipmap,
-                                      GdkMemoryDepth  depth,
+                                      GdkMemoryFormat format,
+                                      gboolean        is_srgb,
                                       gsize           width,
                                       gsize           height)
 {
   GskGLDevice *self = GSK_GL_DEVICE (device);
 
   return gsk_gl_image_new (self,
-                           gdk_memory_depth_get_format (depth),
-                           gdk_memory_depth_is_srgb (depth),
+                           format,
+                           is_srgb,
                            GSK_GPU_IMAGE_RENDERABLE | GSK_GPU_IMAGE_FILTERABLE,
                            width,
                            height);
@@ -234,7 +235,7 @@ gsk_gl_device_get_for_display (GdkDisplay  *display,
 {
   GskGLDevice *self;
   GdkGLContext *context;
-  GLint max_texture_size;
+  GLint max_texture_size, globals_alignment;
 
   self = g_object_get_data (G_OBJECT (display), "-gsk-gl-device");
   if (self)
@@ -258,10 +259,13 @@ gsk_gl_device_get_for_display (GdkDisplay  *display,
   gdk_gl_context_make_current (context);
 
   glGetIntegerv (GL_MAX_TEXTURE_SIZE, &max_texture_size);
+  glGetIntegerv (GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &globals_alignment);
+
   gsk_gpu_device_setup (GSK_GPU_DEVICE (self),
                         display,
                         max_texture_size,
-                        GSK_GPU_DEVICE_DEFAULT_TILE_SIZE);
+                        GSK_GPU_DEVICE_DEFAULT_TILE_SIZE,
+                        globals_alignment);
 
   self->version_string = gdk_gl_context_get_glsl_version_string (context);
   self->api = gdk_gl_context_get_api (context);
@@ -567,7 +571,7 @@ gsk_gl_device_use_program (GskGLDevice               *self,
       return;
     }
   
-  g_hash_table_insert (self->gl_programs, g_memdup (&key, sizeof (GLProgramKey)), GUINT_TO_POINTER (program_id));
+  g_hash_table_insert (self->gl_programs, g_memdup2 (&key, sizeof (GLProgramKey)), GUINT_TO_POINTER (program_id));
 
   glUseProgram (program_id);
 
@@ -586,9 +590,24 @@ gsk_gl_device_get_sampler_id (GskGLDevice   *self,
 }
 
 static gboolean
+gsk_gl_swizzle_is_framebuffer_compatible (GLint swizzle[4])
+{
+  if (swizzle[0] != GL_RED ||
+      swizzle[1] != GL_GREEN ||
+      swizzle[2] != GL_BLUE ||
+      /* We accept GL_ONE here because that is used for RGBX channels and in that case
+       * this value is ignored */
+      (swizzle[3] != GL_ALPHA && swizzle[3] != GL_ONE))
+    return FALSE;
+
+  return TRUE;
+}
+
+static gboolean
 gsk_gl_device_get_format_flags (GskGLDevice      *self,
                                 GdkGLContext     *context,
                                 GdkMemoryFormat   format,
+                                GLint             swizzle[4],
                                 GskGpuImageFlags *out_flags)
 {
   GdkGLMemoryFlags gl_flags;
@@ -599,7 +618,7 @@ gsk_gl_device_get_format_flags (GskGLDevice      *self,
   if (!(gl_flags & GDK_GL_FORMAT_USABLE))
     return FALSE;
 
-  if (gl_flags & GDK_GL_FORMAT_RENDERABLE)
+  if ((gl_flags & GDK_GL_FORMAT_RENDERABLE) && gsk_gl_swizzle_is_framebuffer_compatible (swizzle))
     *out_flags |= GSK_GPU_IMAGE_RENDERABLE;
   else if (gdk_gl_context_get_use_es (context))
     *out_flags |= GSK_GPU_IMAGE_NO_BLIT;
@@ -633,18 +652,18 @@ gsk_gl_device_find_gl_format (GskGLDevice      *self,
   gsize i;
 
   /* First, try the actual format */
-  if (gsk_gl_device_get_format_flags (self, context, format, &flags) &&
+  gdk_memory_format_gl_format (format,
+                               gdk_gl_context_get_use_es (context),
+                               out_gl_internal_format,
+                               out_gl_internal_srgb_format,
+                               out_gl_format,
+                               out_gl_type,
+                               out_swizzle);
+  if (gsk_gl_device_get_format_flags (self, context, format, out_swizzle, &flags) &&
       ((flags & required_flags) == required_flags))
     {
       *out_format = format;
       *out_flags = flags;
-      gdk_memory_format_gl_format (format,
-                                   gdk_gl_context_get_use_es (context),
-                                   out_gl_internal_format,
-                                   out_gl_internal_srgb_format,
-                                   out_gl_format,
-                                   out_gl_type,
-                                   out_swizzle);
       return;
     }
 
@@ -657,7 +676,7 @@ gsk_gl_device_find_gl_format (GskGLDevice      *self,
                                         out_gl_format,
                                         out_gl_type,
                                         out_swizzle) &&
-      gsk_gl_device_get_format_flags (self, context, alt_format, &flags) &&
+      gsk_gl_device_get_format_flags (self, context, alt_format, out_swizzle, &flags) &&
       ((flags & required_flags) == required_flags))
     {
       *out_format = format;
@@ -669,18 +688,18 @@ gsk_gl_device_find_gl_format (GskGLDevice      *self,
   fallbacks = gdk_memory_format_get_fallbacks (format);
   for (i = 0; fallbacks[i] != -1; i++)
     {
-      if (gsk_gl_device_get_format_flags (self, context, fallbacks[i], &flags) &&
+      gdk_memory_format_gl_format (fallbacks[i],
+                                   gdk_gl_context_get_use_es (context),
+                                   out_gl_internal_format,
+                                   out_gl_internal_srgb_format,
+                                   out_gl_format,
+                                   out_gl_type,
+                                   out_swizzle);
+      if (gsk_gl_device_get_format_flags (self, context, fallbacks[i], out_swizzle, &flags) &&
           ((flags & required_flags) == required_flags))
         {
           *out_format = fallbacks[i];
           *out_flags = flags;
-          gdk_memory_format_gl_format (fallbacks[i],
-                                       gdk_gl_context_get_use_es (context),
-                                       out_gl_internal_format,
-                                       out_gl_internal_srgb_format,
-                                       out_gl_format,
-                                       out_gl_type,
-                                       out_swizzle);
           return;
         }
     }
