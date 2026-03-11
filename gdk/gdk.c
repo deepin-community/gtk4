@@ -113,6 +113,12 @@ static int gdk_initialized = 0;                     /* 1 if the library is initi
                                                      * 0 otherwise.
                                                      */
 
+gboolean
+gdk_is_initialized (void)
+{
+  return gdk_initialized != 0;
+}
+
 static const GdkDebugKey gdk_debug_keys[] = {
   { "misc",            GDK_DEBUG_MISC, "Miscellaneous information" },
   { "events",          GDK_DEBUG_EVENTS, "Information about events" },
@@ -133,7 +139,6 @@ static const GdkDebugKey gdk_debug_keys[] = {
   { "portals",         GDK_DEBUG_PORTALS, "Force use of portals" },
   { "no-portals",      GDK_DEBUG_NO_PORTALS, "Disable use of portals" },
   { "force-offload",   GDK_DEBUG_FORCE_OFFLOAD, "Force graphics offload for all textures" },
-  { "gl-no-fractional", GDK_DEBUG_GL_NO_FRACTIONAL, "Disable fractional scaling for OpenGL" },
   { "gl-debug",        GDK_DEBUG_GL_DEBUG, "Insert debugging information in OpenGL" },
   { "gl-prefer-gl",    GDK_DEBUG_GL_PREFER_GL, "Prefer GL over GLES API" },
   { "default-settings",GDK_DEBUG_DEFAULT_SETTINGS, "Force default values for xsettings" },
@@ -152,8 +157,8 @@ static const GdkDebugKey gdk_feature_keys[] = {
   { "vulkan",     GDK_FEATURE_VULKAN,           "Disable Vulkan support" },
   { "dmabuf",     GDK_FEATURE_DMABUF,           "Disable dmabuf support" },
   { "offload",    GDK_FEATURE_OFFLOAD,          "Disable graphics offload" },
+  { "threads",    GDK_FEATURE_THREADS,          "Disable threads where possible" },
 };
-
 
 static GdkFeatures gdk_features;
 
@@ -275,7 +280,7 @@ gdk_parse_debug_var (const char        *variable,
                 }
             }
           if (i == nkeys)
-            fprintf (stderr, "Unrecognized value \"%.*s\". Try %s=help\n", (int) (q - p), p, variable);
+            gdk_help_message ("Unrecognized value \"%.*s\". Try %s=help", (int) (q - p), p, variable);
          }
 
       p = q;
@@ -290,14 +295,13 @@ gdk_parse_debug_var (const char        *variable,
         max_width = MAX (max_width, strlen (keys[i].key));
       max_width += 4;
 
-      fprintf (stderr, "%s\n", docs);
-      fprintf (stderr, "Supported %s values:\n", variable);
-      for (i = 0; i < nkeys; i++) {
-        fprintf (stderr, "  %s%*s%s\n", keys[i].key, (int)(max_width - strlen (keys[i].key)), " ", keys[i].help);
-      }
-      fprintf (stderr, "  %s%*s%s\n", "all", max_width - 3, " ", "Enable all values. Other given values are subtracted");
-      fprintf (stderr, "  %s%*s%s\n", "help", max_width - 4, " ", "Print this help");
-      fprintf (stderr, "\nMultiple values can be given, separated by : or space.\n");
+      gdk_help_message ("%s", docs);
+      gdk_help_message ("Supported %s values:", variable);
+      for (i = 0; i < nkeys; i++)
+        gdk_help_message ("  %s%*s%s", keys[i].key, (int)(max_width - strlen (keys[i].key)), " ", keys[i].help);
+      gdk_help_message ("  %s%*s%s", "all", max_width - 3, " ", "Enable all values. Other given values are subtracted");
+      gdk_help_message ("  %s%*s%s", "help", max_width - 4, " ", "Print this help");
+      gdk_help_message ("\nMultiple values can be given, separated by : or space.");
     }
 
   if (invert)
@@ -360,13 +364,12 @@ gdk_display_open_default (void)
 {
   GdkDisplay *display;
 
-  g_return_val_if_fail (gdk_initialized, NULL);
+  gdk_ensure_initialized ();
 
   display = gdk_display_get_default ();
-  if (display)
-    return display;
 
-  display = gdk_display_open (NULL);
+  if (!display)
+    display = gdk_display_open (NULL);
 
   return display;
 }
@@ -397,19 +400,111 @@ gdk_running_in_sandbox (void)
   return g_file_test ("/.flatpak-info", G_FILE_TEST_EXISTS);
 }
 
-gboolean
-gdk_should_use_portal (void)
+#define PORTAL_BUS_NAME "org.freedesktop.portal.Desktop"
+#define PORTAL_OBJECT_PATH "/org/freedesktop/portal/desktop"
+
+static gboolean portals_disabled;
+
+void
+gdk_disable_portals (void)
 {
-  if (gdk_display_get_debug_flags (NULL) & GDK_DEBUG_PORTALS)
+  portals_disabled = TRUE;
+}
+
+static gboolean
+check_portal_interface (const char *portal_interface,
+                        guint       min_version)
+{
+  static GHashTable *versions = NULL;
+  GDBusConnection *bus = NULL;
+  guint version = 0;
+  gpointer val;
+
+  /* Portal versions start at 1, and we use 0 as marker
+   * for unsupported interfaces.
+   */
+  min_version = MAX (min_version, 1);
+
+  bus = g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, NULL);
+  if (bus == NULL)
+    return FALSE;
+
+  if (!versions)
+    versions = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+
+  if (!g_hash_table_lookup_extended (versions, portal_interface, NULL, &val))
+    {
+      GVariant *result;
+
+      result = g_dbus_connection_call_sync (bus,
+                                            PORTAL_BUS_NAME,
+                                            PORTAL_OBJECT_PATH,
+                                            "org.freedesktop.DBus.Properties",
+                                            "Get",
+                                            g_variant_new ("(ss)", portal_interface, "version"),
+                                            NULL,
+                                            G_DBUS_CALL_FLAGS_NO_AUTO_START,
+                                            3000,
+                                            NULL,
+                                            NULL);
+
+      if (result)
+        {
+          GVariant *v;
+
+          g_variant_get (result, "(v)", &v);
+          version = g_variant_get_uint32 (v);
+          g_variant_unref (v);
+          g_variant_unref (result);
+        }
+      else
+        version = 0;
+
+      val = GUINT_TO_POINTER (version);
+      g_hash_table_insert (versions, g_strdup (portal_interface), val);
+    }
+  else
+    {
+      version = GPOINTER_TO_UINT (val);
+    }
+
+  g_object_unref (bus);
+
+  return version >= min_version;
+}
+
+/* Here we decide whether we should use a given portal or not.
+ * - If the GDK_DEBUG flags are set, they always win
+ * - If we are in a sandbox, we always want to use portals
+ * - Otherwise, we want to use the portal if it is available
+ *
+ * The upshot is: if this functions return true and using the
+ * portal fails, we should treat it as an error, not fall back
+ * to something else.
+ */
+gboolean
+gdk_display_should_use_portal (GdkDisplay *display,
+                               const char *portal_interface,
+                               guint       min_version)
+{
+  g_assert (display != NULL);
+
+  if (gdk_display_get_debug_flags (display) & GDK_DEBUG_NO_PORTALS)
+    return FALSE;
+
+  if (gdk_display_get_debug_flags (display) & GDK_DEBUG_PORTALS)
     return TRUE;
 
-  if (gdk_display_get_debug_flags (NULL) & GDK_DEBUG_NO_PORTALS)
+  if (portals_disabled)
     return FALSE;
 
   if (gdk_running_in_sandbox ())
     return TRUE;
 
-  return FALSE;
+  if (portal_interface == NULL)
+    return TRUE;
+
+  return check_portal_interface (portal_interface, min_version);
 }
 
 PangoDirection

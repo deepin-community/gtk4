@@ -42,11 +42,27 @@
 #include "gdkmonitorprivate.h"
 #include "gdksurfaceprivate.h"
 
-#ifndef AVAILABLE_MAC_OS_X_VERSION_10_15_AND_LATER
-typedef NSString *CALayerContentsGravity;
-#endif
-
 @implementation GdkMacosWindow
+
+static Class _contentViewClass = nil;
+
++(void)setContentViewClass:(Class)newViewClass
+{
+    GDK_DEBUG (MISC, "Setting new content view class to %s", [[newViewClass description] UTF8String]);
+
+    if (newViewClass == nil  || [newViewClass isSubclassOfClass:[GdkMacosView class]])
+      _contentViewClass = newViewClass;
+    else
+      g_critical ("Assigned content view class %s is not a subclass of GdkMacosView", [[newViewClass description] UTF8String]);
+}
+
++(Class)contentViewClass
+{
+    if (_contentViewClass != nil)
+      return _contentViewClass;
+
+    return [GdkMacosView class];
+}
 
 -(BOOL)windowShouldClose:(id)sender
 {
@@ -139,14 +155,12 @@ typedef NSString *CALayerContentsGravity;
   switch ((int)event_type)
     {
     case NSEventTypeLeftMouseUp: {
-      GdkDisplay *display = gdk_surface_get_display (GDK_SURFACE (gdk_surface));
-      double time = ((double)[event timestamp]) * 1000.0;
+      if (inManualMove || inManualResize || inMove)
+        _gdk_macos_display_send_event ([self gdkDisplay], event);
 
       inManualMove = NO;
       inManualResize = NO;
       inMove = NO;
-
-      _gdk_macos_display_break_all_grabs (GDK_MACOS_DISPLAY (display), time);
 
       /* Reset gravity */
       [[[self contentView] layer] setContentsGravity:kCAGravityBottomLeft];
@@ -225,7 +239,7 @@ typedef NSString *CALayerContentsGravity;
   [self setReleasedWhenClosed:YES];
   [self setPreservesContentDuringLiveResize:NO];
 
-  view = [[GdkMacosView alloc] initWithFrame:contentRect];
+  view = [[[GdkMacosWindow contentViewClass] alloc] initWithFrame:contentRect];
   [self setContentView:view];
   [view release];
 
@@ -720,6 +734,9 @@ typedef NSString *CALayerContentsGravity;
 {
   inFullscreenTransition = NO;
   initialPositionKnown = NO;
+
+  [self updateToolbarAppearence];
+
   [self checkSendEnterNotify];
 }
 
@@ -732,6 +749,9 @@ typedef NSString *CALayerContentsGravity;
 {
   inFullscreenTransition = NO;
   initialPositionKnown = NO;
+
+  [self updateToolbarAppearence];
+
   [self checkSendEnterNotify];
 }
 
@@ -762,20 +782,77 @@ typedef NSString *CALayerContentsGravity;
   if (decorated)
     {
       style_mask &= ~NSWindowStyleMaskFullSizeContentView;
-      [self setTitleVisibility:NSWindowTitleVisible];
     }
   else
     {
       style_mask |= NSWindowStyleMaskFullSizeContentView;
-      [self setTitleVisibility:NSWindowTitleHidden];
     }
 
-  [self setTitlebarAppearsTransparent:!decorated];
-  [[self standardWindowButton:NSWindowCloseButton] setHidden:!decorated];
-  [[self standardWindowButton:NSWindowMiniaturizeButton] setHidden:!decorated];
-  [[self standardWindowButton:NSWindowZoomButton] setHidden:!decorated];
-
   [self setStyleMask:style_mask];
+
+  [self updateToolbarAppearence];
+}
+
+-(BOOL)showStandardWindowButtons;
+{
+  return showButtonCount > 0;
+}
+
+-(void)setShowStandardWindowButtons:(BOOL)show
+{
+  if (show)
+    showButtonCount++;
+  else if (showButtonCount > 0)
+    showButtonCount--;
+  else
+    {
+      g_warning ("Show standard window button count doesn't match hide count");
+      return;
+    }
+
+  [self updateToolbarAppearence];
+}
+
+/* updateToolbarAppearence:
+ * Update the toolbar appearence based on the following criteria:
+ *
+ * 1. The window is used Client Side Decorations (style mask is set)
+ * 2. The window has native window buttons enabled
+ * 3. The window is in fullscreen mode
+ */
+-(void)updateToolbarAppearence
+{
+  NSWindowStyleMask style_mask = [self styleMask];
+  BOOL is_fullscreen = (style_mask & NSWindowStyleMaskFullScreen) != 0;
+  BOOL is_csd = !is_fullscreen && (style_mask & NSWindowStyleMaskFullSizeContentView) != 0;
+  BOOL hidden = is_csd && (showButtonCount == 0);
+
+  /* Do not update toolbars when in fullscreen transition, as it can cause the app to crash.
+   * It will be updated once the transition has finished.
+   */
+  if (inFullscreenTransition)
+    return;
+
+  /* By assigning a toolbar, the window controls are moved a bit more inwards,
+   * In line with how toolbars look in macOS apps.
+   * I haven't found a better way. Unfortunately we have to be careful not to
+   * update the toolbar during a fullscreen transition.
+   */
+  if (is_csd && (showButtonCount > 0) && [self toolbar] == nil)
+    {
+      NSToolbar *toolbar = [[NSToolbar alloc] init];
+      [self setToolbar:toolbar];
+      [toolbar release];
+    }
+  else if (!is_csd && [self toolbar] != nil)
+    [self setToolbar:nil];
+
+  [self setTitleVisibility:is_csd ? NSWindowTitleHidden : NSWindowTitleVisible];
+  [self setTitlebarAppearsTransparent:is_csd];
+
+  [[self standardWindowButton:NSWindowCloseButton] setHidden:hidden];
+  [[self standardWindowButton:NSWindowMiniaturizeButton] setHidden:hidden];
+  [[self standardWindowButton:NSWindowZoomButton] setHidden:hidden];
 }
 
 -(GdkMacosSurface *)gdkSurface

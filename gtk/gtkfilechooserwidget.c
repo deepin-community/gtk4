@@ -93,6 +93,7 @@
 #include "gtkmultisorter.h"
 #include "gtkcolumnviewsorter.h"
 #include "gtkexpression.h"
+#include "gtkactionbar.h"
 
 #ifndef G_OS_WIN32
 #include "gtkopenuriportal.h"
@@ -1939,7 +1940,7 @@ files_list_restrict_key_presses (GtkEventControllerKey *controller,
 
 static char *
 get_file_date (GtkFileChooserWidget *impl,
-                           GFileInfo        *info)
+               GFileInfo            *info)
 {
   glong time;
 
@@ -3720,34 +3721,6 @@ stop_loading_and_clear_list_model (GtkFileChooserWidget *impl,
     set_current_model (impl, NULL);
 }
 
-/* Replace 'target' with 'replacement' in the input string. */
-static char *
-string_replace (const char *input,
-                const char *target,
-                const char *replacement)
-{
-  char **pieces;
-  char *output;
-
-  pieces = g_strsplit (input, target, -1);
-  output = g_strjoinv (replacement, pieces);
-  g_strfreev (pieces);
-
-  return output;
-}
-
-static void
-replace_ratio (char **str)
-{
-  if (g_get_charset (NULL))
-    {
-      char *ret;
-      ret = string_replace (*str, ":", "\xE2\x80\x8E∶");
-      g_free (*str);
-      *str = ret;
-    }
-}
-
 static char *
 my_g_format_date_for_display (GtkFileChooserWidget *impl,
                               glong                 secs)
@@ -3804,7 +3777,6 @@ my_g_format_date_for_display (GtkFileChooserWidget *impl,
     }
 
   date_str = g_date_time_format (time, format);
-  replace_ratio (&date_str);
 
   g_date_time_unref (now);
   g_date_time_unref (now_date);
@@ -3830,7 +3802,6 @@ my_g_format_time_for_display (GtkFileChooserWidget *impl,
     format = _("%l:%M %p");
 
   date_str = g_date_time_format (time, format);
-  replace_ratio (&date_str);
 
   g_date_time_unref (time);
 
@@ -4198,7 +4169,19 @@ update_current_folder_get_info_cb (GObject      *source,
   set_busy_cursor (impl, FALSE);
 
   info = g_file_query_info_finish (file, result, &error);
-  if (error)
+
+  /* If we have no permissions to access the file, g_file_query_info() will
+   * return successfully, but with a GFileInfo with no attributes. Synthesise
+   * an error in that case, so the logic to try the parent directory can be used. */
+  if (info != NULL && !g_file_info_has_attribute (info, G_FILE_ATTRIBUTE_STANDARD_TYPE))
+    {
+      g_set_error_literal (&error, G_IO_ERROR, G_IO_ERROR_PERMISSION_DENIED,
+                           _("You do not have access to the specified folder."));
+      g_clear_object (&info);
+    }
+
+  if (error ||
+      !g_file_info_has_attribute (info, G_FILE_ATTRIBUTE_STANDARD_TYPE))
     {
       GFile *parent_file;
 
@@ -6691,6 +6674,10 @@ gtk_file_chooser_widget_class_init (GtkFileChooserWidgetClass *class)
                                        "show-hidden",
                                        NULL);
   gtk_widget_class_add_binding_signal (widget_class,
+                                       GDK_KEY_Find, GDK_NO_MODIFIER_MASK,
+                                       "search-shortcut",
+                                       NULL);
+  gtk_widget_class_add_binding_signal (widget_class,
                                        GDK_KEY_s, GDK_ALT_MASK,
                                        "search-shortcut",
                                        NULL);
@@ -6833,6 +6820,8 @@ captured_key (GtkEventControllerKey *controller,
 {
   GtkFileChooserWidget *impl = data;
   gboolean handled;
+  GtkWidget *focus;
+  GtkWidget *ancestor;
 
   if (impl->operation_mode == OPERATION_MODE_SEARCH ||
       impl->operation_mode == OPERATION_MODE_ENTER_LOCATION ||
@@ -6843,10 +6832,14 @@ captured_key (GtkEventControllerKey *controller,
   if (keyval == GDK_KEY_slash || keyval == GDK_KEY_asciitilde || keyval == GDK_KEY_period)
     return GDK_EVENT_PROPAGATE;
 
+  focus = gtk_root_get_focus (gtk_widget_get_root (GTK_WIDGET (impl)));
+
+  ancestor = gtk_widget_get_ancestor (focus, GTK_TYPE_ACTION_BAR);
+  if (ancestor && gtk_widget_is_ancestor (ancestor, impl->places_view))
+    return GDK_EVENT_PROPAGATE;
+
   if (impl->location_entry)
     {
-      GtkWidget *focus = gtk_root_get_focus (gtk_widget_get_root (GTK_WIDGET (impl)));
-
       if (focus && gtk_widget_is_ancestor (focus, impl->location_entry))
         return GDK_EVENT_PROPAGATE;
     }
@@ -6959,7 +6952,7 @@ match_func (gpointer item, gpointer user_data)
   return g_file_info_get_attribute_boolean (G_FILE_INFO (item), "filechooser::visible");
 }
 
-static GtkOrdering
+static int
 directory_sort_func (gconstpointer a,
                      gconstpointer b,
                      gpointer      user_data)
@@ -6980,13 +6973,13 @@ directory_sort_func (gconstpointer a,
   return GTK_ORDERING_EQUAL;
 }
 
-static GtkOrdering
+static int
 name_sort_func (gconstpointer a,
                 gconstpointer b,
                 gpointer      user_data)
 {
   char *key_a, *key_b;
-  GtkOrdering result;
+  int result;
 
   /* FIXME: use sortkeys for these */
   key_a = g_utf8_collate_key_for_filename (g_file_info_get_display_name ((GFileInfo *)a), -1);
@@ -7026,7 +7019,7 @@ location_sort_func (gconstpointer a,
   return result;
 }
 
-static GtkOrdering
+static int
 size_sort_func (gconstpointer a,
                 gconstpointer b,
                 gpointer      user_data)
@@ -7044,14 +7037,14 @@ size_sort_func (gconstpointer a,
     return GTK_ORDERING_EQUAL;
 }
 
-static GtkOrdering
+static int
 type_sort_func (gconstpointer a,
                 gconstpointer b,
                 gpointer      user_data)
 {
   GtkFileChooserWidget *impl = user_data;
   char *key_a, *key_b;
-  GtkOrdering result;
+  int result;
 
   /* FIXME: use sortkeys for these */
   key_a = get_type_information (impl, (GFileInfo *)a);
@@ -7065,7 +7058,7 @@ type_sort_func (gconstpointer a,
   return result;
 }
 
-static GtkOrdering
+static int
 time_sort_func (gconstpointer a,
                 gconstpointer b,
                 gpointer      user_data)
@@ -7094,12 +7087,12 @@ time_sort_func (gconstpointer a,
     return GTK_ORDERING_EQUAL;
 }
 
-static GtkOrdering
+static int
 recent_sort_func (gconstpointer a,
                   gconstpointer b,
                   gpointer      user_data)
 {
-  GtkOrdering result;
+  int result;
 
   result = time_sort_func (a, b, user_data);
 
@@ -7116,12 +7109,12 @@ recent_sort_func (gconstpointer a,
   return result;
 }
 
-static GtkOrdering
+static int
 search_sort_func (gconstpointer a,
                   gconstpointer b,
                   gpointer      user_data)
 {
-  GtkOrdering result;
+  int result;
 
   result = location_sort_func (a, b, user_data);
 

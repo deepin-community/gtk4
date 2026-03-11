@@ -96,6 +96,8 @@ struct xkb_state *_gdk_wayland_keymap_get_xkb_state (GdkKeymap *keymap);
 struct xkb_keymap *_gdk_wayland_keymap_get_xkb_keymap (GdkKeymap *keymap);
 gboolean           _gdk_wayland_keymap_key_is_modifier (GdkKeymap *keymap,
                                                         guint      keycode);
+int        _gdk_wayland_keymap_get_active_layout_index (GdkKeymap *keymap);
+char **    _gdk_wayland_keymap_get_layout_names (GdkKeymap *keymap);
 
 void       _gdk_wayland_display_init_cursors (GdkWaylandDisplay *display);
 void       _gdk_wayland_display_finalize_cursors (GdkWaylandDisplay *display);
@@ -117,7 +119,6 @@ void       gdk_wayland_display_system_bell (GdkDisplay *display,
 struct wl_buffer *_gdk_wayland_cursor_get_buffer (GdkWaylandDisplay *display,
                                                   GdkCursor         *cursor,
                                                   double             desired_scale,
-                                                  gboolean           use_viewporter,
                                                   guint              image_index,
                                                   int               *hotspot_x,
                                                   int               *hotspot_y,
@@ -196,18 +197,15 @@ GList *gdk_wayland_display_get_toplevel_surfaces (GdkDisplay *display);
 
 int gdk_wayland_display_get_output_refresh_rate (GdkWaylandDisplay *display_wayland,
                                                  struct wl_output  *output);
-guint32 gdk_wayland_display_get_output_scale (GdkWaylandDisplay *display_wayland,
-                                              struct wl_output  *output);
 GdkMonitor *gdk_wayland_display_get_monitor_for_output (GdkDisplay       *display,
                                                         struct wl_output *output);
 
 void _gdk_wayland_surface_set_grab_seat (GdkSurface      *surface,
-                                        GdkSeat        *seat);
+                                         GdkSeat         *seat);
 
 cairo_surface_t * gdk_wayland_display_create_shm_surface  (GdkWaylandDisplay        *display,
-                                                           int                       width,
-                                                           int                       height,
-                                                           const GdkFractionalScale *scale);
+                                                           guint                     width,
+                                                           guint                     height);
 struct wl_buffer *_gdk_wayland_shm_surface_get_wl_buffer (cairo_surface_t *surface);
 gboolean _gdk_wayland_is_shm_surface (cairo_surface_t *surface);
 
@@ -222,8 +220,6 @@ void gdk_wayland_surface_inhibit_shortcuts (GdkSurface *surface,
                                            GdkSeat   *gdk_seat);
 void gdk_wayland_surface_restore_shortcuts (GdkSurface *surface,
                                            GdkSeat   *gdk_seat);
-
-void gdk_wayland_surface_update_scale (GdkSurface *surface);
 
 GdkModifierType gdk_wayland_keymap_get_gdk_modifiers (GdkKeymap *keymap,
                                                       guint32    mods);

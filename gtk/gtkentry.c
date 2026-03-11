@@ -57,6 +57,7 @@
 #include "gtkdragsourceprivate.h"
 #include "gtkdragicon.h"
 #include "gtkwidgetpaintable.h"
+#include "gtkbuilderprivate.h"
 
 #include <cairo-gobject.h>
 #include <string.h>
@@ -64,9 +65,12 @@
 /**
  * GtkEntry:
  *
- * `GtkEntry` is a single line text entry widget.
+ * A single-line text entry widget.
  *
- * ![An example GtkEntry](entry.png)
+ * <picture>
+ *   <source srcset="entry-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkEntry" src="entry.png">
+ * </picture>
  *
  * A fairly large set of key bindings are supported by default. If the
  * entered text is longer than the allocation of the widget, the widget
@@ -150,7 +154,7 @@
  *
  * # Accessibility
  *
- * `GtkEntry` uses the %GTK_ACCESSIBLE_ROLE_TEXT_BOX role.
+ * `GtkEntry` uses the [enum@Gtk.AccessibleRole.text_box] role.
  */
 
 #define MAX_ICONS 2
@@ -362,6 +366,8 @@ gtk_entry_buildable_custom_tag_start (GtkBuildable       *buildable,
   if (strcmp (tagname, "attributes") == 0)
     {
       GtkPangoAttributeParserData *parser_data;
+
+      gtk_buildable_tag_deprecation_warning (buildable, builder, "attributes", "attributes");
 
       parser_data = g_new0 (GtkPangoAttributeParserData, 1);
       parser_data->builder = g_object_ref (builder);
@@ -1396,10 +1402,6 @@ gtk_entry_init (GtkEntry *entry)
                              GTK_EVENT_CONTROLLER (catchall));
 
   priv->editing_canceled = FALSE;
-
-  gtk_accessible_update_property (GTK_ACCESSIBLE (entry),
-                                  GTK_ACCESSIBLE_PROPERTY_HAS_POPUP, TRUE,
-                                  -1);
 }
 
 static void
@@ -2832,7 +2834,7 @@ gtk_entry_get_icon_storage_type (GtkEntry             *entry,
  * The position’s coordinates are relative to the @entry’s
  * top left corner. If @x, @y doesn’t lie inside an icon,
  * -1 is returned. This function is intended for use in a
- *  [signal@Gtk.Widget::query-tooltip] signal handler.
+ * [signal@Gtk.Widget::query-tooltip] signal handler.
  *
  * Returns: the index of the icon at the given position, or -1
  */

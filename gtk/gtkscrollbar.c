@@ -39,9 +39,12 @@
 /**
  * GtkScrollbar:
  *
- * The `GtkScrollbar` widget is a horizontal or vertical scrollbar.
+ * Shows a horizontal or vertical scrollbar.
  *
- * ![An example GtkScrollbar](scrollbar.png)
+ * <picture>
+ *   <source srcset="scrollbar-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkScrollbar" src="scrollbar.png">
+ * </picture>
  *
  * Its position and movement are controlled by the adjustment that is passed to
  * or created by [ctor@Gtk.Scrollbar.new]. See [class@Gtk.Adjustment] for more
@@ -80,7 +83,7 @@
  *
  * # Accessibility
  *
- * `GtkScrollbar` uses the %GTK_ACCESSIBLE_ROLE_SCROLLBAR role.
+ * `GtkScrollbar` uses the [enum@Gtk.AccessibleRole.scrollbar] role.
  */
 
 typedef struct _GtkScrollbarClass   GtkScrollbarClass;
@@ -263,6 +266,7 @@ gtk_scrollbar_init (GtkScrollbar *self)
   priv->orientation = GTK_ORIENTATION_HORIZONTAL;
 
   priv->range = g_object_new (GTK_TYPE_RANGE, NULL);
+  gtk_range_set_flippable (GTK_RANGE (priv->range), TRUE);
   gtk_widget_set_hexpand (priv->range, TRUE);
   gtk_widget_set_vexpand (priv->range, TRUE);
   gtk_widget_set_parent (priv->range, GTK_WIDGET (self));

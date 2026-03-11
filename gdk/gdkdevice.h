@@ -66,7 +66,7 @@ typedef enum
  * @flags: Flags indicating what axes are present, see [flags@Gdk.AxisFlags]
  * @axes: (array fixed-size=12): axis values, indexed by [enum@Gdk.AxisUse]
  *
- * A `GdkTimeCoord` stores a single event in a motion history.
+ * Stores a single event in a motion history.
  *
  * To check whether an axis is present, check whether the corresponding
  * flag from the [flags@Gdk.AxisFlags] enumeration is set in the @flags
@@ -123,6 +123,11 @@ GdkSurface *        gdk_device_get_surface_at_position  (GdkDevice *device,
 
 GDK_AVAILABLE_IN_4_2
 guint32             gdk_device_get_timestamp            (GdkDevice *device);
+
+GDK_AVAILABLE_IN_4_18
+gint                gdk_device_get_active_layout_index  (GdkDevice *device);
+GDK_AVAILABLE_IN_4_18
+gchar **            gdk_device_get_layout_names         (GdkDevice *device);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GdkDevice, g_object_unref)
 

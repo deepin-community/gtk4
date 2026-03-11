@@ -576,18 +576,6 @@ activate_about (GSimpleAction *action,
   int i;
   char *os_name;
   char *os_version;
-  const char *authors[] = {
-    "Alexander Larsson",
-    NULL
-  };
-  const char *artists[] = {
-    "Jakub Steiner",
-    NULL
-  };
-  const char *maintainers[] = {
-    "The GTK Team",
-    NULL
-  };
   GtkWidget *dialog;
 
   os_name = g_get_os_info (G_OS_INFO_KEY_NAME);
@@ -631,19 +619,21 @@ activate_about (GSimpleAction *action,
                                          ? "GTK Print Editor (Development)"
                                          : "GTK Print Editor",
                          "version", version,
-                         "copyright", "© 2006-2021 Red Hat, Inc",
+                         "copyright", "© 2006-2024 Red Hat, Inc",
                          "license-type", GTK_LICENSE_LGPL_2_1,
                          "website", "http://www.gtk.org",
                          "comments", "Program to demonstrate GTK printing",
-                         "authors", authors,
+                         "authors", (const char *[]) { "Alexander Larsson", NULL },
                          "logo-icon-name", "org.gtk.PrintEditor4",
                          "title", "About GTK Print Editor",
                          "system-information", sysinfo->str,
                          NULL);
+
   gtk_about_dialog_add_credit_section (GTK_ABOUT_DIALOG (dialog),
-                                       _("Artwork by"), artists);
+                                       _("Artwork by"), (const char *[]) { "Jakub Steiner", NULL });
+
   gtk_about_dialog_add_credit_section (GTK_ABOUT_DIALOG (dialog),
-                                       _("Maintained by"), maintainers);
+                                       _("Maintained by"), (const char *[]) { "The GTK Team", NULL });
 
   gtk_window_present (GTK_WINDOW (dialog));
 
@@ -789,9 +779,16 @@ startup (GApplication *app)
 static void
 activate (GApplication *app)
 {
+  GList *list;
   GtkWidget *box;
   GtkWidget *sw;
   GtkWidget *contents;
+
+  if ((list = gtk_application_get_windows (GTK_APPLICATION (app))) != NULL)
+    {
+      gtk_window_present (GTK_WINDOW (list->data));
+      return;
+    }
 
   main_window = gtk_application_window_new (GTK_APPLICATION (app));
 
@@ -871,6 +868,7 @@ main (int argc, char **argv)
 {
   GtkApplication *app;
   GError *error = NULL;
+  char version[80];
 
   gtk_init ();
 
@@ -890,6 +888,13 @@ main (int argc, char **argv)
   }
 
   app = gtk_application_new ("org.gtk.PrintEditor4", G_APPLICATION_HANDLES_OPEN);
+
+  g_snprintf (version, sizeof (version), "%s%s%s\n",
+              PACKAGE_VERSION,
+              g_strcmp0 (PROFILE, "devel") == 0 ? "-" : "",
+              g_strcmp0 (PROFILE, "devel") == 0 ? VCS_TAG : "");
+
+  g_application_set_version (G_APPLICATION (app), version);
 
   g_action_map_add_action_entries (G_ACTION_MAP (app),
                                    app_entries, G_N_ELEMENTS (app_entries),

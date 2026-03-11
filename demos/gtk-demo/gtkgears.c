@@ -593,8 +593,8 @@ draw_gear(GtkGears *self,
   glBindBuffer(GL_ARRAY_BUFFER, gear_vbo);
 
   /* Set up the position of the attributes in the vertex buffer object */
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), NULL);
-  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (GLfloat *) 0 + 3);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (void *) 0);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (void *) (3 * sizeof(GLfloat)));
 
   /* Enable the attributes */
   glEnableVertexAttribArray(0);
@@ -677,8 +677,8 @@ static const char vertex_shader_gl[] =
 "\n"
 "    // Multiply the diffuse value by the vertex color (which is fixed in this case)\n"
 "    // to get the actual color that we will use to draw this vertex with\n"
-"    float diffuse = max(dot(N, L), 0.0);\n"
-"    Color = diffuse * MaterialColor;\n"
+"    float diffuse = (dot(N, L) + 1.0) * 0.5;\n"
+"    Color = vec4(diffuse * MaterialColor.rgb, 1.0);\n"
 "\n"
 "    // Transform the position to clip coordinates\n"
 "    gl_Position = ModelViewProjectionMatrix * vec4(position, 1.0);\n"
@@ -715,8 +715,8 @@ static const char vertex_shader_gles[] =
 "\n"
 "    // Multiply the diffuse value by the vertex color (which is fixed in this case)\n"
 "    // to get the actual color that we will use to draw this vertex with\n"
-"    float diffuse = max(dot(N, L), 0.0);\n"
-"    Color = diffuse * MaterialColor;\n"
+"    float diffuse = (dot(N, L) + 1.0) * 0.5;\n"
+"    Color = vec4(diffuse * MaterialColor.rgb, 1.0);\n"
 "\n"
 "    // Transform the position to clip coordinates\n"
 "    gl_Position = ModelViewProjectionMatrix * vec4(position, 1.0);\n"

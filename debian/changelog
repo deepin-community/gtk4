@@ -1,8 +1,266 @@
-gtk4 (4.16.7+ds-1deepin1) unstable; urgency=medium
+gtk4 (4.18.6+ds-2) unstable; urgency=medium
 
-  * Skip gdk image test
+  * Add packaging changes to previous changelog entry that were
+    accidentally left undocumented in the previous upload
 
- -- Woomeeme <2968606874@qq.com>  Thu, 12 Dec 2024 15:34:42 +0800
+ -- Simon McVittie <smcv@debian.org>  Sun, 15 Jun 2025 10:37:29 +0100
+
+gtk4 (4.18.6+ds-1) unstable; urgency=medium
+
+  * New upstream bugfix release
+    - In the cups printer driver, fix NULL-termination on arrays of choices,
+      avoiding a possible crash
+      (gtk!8595 upstream)
+    - Fix a crash caused by using uninitialized memory in GtkCssKeyframes
+      (gtk!8656 upstream)
+    - Fix a memory leak in GtkCssValue
+      (gtk!8629 upstream)
+    - Avoid a warning when gtk_application_inhibit() is called with
+      GTK_APPLICATION_INHIBIT_IDLE and no window
+      (gtk!8638 upstream)
+    - Fix names of Activate, Deactivate window events to match AT-SPI spec
+      (gtk!8652 upstream)
+    - Render symbolic SVG icons more correctly by improving the parser
+      for the path mini-language, and improve related test coverage
+      (gtk#7575, gtk!8548, gtk!8549, gtk!8642 upstream)
+    - Under Wayland, delay destruction of the event queue until after
+      everything has been detached from it
+      (gtk!8481 upstream)
+    - Simplify gdk_memory_texture_builder_set_color_state() by not handling
+      a NULL state that was already checked for
+      (gtk!8582 upstream)
+    - Improve the "inspector" debugging tool:
+      + show more environment variables
+      + show the text protocol
+      + centre-align accessibility errors
+      + report an error if buttons are too small
+      + make warnings not wrap too much
+      + remove incorrect early-returns
+    - Improve examples:
+      + In gtkgears fix lighting
+      + In gtk-demo, add missing accessibility properties
+      + In gtk-demo, fix a regression in the ucd demo
+      + In node-editor, make the help non-editable
+    - Documentation updates
+    - Translation updates: ca, de, fi, he, sk
+    - Upstream CI changes not relevant to Debian
+    - macOS-specific changes not relevant to Debian
+    - Minor updates in vendored pango subproject, not relevant to Debian
+      (we use libpango1.0-dev instead)
+  * d/libgtk-4-1.bug-control: Add known out-of-tree IM modules to
+    Package-Status.
+    There are considerably fewer of these than GTK 3 modules, because
+    GTK 4 does not support arbitrary GTK_MODULES, but they could still be
+    involved in crashes; so it seems wise to diagnose them as "packages
+    libgtk-4-1 is related to" in bug reports.
+  * d/libgtk-4-doc.links: Remove unused, dangling symlinks to GLib docs
+
+ -- Simon McVittie <smcv@debian.org>  Sat, 14 Jun 2025 14:06:01 +0100
+
+gtk4 (4.18.5+ds-1) unstable; urgency=medium
+
+  [ Jeremy Bícha ]
+  * New upstream release
+    - Drop patches that were cherry-picked from upstream, no longer needed
+
+  [ Simon McVittie ]
+  * d/rules: Make blhc happy
+    - Pass appropriate compiler flags to build-architecture gcc, when
+      building a tool used during build
+    - Consistently apply -Wl,-z,now to everything
+  * Fix d/copyright issues reported by Lintian:
+    - Point to GNU by web address rather than postal address
+    - Improve cross-references to LGPL in common-licenses
+    - Remove details of stb_rect_pack.
+      This was part of the old GL renderer, and was removed when the old GL
+      renderer was fully superseded by ngl.
+  * Update lintian overrides for executables not affected by glibc hardening
+  * Standards-Version: 4.7.2 (no changes required)
+
+ -- Simon McVittie <smcv@debian.org>  Sun, 04 May 2025 15:39:45 +0100
+
+gtk4 (4.18.4+ds-2) unstable; urgency=medium
+
+  * Cherry-pick commits from gtk-4-18 branch up to April 15
+  * Only watch for 4.18.x updates
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Thu, 17 Apr 2025 10:45:54 -0400
+
+gtk4 (4.18.4+ds-1) unstable; urgency=medium
+
+  * New upstream bugfix release (LP: #2106391)
+    - Fix cursor icons getting stuck on incorrect versions (LP: #2106299)
+  * Refresh patches
+
+ -- Alessandro Astone <alessandro.astone@canonical.com>  Mon, 07 Apr 2025 14:33:36 +0200
+
+gtk4 (4.18.3+ds-1) unstable; urgency=medium
+
+  * New upstream release (LP: #2105406)
+  * debian/libgtk-4-common.install: Install new Inspector gsettings schemas
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Sat, 29 Mar 2025 18:07:09 -0400
+
+gtk4 (4.18.2+ds-1) unstable; urgency=medium
+
+  * Team upload
+  * New upstream release
+  * Delete 3 patches included in new release
+
+ -- Alessandro Astone <alessandro.astone@canonical.com>  Tue, 18 Mar 2025 17:11:16 +0100
+
+gtk4 (4.17.5+ds-3) unstable; urgency=medium
+
+  * Don't use mesa-vulkan-drivers for tests on s390x
+  * Backport patches to fix flakiness when rendering with FP pixel formats.
+    This allows us to drop the workarounds to ignore test failures when using
+    floating-point pixel formats. It also fixes artifacts in gtk4 applications
+    visible mostly when using the asahi driver.
+
+ -- Alessandro Astone <alessandro.astone@canonical.com>  Wed, 26 Feb 2025 15:50:53 -0500
+
+gtk4 (4.17.5+ds-2) unstable; urgency=medium
+
+  * Add patch to fix color precision FTBFS issue on some architectures
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Mon, 24 Feb 2025 16:13:46 -0500
+
+gtk4 (4.17.5+ds-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #1098624)
+    - Fix numeric mode in spin buttons (LP: #2060164)
+  * debian/libgtk-4-1.symbols.in: Add new symbols
+  * Bump minimum wayland and wayland-protocols
+  * Remove font patch: applied in new release
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Sun, 23 Feb 2025 22:47:12 -0500
+
+gtk4 (4.17.4+ds-4) unstable; urgency=medium
+
+  * Don't use mesa-vulkan-drivers for tests on ppc64el
+
+ -- Alessandro Astone <alessandro.astone@canonical.com>  Thu, 13 Feb 2025 10:56:56 -0500
+
+gtk4 (4.17.4+ds-3) unstable; urgency=medium
+
+  * Update autopkgtest patch with version applied upstream
+  * Release to unstable (Closes: #1094845, #1083055)
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Wed, 12 Feb 2025 11:11:10 -0500
+
+gtk4 (4.17.4+ds-2) experimental; urgency=medium
+
+  [ Jeremy Bícha ]
+  * Don't use mesa-vulkan-drivers for tests on armel, armhf & mips64el
+    (Mitigates: #1094844)
+
+  [ Alessandro Astone ]
+  * Add proposed patch to fix an autopkgtest error (Closes: #1094843)
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Wed, 12 Feb 2025 09:18:46 -0500
+
+gtk4 (4.17.4+ds-1) experimental; urgency=medium
+
+  * New upstream release
+  * Bump minimum cairo
+  * Bump minimum libpng to 1.6.45
+  * Remove libpng patch: applied in new release
+  * debian/libgtk-4-1.symbols.in: Add new symbols
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Sat, 01 Feb 2025 10:10:15 -0500
+
+gtk4 (4.17.3+ds-1) experimental; urgency=medium
+
+  [ Jeremy Bícha ]
+  * New upstream release
+  * Bump minimum glib, harfbuzz, and pango
+  * debian/libgtk-4-1.symbols.in: Add new symbols
+  * Remove obsolete Breaks/Replaces
+  * Remove test validation patch: applied in new release
+
+  [ Alessandro Astone ]
+  * Add proposed patch to fix compatibility with libpng-1.6.45
+    (Closes: #1093335)
+  * debian: Allow using vulkan in tests
+  * Update memorytexture tests patch for 4.17, and include more cases
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Thu, 30 Jan 2025 15:30:23 -0500
+
+gtk4 (4.17.1+ds-2) experimental; urgency=medium
+
+  * Fix typo in Breaks field
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Fri, 06 Dec 2024 18:16:08 -0500
+
+gtk4 (4.17.1+ds-1) experimental; urgency=medium
+
+  [ Jeremy Bícha ]
+  * New upstream release
+    - The Icon Browser is no longer provided
+  * GTK no longer allows displays to be created before GDK has been initialized.
+    Add Breaks for apps that were known to be broken by this change.
+    See gtk !7836
+  * missing-sources: Update emojibase
+  * missing-sources: Copy emoji 16.0 files from Debian's unicode-data package
+  * Bump minimum meson to 1.2.0
+  * debian/libgtk-4-1.symbols.in: Add new symbols
+  * Refresh patches
+  * Add a revert patch for our gstplayer subproject
+  * Add another revert patch to keep installed tests working
+
+  [ Samuel Thibault ]
+  * d/libgtk-4-1.symbols.in: Mark more Vulkan symbols as Linux-only
+    (Closes: #1088749)
+
+  [ Simon McVittie ]
+  * d/rules: Make it more obvious that we're intentionally using gcc
+    from the build architecture to build debian/convert-emoji
+  * d/upstream/metadata: Canonicalize order
+  * d/upstream/metadata: Update links to Changelog, FAQ
+  * d/upstream/metadata: Add links to Documentation, Security-Contact
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Fri, 06 Dec 2024 17:07:39 -0500
+
+gtk4 (4.16.12+ds-3) unstable; urgency=medium
+
+  * Bump minimum libpng to 1.6.45 (Closes: #1093335)
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Fri, 31 Jan 2025 11:01:18 -0500
+
+tk4 (4.16.12+ds-2) unstable; urgency=medium
+
+  [ Alessandro Astone ]
+  * Add proposed patch to fix compatibility with libpng-1.6.45
+    (Closes: #1093335)
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Thu, 30 Jan 2025 20:59:51 -0500
+
+gtk4 (4.16.12+ds-1) unstable; urgency=medium
+
+  [ Simon McVittie ]
+  * New upstream stable release
+  * d/patches: Refresh patch series (no functional changes)
+  * d/patches: Update to upstream gtk-4-16 branch commit
+    4.16.12-4-g0631748538
+    - Fix FTBFS caused by a unit test failure
+    - Translation updates: ru
+  * d/rules: Make it more obvious that we're intentionally using gcc
+    from the build architecture to build debian/convert-emoji
+  * d/upstream/metadata: Canonicalize order
+  * d/upstream/metadata: Update links to Changelog, FAQ
+  * d/upstream/metadata: Add links to Documentation, Security-Contact
+
+  [ Samuel Thibault ]
+  * d/libgtk-4-1.symbols.in: Mark more Vulkan symbols as Linux-only
+    (Closes: #1088749)
+
+  [ Jeremy Bícha ]
+  * d/gbp.conf: Use debian/trixie branch for 4.16.x
+  * Unicode emoji updates corresponding to the new upstream release:
+    - d/missing-sources: Update emojibase to commit 04b7926
+    - d/missing-sources: Update Unicode data to 16.0
+
+ -- Simon McVittie <smcv@debian.org>  Mon, 06 Jan 2025 17:37:42 +0000
 
 gtk4 (4.16.7+ds-1) unstable; urgency=medium
 

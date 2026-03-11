@@ -38,15 +38,19 @@
 #include "gtktypebuiltins.h"
 #include "gtkwidgetprivate.h"
 #include "gtkbuildable.h"
+#include "gtkbuilderprivate.h"
 
 #include <math.h>
 
 /**
  * GtkPaned:
  *
- * A widget with two panes, arranged either horizontally or vertically.
+ * Arranges its children in two panes, horizontally or vertically.
  *
- * ![An example GtkPaned](panes.png)
+ * <picture>
+ *   <source srcset="panes-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkPaned" src="panes.png">
+ * </picture>
  *
  * The division between the two panes is adjustable by the user
  * by dragging a handle.
@@ -819,18 +823,21 @@ gtk_paned_buildable_add_child (GtkBuildable *buildable,
 
   if (g_strcmp0 (type, "start") == 0)
     {
+      gtk_buildable_child_deprecation_warning (buildable, builder, "start", "start-child");
       gtk_paned_set_start_child (self, GTK_WIDGET (child));
       gtk_paned_set_resize_start_child (self, FALSE);
       gtk_paned_set_shrink_start_child (self, TRUE);
     }
   else if (g_strcmp0 (type, "end") == 0)
     {
+      gtk_buildable_child_deprecation_warning (buildable, builder, "end", "end-child");
       gtk_paned_set_end_child (self, GTK_WIDGET (child));
       gtk_paned_set_resize_end_child (self, TRUE);
       gtk_paned_set_shrink_end_child (self, TRUE);
     }
   else if (type == NULL && GTK_IS_WIDGET (child))
     {
+      gtk_buildable_child_deprecation_warning (buildable, builder, NULL, "start-child or end-child");
       if (self->start_child == NULL)
         {
           gtk_paned_set_start_child (self, GTK_WIDGET (child));
@@ -949,6 +956,9 @@ gesture_drag_begin_cb (GtkGestureDrag *gesture,
         paned->drag_pos = start_x - handle_area.origin.x;
       else
         paned->drag_pos = start_y - handle_area.origin.y;
+
+      if (!gtk_paned_get_wide_handle (paned))
+        paned->drag_pos -= HANDLE_EXTRA_SIZE;
 
       paned->panning = TRUE;
 

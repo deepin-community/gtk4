@@ -27,14 +27,16 @@
 #include <glib/gi18n-lib.h>
 #include "gdk/gdkprivate.h"
 #include "gdk/gdkdebugprivate.h"
+#include "gtktextencodingprivate.h"
 
 /**
  * GtkFileDialog:
  *
- * A `GtkFileDialog` object collects the arguments that
- * are needed to present a file chooser dialog to the
- * user, such as a title for the dialog and whether it
- * should be modal.
+ * Asynchronous API to present a file chooser dialog.
+ *
+ * `GtkFileDialog` collects the arguments that are needed to present
+ * the dialog to the user, such as a title for the dialog and whether
+ * it should be modal.
  *
  * The dialog is shown with [method@Gtk.FileDialog.open],
  * [method@Gtk.FileDialog.save], etc.
@@ -233,7 +235,8 @@ gtk_file_dialog_class_init (GtkFileDialogClass *class)
    *
    * The list of filters.
    *
-   * See [property@Gtk.FileDialog:default-filter] about how those two properties interact.
+   * See [property@Gtk.FileDialog:default-filter] about how these
+   * two properties interact.
    *
    * Since: 4.10
    */
@@ -245,15 +248,16 @@ gtk_file_dialog_class_init (GtkFileDialogClass *class)
   /**
    * GtkFileDialog:default-filter:
    *
-   * The default filter, that is, the filter that is initially
-   * active in the file chooser dialog.
+   * The default filter.
    *
-   * If the default filter is %NULL, the first filter of [property@Gtk.FileDialog:filters]
+   * This filter is initially active in the file chooser dialog.
+   *
+   * If the default filter is `NULL`, the first filter of [property@Gtk.FileDialog:filters]
    * is used as the default filter. If that property contains no filter, the dialog will
    * be unfiltered.
    *
-   * If [property@Gtk.FileDialog:filters] is not %NULL, the default filter should be part
-   * of the list. If it is not, the dialog may choose to not make it available.
+   * If [property@Gtk.FileDialog:filters] is not `NULL`, the default filter should be
+   * part of the list. If it is not, the dialog may choose to not make it available.
    *
    * Since: 4.10
    */
@@ -265,11 +269,12 @@ gtk_file_dialog_class_init (GtkFileDialogClass *class)
   /**
    * GtkFileDialog:initial-file:
    *
-   * The initial file, that is, the file that is initially selected
-   * in the file chooser dialog
+   * The initial file.
    *
-   * This is a utility property that sets both [property@Gtk.FileDialog:initial-folder] and
-   * [property@Gtk.FileDialog:initial-name].
+   * This file is initially selected in the file chooser dialog
+   *
+   * This is a utility property that sets both [property@Gtk.FileDialog:initial-folder]
+   * and [property@Gtk.FileDialog:initial-name].
    *
    * Since: 4.10
    */
@@ -281,8 +286,9 @@ gtk_file_dialog_class_init (GtkFileDialogClass *class)
   /**
    * GtkFileDialog:initial-folder:
    *
-   * The initial folder, that is, the directory that is initially
-   * opened in the file chooser dialog
+   * The initial folder.
+   *
+   * This is the directory that is initially opened in the file chooser dialog.
    *
    * Since: 4.10
    */
@@ -294,8 +300,9 @@ gtk_file_dialog_class_init (GtkFileDialogClass *class)
   /**
    * GtkFileDialog:initial-name:
    *
-   * The initial name, that is, the filename that is initially
-   * selected in the file chooser dialog.
+   * The initial name.
+   *
+   * This is the name of the file that is initially selected in the file chooser dialog.
    *
    * Since: 4.10
    */
@@ -362,10 +369,9 @@ gtk_file_dialog_new (void)
 
 /**
  * gtk_file_dialog_get_title:
- * @self: a `GtkFileDialog`
+ * @self: a file dialog
  *
- * Returns the title that will be shown on the
- * file chooser dialog.
+ * Returns the title that will be shown on the file chooser dialog.
  *
  * Returns: the title
  *
@@ -381,11 +387,10 @@ gtk_file_dialog_get_title (GtkFileDialog *self)
 
 /**
  * gtk_file_dialog_set_title:
- * @self: a `GtkFileDialog`
+ * @self: a file dialog
  * @title: the new title
  *
- * Sets the title that will be shown on the
- * file chooser dialog.
+ * Sets the title that will be shown on the file chooser dialog.
  *
  * Since: 4.10
  */
@@ -410,13 +415,12 @@ gtk_file_dialog_set_title (GtkFileDialog *self,
 
 /**
  * gtk_file_dialog_get_modal:
- * @self: a `GtkFileDialog`
+ * @self: a file dialog
  *
- * Returns whether the file chooser dialog
- * blocks interaction with the parent window
- * while it is presented.
+ * Returns whether the file chooser dialog blocks interaction
+ * with the parent window while it is presented.
  *
- * Returns: `TRUE` if the file chooser dialog is modal
+ * Returns: true if the file chooser dialog is modal
  *
  * Since: 4.10
  */
@@ -430,12 +434,11 @@ gtk_file_dialog_get_modal (GtkFileDialog *self)
 
 /**
  * gtk_file_dialog_set_modal:
- * @self: a `GtkFileDialog`
+ * @self: a file dialog
  * @modal: the new value
  *
- * Sets whether the file chooser dialog
- * blocks interaction with the parent window
- * while it is presented.
+ * Sets whether the file chooser dialog blocks interaction
+ * with the parent window while it is presented.
  *
  * Since: 4.10
  */
@@ -455,13 +458,13 @@ gtk_file_dialog_set_modal (GtkFileDialog *self,
 
 /**
  * gtk_file_dialog_get_filters:
- * @self: a `GtkFileDialog`
+ * @self: a file dialog
  *
  * Gets the filters that will be offered to the user
  * in the file chooser dialog.
  *
- * Returns: (transfer none) (nullable): the filters, as
- *   a `GListModel` of `GtkFileFilters`
+ * Returns: (transfer none) (nullable): the filters,
+ *   as a list model of [class@Gtk.FileFilter]
  *
  * Since: 4.10
  */
@@ -475,8 +478,8 @@ gtk_file_dialog_get_filters (GtkFileDialog *self)
 
 /**
  * gtk_file_dialog_set_filters:
- * @self: a `GtkFileDialog`
- * @filters: (nullable): a `GListModel` of `GtkFileFilters`
+ * @self: a file dialog
+ * @filters: (nullable): a list model of [class@Gtk.FileFilter]
  *
  * Sets the filters that will be offered to the user
  * in the file chooser dialog.
@@ -498,12 +501,12 @@ gtk_file_dialog_set_filters (GtkFileDialog *self,
 
 /**
  * gtk_file_dialog_get_default_filter:
- * @self: a `GtkFileDialog`
+ * @self: a file dialog
  *
  * Gets the filter that will be selected by default
  * in the file chooser dialog.
  *
- * Returns: (transfer none) (nullable): the current filter
+ * Returns: (transfer none) (nullable): the default filter
  *
  * Since: 4.10
  */
@@ -517,13 +520,13 @@ gtk_file_dialog_get_default_filter (GtkFileDialog *self)
 
 /**
  * gtk_file_dialog_set_default_filter:
- * @self: a `GtkFileDialog`
- * @filter: (nullable): a `GtkFileFilter`
+ * @self: a file dialog
+ * @filter: (nullable): the file filter
  *
  * Sets the filter that will be selected by default
  * in the file chooser dialog.
  *
- * If set to %NULL, the first item in [property@Gtk.FileDialog:filters]
+ * If set to `NULL`, the first item in [property@Gtk.FileDialog:filters]
  * will be used as the default filter. If that list is empty, the dialog
  * will be unfiltered.
  *
@@ -544,7 +547,7 @@ gtk_file_dialog_set_default_filter (GtkFileDialog *self,
 
 /**
  * gtk_file_dialog_get_initial_folder:
- * @self: a `GtkFileDialog`
+ * @self: a file dialog
  *
  * Gets the folder that will be set as the
  * initial folder in the file chooser dialog.
@@ -563,8 +566,8 @@ gtk_file_dialog_get_initial_folder (GtkFileDialog *self)
 
 /**
  * gtk_file_dialog_set_initial_folder:
- * @self: a `GtkFileDialog`
- * @folder: (nullable): a `GFile`
+ * @self: a file dialog
+ * @folder: (nullable): a file
  *
  * Sets the folder that will be set as the
  * initial folder in the file chooser dialog.
@@ -594,9 +597,9 @@ gtk_file_dialog_set_initial_folder (GtkFileDialog *self,
 
 /**
  * gtk_file_dialog_get_initial_name:
- * @self: a `GtkFileDialog`
+ * @self: a file dialog
  *
- * Gets the name for the file that should be initially set.
+ * Gets the filename that will be initially selected.
  *
  * Returns: (nullable) (transfer none): the name
  *
@@ -612,14 +615,17 @@ gtk_file_dialog_get_initial_name (GtkFileDialog *self)
 
 /**
  * gtk_file_dialog_set_initial_name:
- * @self: a `GtkFileDialog`
- * @name: (nullable): a UTF8 string
+ * @self: a file dialog
+ * @name: (nullable): a string
  *
- * Sets the name for the file that should be initially set.
- * For saving dialogs, this will usually be pre-entered into the name field.
+ * Sets the filename that will be initially selected.
  *
- * If a file with this name already exists in the directory set via
- * [property@Gtk.FileDialog:initial-folder], the dialog should preselect it.
+ * For save dialogs, @name will usually be pre-entered into the
+ * name field.
+ *
+ * If a file with this name already exists in the directory set
+ * via [property@Gtk.FileDialog:initial-folder], the dialog will
+ * preselect it.
  *
  * Since: 4.10
  */
@@ -645,7 +651,7 @@ gtk_file_dialog_set_initial_name (GtkFileDialog *self,
 
 /**
  * gtk_file_dialog_get_initial_file:
- * @self: a `GtkFileDialog`
+ * @self: a file dialog
  *
  * Gets the file that will be initially selected in
  * the file chooser dialog.
@@ -664,16 +670,16 @@ gtk_file_dialog_get_initial_file (GtkFileDialog *self)
 
 /**
  * gtk_file_dialog_set_initial_file:
- * @self: a `GtkFileDialog`
- * @file: (nullable): a `GFile`
+ * @self: a file dialog
+ * @file: (nullable): a file
  *
  * Sets the file that will be initially selected in
  * the file chooser dialog.
  *
  * This function is a shortcut for calling both
- * gtk_file_dialog_set_initial_folder() and
- * gtk_file_dialog_set_initial_name() with the directory and
- * name of @file respectively.
+ * [method@Gtk.FileDialog.set_initial_folder] and
+ * [method@Gtk.FileDialog.set_initial_name] with the
+ * directory and name of @file, respectively.
  *
  * Since: 4.10
  */
@@ -738,6 +744,47 @@ invalid_file:
   g_object_thaw_notify (G_OBJECT (self));
 }
 
+/**
+ * gtk_file_dialog_get_accept_label:
+ * @self: a file dialog
+ *
+ * Retrieves the text used by the dialog on its accept button.
+ *
+ * Returns: (nullable): the label shown on the file chooser's accept button
+ *
+ * Since: 4.10
+ */
+const char *
+gtk_file_dialog_get_accept_label (GtkFileDialog *self)
+{
+  g_return_val_if_fail (GTK_IS_FILE_DIALOG (self), NULL);
+
+  return self->accept_label;
+}
+
+/**
+ * gtk_file_dialog_set_accept_label:
+ * @self: a file dialog
+ * @accept_label: (nullable): the new accept label
+ *
+ * Sets the label shown on the file chooser's accept button.
+ *
+ * Leaving the accept label unset or setting it as `NULL` will
+ * fall back to a default label, depending on what API is used
+ * to launch the file dialog.
+ *
+ * Since: 4.10
+ */
+void
+gtk_file_dialog_set_accept_label (GtkFileDialog *self,
+                                  const char    *accept_label)
+{
+  g_return_if_fail (GTK_IS_FILE_DIALOG (self));
+
+  if (g_set_str (&self->accept_label, accept_label))
+    g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_ACCEPT_LABEL]);
+}
+
 /* }}} */
 /* {{{ Async implementation */
 
@@ -749,6 +796,21 @@ cancelled_cb (GCancellable *cancellable,
               GTask        *task)
 {
   response_cb (task, GTK_RESPONSE_CLOSE);
+}
+
+typedef struct {
+  GListModel *files;
+  char **choices;
+} TaskResult;
+
+static void
+task_result_free (gpointer data)
+{
+  TaskResult *res = data;
+
+  g_object_unref (res->files);
+  g_strfreev (res->choices);
+  g_free (res);
 }
 
 static void
@@ -766,11 +828,23 @@ response_cb (GTask *task,
     {
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
       GtkFileChooser *chooser;
-      GListModel *files;
+      TaskResult *res;
+      char **choices;
+
+      res = g_new0 (TaskResult, 1);
 
       chooser = GTK_FILE_CHOOSER (g_task_get_task_data (task));
-      files = gtk_file_chooser_get_files (chooser);
-      g_task_return_pointer (task, files, g_object_unref);
+      res->files = gtk_file_chooser_get_files (chooser);
+
+      choices = (char **) g_object_get_data (G_OBJECT (chooser), "choices");
+      if (choices)
+        {
+          res->choices = g_new0 (char *, g_strv_length (choices) + 1);
+          for (guint i = 0; choices[i]; i++)
+            res->choices[i] = g_strdup (gtk_file_chooser_get_choice (chooser, choices[i]));
+        }
+
+      g_task_return_pointer (task, res, task_result_free);
 G_GNUC_END_IGNORE_DEPRECATIONS
     }
   else if (response == GTK_RESPONSE_CLOSE)
@@ -804,7 +878,6 @@ create_file_chooser (GtkFileDialog        *self,
   GtkFileChooserNative *chooser;
   const char *default_accept_label, *accept;
   const char *default_title, *title;
-  GdkDisplay *display G_GNUC_UNUSED;
 
   switch (action)
     {
@@ -839,16 +912,6 @@ create_file_chooser (GtkFileDialog        *self,
 
   chooser = gtk_file_chooser_native_new (title, parent, action, accept, _("_Cancel"));
 
-  if (parent)
-    display = gtk_widget_get_display (GTK_WIDGET (parent));
-  else
-    display = gdk_display_get_default ();
-
-  if (GDK_DISPLAY_DEBUG_CHECK (display, NO_PORTALS))
-    gtk_file_chooser_native_set_use_portal (chooser, FALSE);
-  else
-    gtk_file_chooser_native_set_use_portal (chooser, TRUE);
-
   gtk_native_dialog_set_modal (GTK_NATIVE_DIALOG (chooser), self->modal);
   gtk_file_chooser_set_select_multiple (GTK_FILE_CHOOSER (chooser), select_multiple);
 
@@ -875,25 +938,29 @@ create_file_chooser (GtkFileDialog        *self,
 G_GNUC_END_IGNORE_DEPRECATIONS
 
 static GFile *
-finish_file_op (GtkFileDialog  *self,
-                GTask          *task,
-                GError        **error)
+finish_file_op (GtkFileDialog   *self,
+                GTask           *task,
+                char          ***choices,
+                GError         **error)
 {
-  GListModel *files;
+  TaskResult *res;
 
-  files = g_task_propagate_pointer (task, error);
-  if (files)
+  res = g_task_propagate_pointer (task, error);
+  if (res)
     {
       GFile *file = NULL;
 
-      if (g_list_model_get_n_items (files) > 0)
-        file = g_list_model_get_item (files, 0);
+      if (g_list_model_get_n_items (res->files) > 0)
+        file = g_list_model_get_item (res->files, 0);
       else
         g_set_error_literal (error,
                              GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_FAILED,
                              "No file selected");
 
-      g_object_unref (files);
+      if (choices)
+        *choices = g_strdupv (res->choices);
+
+      task_result_free (res);
 
       return file;
     }
@@ -902,27 +969,47 @@ finish_file_op (GtkFileDialog  *self,
 }
 
 static GListModel *
-finish_multiple_files_op (GtkFileDialog  *self,
-                          GTask          *task,
-                          GError        **error)
+finish_multiple_files_op (GtkFileDialog   *self,
+                          GTask           *task,
+                          char          ***choices,
+                          GError         **error)
 {
-  return G_LIST_MODEL (g_task_propagate_pointer (task, error));
+  TaskResult *res;
+
+  res = g_task_propagate_pointer (task, error);
+
+  if (res)
+    {
+      GListModel *files;
+
+      files = G_LIST_MODEL (g_object_ref (res->files));
+
+      if (choices)
+        *choices = g_strdupv (res->choices);
+
+      task_result_free (res);
+
+      return files;
+    }
+
+  return NULL;
 }
 
 /* }}} */
-/* {{{ Async API */
+/* {{{ Public API */
 
 /**
  * gtk_file_dialog_open:
- * @self: a `GtkFileDialog`
- * @parent: (nullable): the parent `GtkWindow`
- * @cancellable: (nullable): a `GCancellable` to cancel the operation
+ * @self: a file dialog
+ * @parent: (nullable): the parent window
+ * @cancellable: (nullable): a cancellable to cancel the operation
  * @callback: (scope async) (closure user_data): a callback to call when the
  *   operation is complete
  * @user_data: data to pass to @callback
  *
- * This function initiates a file selection operation by
- * presenting a file chooser dialog to the user.
+ * Presents a file chooser dialog to the user.
+ *
+ * The file chooser dialog will be set up to select a single file.
  *
  * The @callback will be called when the dialog is dismissed.
  *
@@ -957,15 +1044,13 @@ gtk_file_dialog_open (GtkFileDialog       *self,
 
 /**
  * gtk_file_dialog_open_finish:
- * @self: a `GtkFileDialog`
- * @result: a `GAsyncResult`
+ * @self: a file dialog
+ * @result: the result
  * @error: return location for a [enum@Gtk.DialogError] error
  *
- * Finishes the [method@Gtk.FileDialog.open] call and
- * returns the resulting file.
+ * Finishes the [method@Gtk.FileDialog.open] call.
  *
- * Returns: (nullable) (transfer full): the file that was selected.
- *   Otherwise, `NULL` is returned and @error is set
+ * Returns: (nullable) (transfer full): the file that was selected
  *
  * Since: 4.10
  */
@@ -978,23 +1063,24 @@ gtk_file_dialog_open_finish (GtkFileDialog   *self,
   g_return_val_if_fail (g_task_is_valid (result, self), NULL);
   g_return_val_if_fail (g_task_get_source_tag (G_TASK (result)) == gtk_file_dialog_open, NULL);
 
-  return finish_file_op (self, G_TASK (result), error);
+  return finish_file_op (self, G_TASK (result), NULL, error);
 }
 
 /**
  * gtk_file_dialog_select_folder:
- * @self: a `GtkFileDialog`
- * @parent: (nullable): the parent `GtkWindow`
- * @cancellable: (nullable): a `GCancellable` to cancel the operation
+ * @self: a file dialog
+ * @parent: (nullable): the parent window
+ * @cancellable: (nullable): a cancellable to cancel the operation
  * @callback: (scope async) (closure user_data): a callback to call when the
  *   operation is complete
  * @user_data: data to pass to @callback
  *
- * This function initiates a directory selection operation by
- * presenting a file chooser dialog to the user.
+ * Presents a file chooser dialog to the user.
  *
- * If you pass @initial_folder, the file chooser will initially be
- * opened in the parent directory of that folder, otherwise, it
+ * The file chooser dialog will be set up to select a single folder.
+ *
+ * If you pass @initial_folder, the file chooser dialog will initially
+ * be opened in the parent directory of that folder, otherwise, it
  * will be in the directory [property@Gtk.FileDialog:initial-folder].
  *
  * The @callback will be called when the dialog is dismissed.
@@ -1030,15 +1116,13 @@ gtk_file_dialog_select_folder (GtkFileDialog       *self,
 
 /**
  * gtk_file_dialog_select_folder_finish:
- * @self: a `GtkFileDialog`
- * @result: a `GAsyncResult`
+ * @self: a file dialog
+ * @result: the result
  * @error: return location for a [enum@Gtk.DialogError] error
  *
- * Finishes the [method@Gtk.FileDialog.select_folder] call and
- * returns the resulting file.
+ * Finishes the [method@Gtk.FileDialog.select_folder] call.
  *
- * Returns: (nullable) (transfer full): the file that was selected.
- *   Otherwise, `NULL` is returned and @error is set
+ * Returns: (nullable) (transfer full): the folder that was selected
  *
  * Since: 4.10
  */
@@ -1051,20 +1135,21 @@ gtk_file_dialog_select_folder_finish (GtkFileDialog  *self,
   g_return_val_if_fail (g_task_is_valid (result, self), NULL);
   g_return_val_if_fail (g_task_get_source_tag (G_TASK (result)) == gtk_file_dialog_select_folder, NULL);
 
-  return finish_file_op (self, G_TASK (result), error);
+  return finish_file_op (self, G_TASK (result), NULL, error);
 }
 
 /**
  * gtk_file_dialog_save:
- * @self: a `GtkFileDialog`
- * @parent: (nullable): the parent `GtkWindow`
- * @cancellable: (nullable): a `GCancellable` to cancel the operation
+ * @self: a file dialog
+ * @parent: (nullable): the parent window
+ * @cancellable: (nullable): a cancellable to cancel the operation
  * @callback: (scope async) (closure user_data): a callback to call when the
  *   operation is complete
  * @user_data: data to pass to @callback
  *
- * This function initiates a file save operation by
- * presenting a file chooser dialog to the user.
+ * Presents a file chooser dialog to the user.
+ *
+ * The file chooser dialog will be save mode.
  *
  * The @callback will be called when the dialog is dismissed.
  *
@@ -1099,15 +1184,13 @@ gtk_file_dialog_save (GtkFileDialog       *self,
 
 /**
  * gtk_file_dialog_save_finish:
- * @self: a `GtkFileDialog`
- * @result: a `GAsyncResult`
+ * @self: a file dialog
+ * @result: the result
  * @error: return location for a [enum@Gtk.DialogError] error
  *
- * Finishes the [method@Gtk.FileDialog.save] call and
- * returns the resulting file.
+ * Finishes the [method@Gtk.FileDialog.save] call.
  *
- * Returns: (nullable) (transfer full): the file that was selected.
- *   Otherwise, `NULL` is returned and @error is set
+ * Returns: (nullable) (transfer full): the file that was selected
  *
  * Since: 4.10
  */
@@ -1120,22 +1203,23 @@ gtk_file_dialog_save_finish (GtkFileDialog   *self,
   g_return_val_if_fail (g_task_is_valid (result, self), NULL);
   g_return_val_if_fail (g_task_get_source_tag (G_TASK (result)) == gtk_file_dialog_save, NULL);
 
-  return finish_file_op (self, G_TASK (result), error);
+  return finish_file_op (self, G_TASK (result), NULL, error);
 }
 
 /**
  * gtk_file_dialog_open_multiple:
- * @self: a `GtkFileDialog`
- * @parent: (nullable): the parent `GtkWindow`
- * @cancellable: (nullable): a `GCancellable` to cancel the operation
+ * @self: a file dialog
+ * @parent: (nullable): the parent window
+ * @cancellable: (nullable): a cancellable to cancel the operation
  * @callback: (scope async) (closure user_data): a callback to call when the
  *   operation is complete
  * @user_data: data to pass to @callback
  *
- * This function initiates a multi-file selection operation by
- * presenting a file chooser dialog to the user.
+ * Presents a file chooser dialog to the user.
  *
- * The file chooser will initially be opened in the directory
+ * The file chooser dialog will be set up to select multiple files.
+ *
+ * The file chooser dialog will initially be opened in the directory
  * [property@Gtk.FileDialog:initial-folder].
  *
  * The @callback will be called when the dialog is dismissed.
@@ -1171,16 +1255,14 @@ gtk_file_dialog_open_multiple (GtkFileDialog       *self,
 
 /**
  * gtk_file_dialog_open_multiple_finish:
- * @self: a `GtkFileDialog`
- * @result: a `GAsyncResult`
+ * @self: a file dialog
+ * @result: the result
  * @error: return location for a [enum@Gtk.DialogError] error
  *
- * Finishes the [method@Gtk.FileDialog.open] call and
- * returns the resulting files in a `GListModel`.
+ * Finishes the [method@Gtk.FileDialog.open] call.
  *
- * Returns: (nullable) (transfer full): the file that was selected,
- *   as a `GListModel` of `GFiles`. Otherwise, `NULL` is returned
- *   and @error is set
+ * Returns: (nullable) (transfer full): the files that were selected,
+ *   as a list model of [iface@Gio.File]
  *
  * Since: 4.10
  */
@@ -1193,23 +1275,25 @@ gtk_file_dialog_open_multiple_finish (GtkFileDialog   *self,
   g_return_val_if_fail (g_task_is_valid (result, self), NULL);
   g_return_val_if_fail (g_task_get_source_tag (G_TASK (result)) == gtk_file_dialog_open_multiple, NULL);
 
-  return finish_multiple_files_op (self, G_TASK (result), error);
+  return finish_multiple_files_op (self, G_TASK (result), NULL, error);
 }
 
 /**
  * gtk_file_dialog_select_multiple_folders:
- * @self: a `GtkFileDialog`
- * @parent: (nullable): the parent `GtkWindow`
- * @cancellable: (nullable): a `GCancellable` to cancel the operation
+ * @self: a file dialog
+ * @parent: (nullable): the parent window
+ * @cancellable: (nullable): a cancellable to cancel the operation
  * @callback: (scope async) (closure user_data): a callback to call when the
  *   operation is complete
  * @user_data: data to pass to @callback
  *
- * This function initiates a multi-directory selection operation by
- * presenting a file chooser dialog to the user.
+ * Presents a file chooser dialog to the user.
  *
- * The file chooser will initially be opened in the directory
- * [property@Gtk.FileDialog:initial-folder].
+ * The file chooser dialog will be set up to allow selecting
+ * multiple folders.
+ *
+ * The file chooser dialog will initially be opened in the
+ * directory [property@Gtk.FileDialog:initial-folder].
  *
  * The @callback will be called when the dialog is dismissed.
  *
@@ -1244,16 +1328,14 @@ gtk_file_dialog_select_multiple_folders (GtkFileDialog       *self,
 
 /**
  * gtk_file_dialog_select_multiple_folders_finish:
- * @self: a `GtkFileDialog`
- * @result: a `GAsyncResult`
+ * @self: a file dialog
+ * @result: the result
  * @error: return location for a [enum@Gtk.DialogError] error
  *
- * Finishes the [method@Gtk.FileDialog.select_multiple_folders]
- * call and returns the resulting files in a `GListModel`.
+ * Finishes the [method@Gtk.FileDialog.select_multiple_folders] call.
  *
- * Returns: (nullable) (transfer full): the file that was selected,
- *   as a `GListModel` of `GFiles`. Otherwise, `NULL` is returned
- *   and @error is set
+ * Returns: (nullable) (transfer full): the folders that were selected,
+ *   as a list model of [iface@Gio.File]
  *
  * Since: 4.10
  */
@@ -1266,49 +1348,373 @@ gtk_file_dialog_select_multiple_folders_finish (GtkFileDialog   *self,
   g_return_val_if_fail (g_task_is_valid (result, self), NULL);
   g_return_val_if_fail (g_task_get_source_tag (G_TASK (result)) == gtk_file_dialog_select_multiple_folders, NULL);
 
-  return finish_multiple_files_op (self, G_TASK (result), error);
+  return finish_multiple_files_op (self, G_TASK (result), NULL, error);
 }
 
-/**
- * gtk_file_dialog_get_accept_label:
- * @self: a `GtkFileDialog`
- *
- * Retrieves the text used by the dialog on its accept button.
- *
- * Returns: (nullable): the label shown on the file chooser's accept button.
- *
- * Since: 4.10
- */
-const char *
-gtk_file_dialog_get_accept_label (GtkFileDialog *self)
-{
-  g_return_val_if_fail (GTK_IS_FILE_DIALOG (self), NULL);
-
-  return self->accept_label;
-}
+/* }}} */
+/* {{{ Text file variants */
 
 /**
- * gtk_file_dialog_set_accept_label:
+ * gtk_file_dialog_open_text_file:
  * @self: a `GtkFileDialog`
- * @accept_label: (nullable): the new accept label
+ * @parent: (nullable): the parent `GtkWindow`
+ * @cancellable: (nullable): a `GCancellable` to cancel the operation
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
  *
- * Sets the label shown on the file chooser's accept button.
+ * Initiates a file selection operation by presenting a file chooser
+ * dialog to the user.
  *
- * Leaving the accept label unset or setting it as `NULL` will fall back to
- * a default label, depending on what API is used to launch the file dialog.
+ * In contrast to [method@Gtk.FileDialog.open], this function
+ * lets the user select the text encoding for the file, if possible.
  *
- * Since: 4.10
+ * The @callback will be called when the dialog is dismissed.
+ *
+ * Since: 4.18
  */
 void
-gtk_file_dialog_set_accept_label (GtkFileDialog *self,
-                                  const char    *accept_label)
+gtk_file_dialog_open_text_file (GtkFileDialog       *self,
+                                GtkWindow           *parent,
+                                GCancellable        *cancellable,
+                                GAsyncReadyCallback  callback,
+                                gpointer             user_data)
 {
+  GtkFileChooserNative *chooser;
+  GTask *task;
+  char **names;
+  char **labels;
+  const char **choices;
+
   g_return_if_fail (GTK_IS_FILE_DIALOG (self));
 
-  if (g_set_str (&self->accept_label, accept_label))
-    g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_ACCEPT_LABEL]);
+  chooser = create_file_chooser (self, parent, GTK_FILE_CHOOSER_ACTION_OPEN, FALSE);
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+  names = gtk_text_encoding_get_names ();
+  labels = gtk_text_encoding_get_labels ();
+  gtk_file_chooser_add_choice (GTK_FILE_CHOOSER (chooser),
+                               "encoding", _("Encoding"),
+                               (const char **) names,
+                               (const char **) labels);
+  gtk_file_chooser_set_choice (GTK_FILE_CHOOSER (chooser),
+                               "encoding", "automatic");
+  g_free (names);
+  g_free (labels);
+G_GNUC_END_IGNORE_DEPRECATIONS
+
+  choices = g_new0 (const char *, 2);
+  choices[0] = "encoding";
+  g_object_set_data_full (G_OBJECT (chooser), "choices", choices, g_free);
+
+  task = g_task_new (self, cancellable, callback, user_data);
+  g_task_set_check_cancellable (task, FALSE);
+  g_task_set_source_tag (task, gtk_file_dialog_open_text_file);
+  g_task_set_task_data (task, chooser, g_object_unref);
+
+  if (cancellable)
+    g_signal_connect (cancellable, "cancelled", G_CALLBACK (cancelled_cb), task);
+
+  g_signal_connect (chooser, "response", G_CALLBACK (dialog_response), task);
+
+  gtk_native_dialog_show (GTK_NATIVE_DIALOG (chooser));
+}
+
+/**
+ * gtk_file_dialog_open_text_file_finish:
+ * @self: a `GtkFileDialog`
+ * @result: a `GAsyncResult`
+ * @encoding: (out) (transfer none): return location for the text encoding to use
+ * @error: return location for a [enum@Gtk.DialogError] error
+ *
+ * Finishes the [method@Gtk.FileDialog.open_text_file] call
+ * and returns the resulting file and text encoding.
+ *
+ * If the user has explicitly selected a text encoding to use
+ * for the file, then @encoding will be set to a codeset name that
+ * is suitable for passing to iconv_open(). Otherwise, it will
+ * be `NULL`.
+ *
+ * Returns: (nullable) (transfer full): the file that was selected
+ *
+ * Since: 4.18
+ */
+GFile *
+gtk_file_dialog_open_text_file_finish (GtkFileDialog  *self,
+                                       GAsyncResult   *result,
+                                       const char    **encoding,
+                                       GError        **error)
+{
+  char **choices = NULL;
+  GFile *file;
+
+  g_return_val_if_fail (GTK_IS_FILE_DIALOG (self), NULL);
+  g_return_val_if_fail (g_task_is_valid (result, self), NULL);
+  g_return_val_if_fail (g_task_get_source_tag (G_TASK (result)) == gtk_file_dialog_open_text_file, NULL);
+
+  file = finish_file_op (self, G_TASK (result), &choices, error);
+
+  if (choices)
+    {
+      *encoding = gtk_text_encoding_from_name (choices[0]);
+      g_strfreev (choices);
+    }
+  else
+    {
+      *encoding = NULL;
+    }
+
+  return file;
+}
+
+/**
+ * gtk_file_dialog_open_multiple_text_files:
+ * @self: a file dialog
+ * @parent: (nullable): the parent window
+ * @cancellable: (nullable): a cancellable to cancel the operation
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
+ *
+ * Presents a file chooser dialog to the user.
+ *
+ * The file chooser dialog will be set up to select multiple files.
+ *
+ * The file chooser dialog will initially be opened in the directory
+ * [property@Gtk.FileDialog:initial-folder].
+ *
+ * In contrast to [method@Gtk.FileDialog.open], this function
+ * lets the user select the text encoding for the files, if possible.
+ *
+ * The @callback will be called when the dialog is dismissed.
+ *
+ * Since: 4.18
+ */
+void
+gtk_file_dialog_open_multiple_text_files (GtkFileDialog       *self,
+                                          GtkWindow           *parent,
+                                          GCancellable        *cancellable,
+                                          GAsyncReadyCallback  callback,
+                                          gpointer             user_data)
+{
+  GtkFileChooserNative *chooser;
+  GTask *task;
+  char **names;
+  char **labels;
+  const char **choices;
+
+  g_return_if_fail (GTK_IS_FILE_DIALOG (self));
+
+  chooser = create_file_chooser (self, parent, GTK_FILE_CHOOSER_ACTION_OPEN, TRUE);
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+  names = gtk_text_encoding_get_names ();
+  labels = gtk_text_encoding_get_labels ();
+  gtk_file_chooser_add_choice (GTK_FILE_CHOOSER (chooser),
+                               "encoding", _("Encoding"),
+                               (const char **) names,
+                               (const char **) labels);
+  gtk_file_chooser_set_choice (GTK_FILE_CHOOSER (chooser),
+                               "encoding", "automatic");
+  g_free (names);
+  g_free (labels);
+G_GNUC_END_IGNORE_DEPRECATIONS
+
+  choices = g_new0 (const char *, 2);
+  choices[0] = "encoding";
+  g_object_set_data_full (G_OBJECT (chooser), "choices", choices, g_free);
+
+  task = g_task_new (self, cancellable, callback, user_data);
+  g_task_set_check_cancellable (task, FALSE);
+  g_task_set_source_tag (task, gtk_file_dialog_open_multiple_text_files);
+  g_task_set_task_data (task, chooser, g_object_unref);
+
+  if (cancellable)
+    g_signal_connect (cancellable, "cancelled", G_CALLBACK (cancelled_cb), task);
+
+  g_signal_connect (chooser, "response", G_CALLBACK (dialog_response), task);
+
+  gtk_native_dialog_show (GTK_NATIVE_DIALOG (chooser));
+}
+
+/**
+ * gtk_file_dialog_open_multiple_text_files_finish:
+ * @self: a file dialog
+ * @result: the result
+ * @encoding: (out) (transfer none): return location for the text encoding to use
+ * @error: return location for a [enum@Gtk.DialogError] error
+ *
+ * Finishes the [method@Gtk.FileDialog.open] call.
+ *
+ * Returns: (nullable) (transfer full): the files that were selected,
+ *   as a list model of [iface@Gio.File]
+ *
+ * Since: 4.18
+ */
+GListModel *
+gtk_file_dialog_open_multiple_text_files_finish (GtkFileDialog   *self,
+                                                 GAsyncResult    *result,
+                                                 const char     **encoding,
+                                                 GError         **error)
+{
+  char **choices = NULL;
+  GListModel *files;
+
+  g_return_val_if_fail (GTK_IS_FILE_DIALOG (self), NULL);
+  g_return_val_if_fail (g_task_is_valid (result, self), NULL);
+  g_return_val_if_fail (g_task_get_source_tag (G_TASK (result)) == gtk_file_dialog_open_multiple_text_files, NULL);
+
+  files = finish_multiple_files_op (self, G_TASK (result), &choices, error);
+
+  if (choices)
+    {
+      *encoding = gtk_text_encoding_from_name (choices[0]);
+      g_strfreev (choices);
+    }
+  else
+    {
+      *encoding = NULL;
+    }
+
+  return files;
+}
+
+/**
+ * gtk_file_dialog_save_text_file:
+ * @self: a `GtkFileDialog`
+ * @parent: (nullable): the parent `GtkWindow`
+ * @cancellable: (nullable): a `GCancellable` to cancel the operation
+ * @callback: (scope async) (closure user_data): a callback to call when the
+ *   operation is complete
+ * @user_data: data to pass to @callback
+ *
+ * Initiates a file save operation by presenting a file chooser
+ * dialog to the user.
+ *
+ * In contrast to [method@Gtk.FileDialog.save], this function
+ * lets the user select the text encoding and line endings for
+ * the text file, if possible.
+ *
+ * The @callback will be called when the dialog is dismissed.
+ *
+ * Since: 4.18
+ */
+void
+gtk_file_dialog_save_text_file (GtkFileDialog       *self,
+                                GtkWindow           *parent,
+                                GCancellable        *cancellable,
+                                GAsyncReadyCallback  callback,
+                                gpointer             user_data)
+{
+  GtkFileChooserNative *chooser;
+  GTask *task;
+  char **names;
+  char **labels;
+  const char **choices;
+
+  g_return_if_fail (GTK_IS_FILE_DIALOG (self));
+
+  chooser = create_file_chooser (self, parent, GTK_FILE_CHOOSER_ACTION_SAVE, FALSE);
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+  names = gtk_text_encoding_get_names ();
+  labels = gtk_text_encoding_get_labels ();
+  gtk_file_chooser_add_choice (GTK_FILE_CHOOSER (chooser),
+                               "encoding", _("Encoding"),
+                               (const char **) names,
+                               (const char **) labels);
+  gtk_file_chooser_set_choice (GTK_FILE_CHOOSER (chooser),
+                               "encoding", "automatic");
+  g_free (names);
+  g_free (labels);
+
+  names = gtk_line_ending_get_names ();
+  labels = gtk_line_ending_get_labels ();
+  gtk_file_chooser_add_choice (GTK_FILE_CHOOSER (chooser),
+                               "line_ending", _("Line Ending"),
+                               (const char **) names,
+                               (const char **) labels);
+  gtk_file_chooser_set_choice (GTK_FILE_CHOOSER (chooser),
+                               "line_ending", "as-is");
+
+  g_free (names);
+  g_free (labels);
+
+G_GNUC_END_IGNORE_DEPRECATIONS
+
+  choices = g_new0 (const char *, 3);
+  choices[0] = "encoding";
+  choices[1] = "line_ending";
+  g_object_set_data_full (G_OBJECT (chooser), "choices", choices, g_free);
+
+  task = g_task_new (self, cancellable, callback, user_data);
+  g_task_set_check_cancellable (task, FALSE);
+  g_task_set_source_tag (task, gtk_file_dialog_save_text_file);
+  g_task_set_task_data (task, chooser, g_object_unref);
+
+  if (cancellable)
+    g_signal_connect (cancellable, "cancelled", G_CALLBACK (cancelled_cb), task);
+
+  g_signal_connect (chooser, "response", G_CALLBACK (dialog_response), task);
+
+  gtk_native_dialog_show (GTK_NATIVE_DIALOG (chooser));
+}
+
+/**
+ * gtk_file_dialog_save_text_file_finish:
+ * @self: a `GtkFileDialog`
+ * @result: a `GAsyncResult`
+ * @encoding: (out) (transfer none): return location for the text encoding to use
+ * @line_ending: (out) (transfer none): return location for the line endings to use
+ * @error: return location for a [enum@Gtk.DialogError] error
+ *
+ * Finishes the [method@Gtk.FileDialog.save_text_file] call
+ * and returns the resulting file, text encoding and line endings.
+ *
+ * If the user has explicitly selected a text encoding to use
+ * for the file, then @encoding will be set to a codeset name that
+ * is suitable for passing to iconv_open(). Otherwise, it will
+ * be `NULL`.
+ *
+ * The @line_ending will be set to one of "\n", "\r\n", "\r" or "",
+ * where the latter means to preserve existing line endings.
+ *
+ * Returns: (nullable) (transfer full): the file that was selected.
+ *   Otherwise, `NULL` is returned and @error is set
+ *
+ * Since: 4.18
+ */
+GFile *
+gtk_file_dialog_save_text_file_finish (GtkFileDialog  *self,
+                                       GAsyncResult   *result,
+                                       const char    **encoding,
+                                       const char    **line_ending,
+                                       GError        **error)
+{
+  char **choices = NULL;
+  GFile *file;
+
+  g_return_val_if_fail (GTK_IS_FILE_DIALOG (self), NULL);
+  g_return_val_if_fail (g_task_is_valid (result, self), NULL);
+  g_return_val_if_fail (g_task_get_source_tag (G_TASK (result)) == gtk_file_dialog_save_text_file, NULL);
+
+  file = finish_file_op (self, G_TASK (result), &choices, error);
+
+  if (choices)
+    {
+      *encoding = gtk_text_encoding_from_name (choices[0]);
+      *line_ending = gtk_line_ending_from_name (choices[1]);
+      g_strfreev (choices);
+    }
+  else
+    {
+      *encoding = NULL;
+      *line_ending = "\n";
+    }
+
+  return file;
 }
 
 /* }}} */
 
-/* vim:set foldmethod=marker expandtab: */
+/* vim:set foldmethod=marker: */

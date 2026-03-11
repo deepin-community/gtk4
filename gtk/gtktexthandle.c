@@ -166,8 +166,6 @@ gtk_text_handle_present_surface (GtkTextHandle *handle)
   layout = gdk_popup_layout_new (&rect,
                                  GDK_GRAVITY_SOUTH,
                                  GDK_GRAVITY_NORTH);
-  gdk_popup_layout_set_anchor_hints (layout,
-                                     GDK_ANCHOR_FLIP_Y | GDK_ANCHOR_SLIDE_X);
 
   gdk_popup_present (GDK_POPUP (handle->surface),
                      MAX (req.width, 1),
@@ -246,13 +244,17 @@ gtk_text_handle_realize (GtkWidget *widget)
   GtkTextHandle *handle = GTK_TEXT_HANDLE (widget);
   GdkSurface *parent_surface;
   GtkWidget *parent;
+  cairo_region_t *region;
 
   parent = gtk_widget_get_parent (widget);
   parent_surface = gtk_native_get_surface (gtk_widget_get_native (parent));
 
   handle->surface = gdk_surface_new_popup (parent_surface, FALSE);
   gdk_surface_set_widget (handle->surface, widget);
-  gdk_surface_set_input_region (handle->surface, cairo_region_create ());
+
+  region = cairo_region_create ();
+  gdk_surface_set_input_region (handle->surface, region);
+  cairo_region_destroy (region);
 
   g_signal_connect_swapped (handle->surface, "notify::mapped",
                             G_CALLBACK (surface_mapped_changed), widget);

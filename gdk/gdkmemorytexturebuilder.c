@@ -50,8 +50,8 @@ struct _GdkMemoryTextureBuilderClass
 /**
  * GdkMemoryTextureBuilder:
  *
- * `GdkMemoryTextureBuilder` is a builder used to construct [class@Gdk.Texture] objects
- * from system memory provided via [struct@GLib.Bytes].
+ * Constructs [class@Gdk.Texture] objects from system memory provided
+ * via [struct@GLib.Bytes].
  *
  * The operation is quite simple: Create a texture builder, set all the necessary
  * properties - keep in mind that the properties [property@Gdk.MemoryTextureBuilder:bytes],
@@ -397,7 +397,7 @@ gdk_memory_texture_builder_get_color_state (GdkMemoryTextureBuilder *self)
 /**
  * gdk_memory_texture_builder_set_color_state:
  * @self: a `GdkMemoryTextureBuilder`
- * @color_state: (nullable): The colorstate describing the data
+ * @color_state: The colorstate describing the data
  *
  * Sets the colorstate describing the data.
  *
@@ -417,9 +417,7 @@ gdk_memory_texture_builder_set_color_state (GdkMemoryTextureBuilder *self,
     return;
 
   g_clear_pointer (&self->color_state, gdk_color_state_unref);
-  self->color_state = color_state;
-  if (color_state)
-    gdk_color_state_ref (color_state);
+  self->color_state = gdk_color_state_ref (color_state);
 
   g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_COLOR_STATE]);
 }

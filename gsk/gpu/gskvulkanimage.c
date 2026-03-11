@@ -159,6 +159,8 @@ gsk_vulkan_device_supports_format (GskVulkanDevice   *device,
     *out_flags |= GSK_GPU_IMAGE_FILTERABLE;
   if (features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT)
     *out_flags |= GSK_GPU_IMAGE_RENDERABLE;
+  if (image_properties.imageFormatProperties.maxMipLevels >= gsk_vulkan_mipmap_levels (width, height))
+    *out_flags |= GSK_GPU_IMAGE_CAN_MIPMAP;
 
   return TRUE;
 }
@@ -175,7 +177,8 @@ gsk_vulkan_image_create_view (GskVulkanImage            *self,
                                      .image = self->vk_image,
                                      .viewType = VK_IMAGE_VIEW_TYPE_2D,
                                      .format = vk_format,
-                                     .components = *vk_components,
+                                     .components = vk_conversion ? (VkComponentMapping) { 0, }
+                                                                 : *vk_components,
                                      .subresourceRange = {
                                          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                                          .baseMipLevel = 0,
@@ -204,7 +207,7 @@ gsk_vulkan_device_check_format (GskVulkanDevice          *device,
                                 VkImageTiling            *out_tiling,
                                 GskGpuImageFlags         *out_flags)
 {
-#define CHECK_FLAGS (GSK_GPU_IMAGE_NO_BLIT | GSK_GPU_IMAGE_FILTERABLE | GSK_GPU_IMAGE_RENDERABLE)
+#define CHECK_FLAGS (GSK_GPU_IMAGE_NO_BLIT | GSK_GPU_IMAGE_FILTERABLE | GSK_GPU_IMAGE_RENDERABLE | GSK_GPU_IMAGE_CAN_MIPMAP)
   GskGpuImageFlags flags;
 
   if (vk_format == VK_FORMAT_UNDEFINED)
@@ -341,10 +344,10 @@ gsk_vulkan_image_new (GskVulkanDevice           *device,
   if (gdk_memory_format_alpha (format) == GDK_MEMORY_ALPHA_STRAIGHT)
     flags |= GSK_GPU_IMAGE_STRAIGHT_ALPHA;
 
-  if (((flags & (GSK_GPU_IMAGE_FILTERABLE | GSK_GPU_IMAGE_RENDERABLE | GSK_GPU_IMAGE_NO_BLIT | GSK_GPU_IMAGE_STRAIGHT_ALPHA)) ==
-       (GSK_GPU_IMAGE_FILTERABLE | GSK_GPU_IMAGE_RENDERABLE)) &&
-      (required_flags & GSK_GPU_IMAGE_CAN_MIPMAP))
-    flags |= GSK_GPU_IMAGE_CAN_MIPMAP;
+  if (((flags & (GSK_GPU_IMAGE_FILTERABLE | GSK_GPU_IMAGE_RENDERABLE | GSK_GPU_IMAGE_NO_BLIT | GSK_GPU_IMAGE_CAN_MIPMAP | GSK_GPU_IMAGE_STRAIGHT_ALPHA)) !=
+       (GSK_GPU_IMAGE_FILTERABLE | GSK_GPU_IMAGE_RENDERABLE | GSK_GPU_IMAGE_CAN_MIPMAP)) ||
+      !(required_flags & GSK_GPU_IMAGE_CAN_MIPMAP))
+    flags &= ~GSK_GPU_IMAGE_CAN_MIPMAP;
 
   if (!gsk_component_mapping_is_framebuffer_compatible (&vk_components))
     flags |= GSK_GPU_IMAGE_NO_BLIT;
@@ -681,7 +684,8 @@ gsk_vulkan_image_new_dmabuf (GskVulkanDevice *device,
   gsize n_modifiers;
   GskGpuImageFlags flags;
 
-  if (!gsk_vulkan_device_has_feature (device, GDK_VULKAN_FEATURE_DMABUF))
+  if (!gdk_has_feature (GDK_FEATURE_DMABUF) ||
+      !gsk_vulkan_device_has_feature (device, GDK_VULKAN_FEATURE_DMABUF))
     return NULL;
 
   vk_srgb_format = VK_FORMAT_UNDEFINED;
@@ -1131,7 +1135,7 @@ gsk_vulkan_image_new_for_dmabuf (GskVulkanDevice *device,
                                 &vk_components,
                                 vk_conversion);
 
-  GDK_DEBUG (DMABUF, "Vulkan uploaded %zux%zu %.4s::%016llx %sdmabuf",
+  GDK_DEBUG (DMABUF, "Vulkan uploaded %zux%zu %.4s:%016llx %sdmabuf",
              width, height,
              (char *) &dmabuf->fourcc, (unsigned long long) dmabuf->modifier,
              is_yuv ? "YUV " : "");
@@ -1175,7 +1179,8 @@ gsk_vulkan_image_get_n_planes (GskVulkanImage *self,
 }
 
 GdkTexture *
-gsk_vulkan_image_to_dmabuf_texture (GskVulkanImage *self)
+gsk_vulkan_image_to_dmabuf_texture (GskVulkanImage *self,
+                                    GdkColorState  *color_state)
 {
   GskGpuImage *image = GSK_GPU_IMAGE (self);
   GdkDmabufTextureBuilder *builder;
@@ -1229,6 +1234,7 @@ gsk_vulkan_image_to_dmabuf_texture (GskVulkanImage *self)
   gdk_dmabuf_texture_builder_set_modifier (builder, properties.drmFormatModifier);
   gdk_dmabuf_texture_builder_set_premultiplied (builder, !(gsk_gpu_image_get_flags (image) & GSK_GPU_IMAGE_STRAIGHT_ALPHA));
   gdk_dmabuf_texture_builder_set_n_planes (builder, n_planes);
+  gdk_dmabuf_texture_builder_set_color_state (builder, color_state);
   
   for (plane = 0; plane < n_planes; plane++)
     {

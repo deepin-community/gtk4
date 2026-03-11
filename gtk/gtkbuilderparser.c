@@ -647,8 +647,8 @@ parse_object (GtkBuildableParseContext  *context,
         {
           data->requested_object_level = data->cur_object_level;
 
-          GTK_DEBUG (BUILDER, "requested object \"%s\" found at level %d",
-                              object_id, data->requested_object_level);
+          GTK_DEBUG (BUILDER_TRACE, "requested object \"%s\" found at level %d",
+                                    object_id, data->requested_object_level);
 
           data->inside_requested_object = TRUE;
         }
@@ -871,6 +871,7 @@ parse_property (ParserData   *data,
   const char *bind_flags_str = NULL;
   GBindingFlags bind_flags = G_BINDING_DEFAULT;
   gboolean translatable = FALSE;
+  const char *translatable_string = NULL;
   ObjectInfo *object_info;
   GParamSpec *pspec = NULL;
   int line, col;
@@ -886,7 +887,7 @@ parse_property (ParserData   *data,
 
   if (!g_markup_collect_attributes (element_name, names, values, error,
                                     G_MARKUP_COLLECT_STRING, "name", &name,
-                                    G_MARKUP_COLLECT_BOOLEAN|G_MARKUP_COLLECT_OPTIONAL, "translatable", &translatable,
+                                    G_MARKUP_COLLECT_STRING|G_MARKUP_COLLECT_OPTIONAL, "translatable", &translatable_string,
                                     G_MARKUP_COLLECT_STRING|G_MARKUP_COLLECT_OPTIONAL, "comments", NULL,
                                     G_MARKUP_COLLECT_STRING|G_MARKUP_COLLECT_OPTIONAL, "context", &context,
                                     G_MARKUP_COLLECT_STRING|G_MARKUP_COLLECT_OPTIONAL, "bind-source", &bind_source,
@@ -911,13 +912,22 @@ parse_property (ParserData   *data,
       return;
     }
 
+  if (translatable_string &&
+      !gtk_builder_parse_translatable (translatable_string, &translatable, error))
+    {
+      _gtk_builder_prefix_error (data->builder, &data->ctx, error);
+      return;
+    }
+
   if (bind_flags_str)
     {
-      if (!_gtk_builder_flags_from_string (G_TYPE_BINDING_FLAGS, bind_flags_str, &bind_flags, error))
+      guint flags;
+      if (!_gtk_builder_flags_from_string (G_TYPE_BINDING_FLAGS, bind_flags_str, &flags, error))
         {
           _gtk_builder_prefix_error (data->builder, &data->ctx, error);
           return;
         }
+      bind_flags = flags;
     }
 
   gtk_buildable_parse_context_get_position (&data->ctx, &line, &col);
@@ -1763,7 +1773,7 @@ start_element (GtkBuildableParseContext  *context,
 {
   ParserData *data = (ParserData*)user_data;
 
-  if (GTK_DEBUG_CHECK (BUILDER))
+  if (GTK_DEBUG_CHECK (BUILDER_TRACE))
     {
       GString *tags = g_string_new ("");
       int i;
@@ -1853,7 +1863,7 @@ end_element (GtkBuildableParseContext  *context,
 {
   ParserData *data = (ParserData*)user_data;
 
-  GTK_DEBUG (BUILDER, "</%s>", element_name);
+  GTK_DEBUG (BUILDER_TRACE, "</%s>", element_name);
 
   if (data->subparser && data->subparser->start)
     {
@@ -1935,8 +1945,8 @@ end_element (GtkBuildableParseContext  *context,
       if (data->requested_objects && data->inside_requested_object &&
           (data->cur_object_level == data->requested_object_level))
         {
-          GTK_DEBUG (BUILDER, "requested object end found at level %d",
-                              data->requested_object_level);
+          GTK_DEBUG (BUILDER_TRACE, "requested object end found at level %d",
+                                    data->requested_object_level);
 
           data->inside_requested_object = FALSE;
         }
@@ -2071,7 +2081,16 @@ end_element (GtkBuildableParseContext  *context,
     }
   else if (strcmp (element_name, "menu") == 0)
     {
-      _gtk_builder_menu_end (data);
+      PropertyInfo *prop_info;
+      char *id;
+
+      id = _gtk_builder_menu_end (data);
+
+      prop_info = state_peek_info (data, PropertyInfo);
+      if (prop_info && prop_info->tag_type == TAG_PROPERTY)
+        g_string_assign (prop_info->text, id);
+
+      g_free (id);
     }
   else if (strcmp (element_name, "placeholder") == 0)
     {

@@ -22,10 +22,12 @@
 /**
  * GtkExpander:
  *
- * `GtkExpander` allows the user to reveal its child by clicking
- * on an expander triangle.
+ * Allows the user to reveal or conceal a child widget.
  *
- * ![An example GtkExpander](expander.png)
+ * <picture>
+ *   <source srcset="expander-dark.png" media="(prefers-color-scheme: dark)">
+ *   <img alt="An example GtkExpander" src="expander.png">
+ * </picture>
  *
  * This is similar to the triangles used in a `GtkTreeView`.
  *
@@ -113,7 +115,7 @@
  *
  * # Accessibility
  *
- * `GtkExpander` uses the %GTK_ACCESSIBLE_ROLE_BUTTON role.
+ * `GtkExpander` uses the [enum@Gtk.AccessibleRole.button] role.
  */
 
 #include "config.h"
@@ -131,6 +133,7 @@
 #include "gtkmain.h"
 #include "gtkprivate.h"
 #include "gtkwidgetprivate.h"
+#include "gtkbuilderprivate.h"
 
 #include <string.h>
 
@@ -466,11 +469,19 @@ gtk_expander_buildable_add_child (GtkBuildable  *buildable,
                                   const char    *type)
 {
   if (g_strcmp0 (type, "label") == 0)
-    gtk_expander_set_label_widget (GTK_EXPANDER (buildable), GTK_WIDGET (child));
+    {
+      gtk_buildable_child_deprecation_warning (buildable, builder, "label", "label-widget");
+      gtk_expander_set_label_widget (GTK_EXPANDER (buildable), GTK_WIDGET (child));
+    }
   else if (GTK_IS_WIDGET (child))
-    gtk_expander_set_child (GTK_EXPANDER (buildable), GTK_WIDGET (child));
+    {
+      gtk_buildable_child_deprecation_warning (buildable, builder, NULL, "child");
+      gtk_expander_set_child (GTK_EXPANDER (buildable), GTK_WIDGET (child));
+    }
   else
-    parent_buildable_iface->add_child (buildable, builder, child, type);
+    {
+      parent_buildable_iface->add_child (buildable, builder, child, type);
+    }
 }
 
 static void

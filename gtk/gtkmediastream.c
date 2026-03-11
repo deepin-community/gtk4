@@ -25,7 +25,7 @@
 /**
  * GtkMediaStream:
  *
- * `GtkMediaStream` is the integration point for media playback inside GTK.
+ * The integration point for media playback inside GTK.
  *
  * GTK provides an implementation of the `GtkMediaStream` interface that
  * is called [class@Gtk.MediaFile].
@@ -298,7 +298,7 @@ gtk_media_stream_class_init (GtkMediaStreamClass *class)
   properties[PROP_PREPARED] =
     g_param_spec_boolean ("prepared", NULL, NULL,
                           FALSE,
-                          G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
+                          G_PARAM_READABLE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
    * GtkMediaStream:error:
@@ -342,7 +342,7 @@ gtk_media_stream_class_init (GtkMediaStreamClass *class)
                           G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
 
   /**
-   * GtkMediaStream:ended:
+   * GtkMediaStream:ended: (getter get_ended)
    *
    * Set when playback has finished.
    */
