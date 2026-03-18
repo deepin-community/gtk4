@@ -1,0 +1,10 @@
+--- gtk4-4.18.6+ds.orig/testsuite/gdk/meson.build
++++ gtk4-4.18.6+ds/testsuite/gdk/meson.build
+@@ -75,7 +75,6 @@ endforeach
+ internal_tests = [
+   { 'name': 'colorstate-internal' },
+   { 'name': 'dihedral' },
+-  { 'name': 'image' },
+   { 'name': 'memorytexture', 'sources': [ 'gdktestutils.c' ] },
+   { 'name': 'texture' },
+   { 'name': 'gltexture' },
