@@ -1,0 +1,54 @@
+From: Maxim Cournoyer <maxim@guixotic.coop>
+Date: Tue, 17 Mar 2026 16:20:33 +0900
+Subject: demos: Make build reproducible.
+
+Sort all sets before output.  Remove unused imports and PEP8'ify a
+bit.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/9675>
+Origin: upstream, 4.23.0, commit:d122361ad4155816a00b9fefe9a52d87b1cdefdd
+---
+ demos/gtk-demo/geninclude.py | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/demos/gtk-demo/geninclude.py b/demos/gtk-demo/geninclude.py
+index 2ebfaeb..fb2c8b3 100755
+--- a/demos/gtk-demo/geninclude.py
++++ b/demos/gtk-demo/geninclude.py
+@@ -82,6 +82,10 @@ for demo in demos:
+         parent_index = parent_index + 1
+ 
+ 
++# Sort demos by title
++demos = sorted(demos, key=lambda x: x[1])
++
++
+ # For every child with a parent, generate a list of child demos
+ i = 0
+ for parent in parents:
+@@ -91,15 +95,12 @@ for parent in parents:
+     for child in demos:
+         if child[1].startswith(parent + "/"):
+             title = child[1][child[1].rfind('/') + 1:]
+-            file_output += "  { \"" + child[0] + "\", \"" + title + "\", " + "(const char*[]) {" + ", ".join(list(map(add_quotes, child[2])) + ["NULL"]) + " }, \"" + child[3] + "\", " + child[4] + ", NULL },\n"
++            file_output += "  { \"" + child[0] + "\", \"" + title + "\", " + "(const char*[]) {" + ", ".join(list(map(add_quotes, sorted(child[2]))) + ["NULL"]) + " }, \"" + child[3] + "\", " + child[4] + ", NULL },\n"
+ 
+     file_output += "  { NULL }\n};\n"
+     i = i + 1
+ 
+ 
+-# Sort demos by title
+-demos = sorted(demos, key=lambda x: x[1])
+-
+ file_output += "\nDemoData gtk_demos[] = {\n"
+ for demo in demos:
+     # Do not generate one of these for demos with a parent demo
+@@ -118,7 +119,7 @@ for demo in demos:
+ 
+         if demo[5] != -1:
+             child_array = "child" + str(demo[5])
+-        file_output += "  { " + name + ", " + title + ", " + "(const char*[]) {" + ", ".join(list(map(add_quotes, keywords)) + ["NULL"]) + " }, " + file + ", " + demo[4] + ", " + child_array + " },\n"
++        file_output += "  { " + name + ", " + title + ", " + "(const char*[]) {" + ", ".join(list(map(add_quotes, sorted(keywords))) + ["NULL"]) + " }, " + file + ", " + demo[4] + ", " + child_array + " },\n"
+ 
+ file_output += "  { NULL }\n};\n"
+ 

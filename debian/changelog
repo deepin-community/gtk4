@@ -1,8 +1,16 @@
+gtk4 (4.18.6+ds-2deepin2) unstable; urgency=medium
+
+  * Add a patch from 4.23.0 to make the demos build more reproducibly
+    Thank you Simon McVittie!
+
+ -- Tianyu Chen <sweetyfish@deepin.org>  Tue, 21 Jul 2026 16:56:44 +0800
+
 gtk4 (4.18.6+ds-2deepin1) unstable; urgency=medium
 
   * Skip gdk image test to fix build failures on certain systems.
 
  -- LiChengGang <lichenggang@uniontech.com>  Tue, 17 Mar 2026 11:30:00 +0800
+
 gtk4 (4.18.6+ds-2) unstable; urgency=medium
 
   * Add packaging changes to previous changelog entry that were
